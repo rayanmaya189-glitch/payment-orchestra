@@ -1,5 +1,5 @@
 # Software Requirements Specification
-## Multi-Tenant AI-Native Payment Orchestration Platform (UAE-First, Multi-Country Ready)
+## AI-Native Payment Orchestration Platform (UAE-First, Multi-Country Ready)
 
 **Document Series:** 12-Part Enterprise SRS
 **Part 12 of 12:** Appendices, Consolidated Open Questions & Implementation Roadmap
@@ -197,4 +197,4 @@
 
 ---
 
-*End of Part 12. End of the 12-Part SRS series for the Multi-Tenant AI-Native Payment Orchestration Platform.*
+*End of Part 12. End of the 12-Part SRS series for the AI-Native Payment Orchestration Platform.*
