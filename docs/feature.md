@@ -30,6 +30,21 @@ A single-tenant, API-first payment orchestration platform that enables merchants
 | F-010 | Redis authentication & encryption | Must | Infrastructure |
 | F-011 | Local development environment (docker-compose) | Must | DX |
 
+### M1.5 — Gateway Profiles (Core Configuration)
+
+| Feature ID | Feature | Priority | Bounded Context |
+|---|---|---|---|
+| F-015 | Gateway profile creation (limits, fees, card schemes, currencies) | Must | BC-04 |
+| F-016 | Gateway profile limits enforcement (min/max amount, daily/monthly volume) | Must | BC-04 |
+| F-017 | Gateway profile fee structure (fixed + percentage + cross-border + FX) | Must | BC-04 |
+| F-018 | Gateway profile rate limiting (per-second, per-day) | Must | BC-04 |
+| F-019 | Gateway profile monitoring thresholds (success rate, latency) | Must | BC-04 |
+| F-020 | Gateway rotation strategy (priority, round-robin, weighted, cost-based, success-rate, volume-capped) | Must | BC-04 |
+| F-021 | Order-gateway profile linking (each order records which gateway profile was used) | Must | BC-05 |
+| F-022 | Gateway profile analytics (per-gateway metrics, fee comparison, volume distribution) | Must | BC-15 |
+| F-023 | Gateway profile bulk operations (bulk limit update, bulk enable/disable) | Must | BC-04 |
+| F-024 | Gateway health dashboard (success rate, latency, circuit breaker status) | Must | BC-04 |
+
 ### M2 — First Connector (Core Payment Flow)
 
 | Feature ID | Feature | Priority | Bounded Context |

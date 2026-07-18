@@ -27,7 +27,375 @@ pub trait AcquirerConnector: Send + Sync {
 }
 ```
 
-## 2. Capability Flags
+## 2. Gateway Profile & Limits (Per-Connector Configuration)
+
+Each connected acquirer/PSP has a **Gateway Profile** that defines operational limits, fee structure, and routing preferences.
+
+### Gateway Profile Entity
+
+```rust
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
+#[sea_orm(table_name = "gateway_profile")]
+pub struct Model {
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub profile_id: Uuid,
+    pub operator_id: Uuid,
+    pub connector_id: String,             // 'network_international' | 'checkout_com' | 'telr'
+    pub merchant_acquirer_link_id: Uuid,  // FK to MerchantAcquirerLink
+    pub status: String,                   // 'active' | 'disabled' | 'maintenance'
+
+    // Transaction Limits
+    pub min_transaction_amount_minor: i64,    // e.g., 100 (1.00 AED)
+    pub max_transaction_amount_minor: i64,    // e.g., 50000000 (500,000 AED)
+    pub daily_volume_limit_minor: i64,        // e.g., 5000000000 (50,000,000 AED)
+    pub monthly_volume_limit_minor: i64,      // e.g., 50000000000 (500,000,000 AED)
+    pub max_refund_amount_minor: i64,         // per-transaction refund cap
+
+    // Fee Structure
+    pub fixed_fee_minor: i64,                 // e.g., 100 (1.00 AED per transaction)
+    pub percentage_fee_bps: i32,              // basis points, e.g., 250 = 2.50%
+    pub cross_border_fee_bps: i32,            // additional fee for cross-border
+    pub currency_conversion_fee_bps: i32,     // additional fee for FX
+
+    // Routing Preferences
+    pub routing_priority: i32,                // 1 = highest, used in RoutingPolicy
+    pub enabled_card_schemes: String,         // JSON array: ["visa", "mastercard"]
+    pub enabled_currencies: String,           // JSON array: ["AED", "USD"]
+    pub enabled_countries: String,            // JSON array: ["AE", "SA", "BH"]
+
+    // Rate Limiting (per-connector)
+    pub rate_limit_per_second: u32,           // max API calls per second to this acquirer
+    pub rate_limit_per_day: u32,              // max API calls per day
+
+    // Monitoring
+    pub success_rate_threshold: f64,          // alert if success rate drops below (e.g., 0.95)
+    pub latency_threshold_ms: u32,            // alert if p99 latency exceeds (e.g., 5000)
+    pub auto_disable_on_low_success: bool,    // auto-disable if success rate < threshold for 1hr
+
+    pub created_at: DateTimeWithTimeZone,
+    pub updated_at: DateTimeWithTimeZone,
+}
+```
+
+### Gateway Profile Value Objects
+
+```rust
+pub struct TransactionLimits {
+    pub min_amount: Money,
+    pub max_amount: Money,
+    pub daily_volume: Money,
+    pub monthly_volume: Money,
+    pub max_refund_amount: Money,
+}
+
+pub struct FeeStructure {
+    pub fixed_fee: Money,
+    pub percentage_fee_bps: i32,       // basis points
+    pub cross_border_fee_bps: i32,
+    pub currency_conversion_fee_bps: i32,
+}
+
+impl FeeStructure {
+    /// Calculate total fee for a transaction
+    pub fn calculate_fee(&self, amount: &Money, is_cross_border: bool, requires_fx: bool) -> Money {
+        let percentage_fee = (amount.amount_minor_units * self.percentage_fee_bps as i64) / 10000;
+        let cross_border = if is_cross_border {
+            (amount.amount_minor_units * self.cross_border_fee_bps as i64) / 10000
+        } else { 0 };
+        let fx_fee = if requires_fx {
+            (amount.amount_minor_units * self.currency_conversion_fee_bps as i64) / 10000
+        } else { 0 };
+
+        Money {
+            amount_minor_units: self.fixed_fee.amount_minor_units + percentage_fee + cross_border + fx_fee,
+            currency: amount.currency.clone(),
+        }
+    }
+}
+
+pub struct RateLimitConfig {
+    pub per_second: u32,
+    pub per_day: u32,
+    pub burst_size: u32, // max concurrent requests
+}
+
+pub struct MonitoringThresholds {
+    pub success_rate_alert: f64,       // alert threshold
+    pub success_rate_critical: f64,    // critical threshold (auto-disable)
+    pub latency_p99_alert_ms: u32,
+    pub latency_p99_critical_ms: u32,
+}
+```
+
+### Gateway Profile Default Values per Connector
+
+| Connector | Min Amount | Max Amount | Daily Volume | Fixed Fee | Percentage Fee | Rate Limit/sec |
+|-----------|-----------|-----------|-------------|-----------|---------------|----------------|
+| Network International | 1.00 AED | 500,000 AED | 50M AED | 1.00 AED | 2.50% | 100 |
+| Checkout.com | 1.00 AED | 1,000,000 AED | 100M AED | 0.50 AED | 2.25% | 200 |
+| Telr | 1.00 AED | 250,000 AED | 25M AED | 1.50 AED | 2.75% | 50 |
+
+### Gateway Profile Commands
+
+```rust
+pub struct CreateGatewayProfileCommand {
+    pub connector_id: String,
+    pub merchant_acquirer_link_id: Uuid,
+    pub min_transaction_amount: Money,
+    pub max_transaction_amount: Money,
+    pub daily_volume_limit: Money,
+    pub monthly_volume_limit: Money,
+    pub fixed_fee: Money,
+    pub percentage_fee_bps: i32,
+    pub enabled_card_schemes: Vec<CardScheme>,
+    pub enabled_currencies: Vec<CurrencyCode>,
+    pub routing_priority: i32,
+}
+
+pub struct UpdateGatewayProfileCommand {
+    pub profile_id: Uuid,
+    pub limits: Option<TransactionLimits>,
+    pub fees: Option<FeeStructure>,
+    pub rate_limits: Option<RateLimitConfig>,
+    pub monitoring: Option<MonitoringThresholds>,
+    pub status: Option<String>, // 'active' | 'disabled' | 'maintenance'
+}
+```
+
+### Gateway Profile Repository
+
+```rust
+#[async_trait]
+pub trait GatewayProfileRepository: Send + Sync {
+    async fn load(&self, id: Uuid) -> Result<Option<GatewayProfile>, PlatformError>;
+    async fn save(&self, profile: &GatewayProfile) -> Result<(), PlatformError>;
+    async fn find_active_for_operator(&self, operator_id: Uuid) -> Result<Vec<GatewayProfile>, PlatformError>;
+    async fn find_by_connector(&self, connector_id: &str) -> Result<Vec<GatewayProfile>, PlatformError>;
+    async fn check_daily_volume(&self, profile_id: Uuid) -> Result<Money, PlatformError>;
+    async fn check_monthly_volume(&self, profile_id: Uuid) -> Result<Money, PlatformError>;
+}
+```
+
+### Gateway Profile Validation
+
+```rust
+pub fn validate_transaction_against_profile(
+    amount: &Money,
+    profile: &GatewayProfile,
+    card_scheme: &CardScheme,
+    currency: &CurrencyCode,
+) -> Result<(), GatewayError> {
+    // 1. Check amount limits
+    if amount.amount_minor_units < profile.min_transaction_amount_minor {
+        return Err(GatewayError::BelowMinimumAmount);
+    }
+    if amount.amount_minor_units > profile.max_transaction_amount_minor {
+        return Err(GatewayError::ExceedsMaximumAmount);
+    }
+
+    // 2. Check daily volume
+    // (validated at routing time against accumulated daily total)
+
+    // 3. Check card scheme
+    let enabled_schemes: Vec<CardScheme> = serde_json::from_str(&profile.enabled_card_schemes)?;
+    if !enabled_schemes.contains(card_scheme) {
+        return Err(GatewayError::UnsupportedCardScheme);
+    }
+
+    // 4. Check currency
+    let enabled_currencies: Vec<CurrencyCode> = serde_json::from_str(&profile.enabled_currencies)?;
+    if !enabled_currencies.contains(currency) {
+        return Err(GatewayError::UnsupportedCurrency);
+    }
+
+    // 5. Check rate limit
+    // (validated at request time via rate limiter)
+
+    Ok(())
+}
+```
+
+---
+
+## 3. Gateway Profile Rotation Strategy
+
+Each order/payment intent is linked to a specific gateway profile via a **rotation strategy** that determines which gateway handles each transaction.
+
+### Rotation Strategy Types
+
+```rust
+pub enum RotationStrategy {
+    /// Fixed priority order — always try gateway 1 first, then 2, etc.
+    Priority,
+    /// Round-robin — distribute evenly across gateways
+    RoundRobin,
+    /// Weighted round-robin — distribute by weight (e.g., 60%/40%)
+    WeightedRoundRobin { weights: Vec<(Uuid, u32)> },
+    /// Cost-based — select cheapest gateway for this transaction
+    CostBased,
+    /// Success-rate-based — select gateway with highest recent success rate
+    SuccessRateBased,
+    /// Volume-capped — rotate until one gateway hits daily limit, then next
+    VolumeCapped,
+}
+```
+
+### Rotation State (Redis)
+
+```rust
+pub struct RotationState {
+    pub operator_id: Uuid,
+    pub strategy: RotationStrategy,
+    pub current_index: u32,           // for round-robin
+    pub last_used_gateway_id: Uuid,   // for round-robin
+    pub weights: Vec<(Uuid, u32)>,    // for weighted round-robin
+    pub daily_volume: HashMap<Uuid, i64>, // gateway_id → volume today
+}
+```
+
+### Rotation Algorithm
+
+```rust
+pub async fn select_gateway_profile(
+    state: &RotationState,
+    profiles: &[GatewayProfile],
+    transaction: &PaymentIntent,
+    routing_policy: &RoutingPolicy,
+) -> Result<Uuid, PlatformError> {
+    // 1. Filter profiles by active status and matching conditions
+    let eligible: Vec<&GatewayProfile> = profiles.iter()
+        .filter(|p| p.status == "active")
+        .filter(|p| matches_card_scheme(p, transaction.card_scheme))
+        .filter(|p| matches_currency(p, transaction.currency))
+        .filter(|p| transaction.amount.amount_minor_units >= p.min_transaction_amount_minor)
+        .filter(|p| transaction.amount.amount_minor_units <= p.max_transaction_amount_minor)
+        .filter(|p| !daily_limit_exceeded(p, &state.daily_volume))
+        .collect();
+
+    if eligible.is_empty() {
+        return Err(PlatformError::Conflict(ConflictError::NoEligibleRoute));
+    }
+
+    // 2. Apply rotation strategy
+    match &state.strategy {
+        RotationStrategy::Priority => {
+            // Already sorted by routing_priority from GatewayProfile
+            Ok(eligible[0].profile_id)
+        }
+        RotationStrategy::RoundRobin => {
+            let next_index = (state.current_index as usize) % eligible.len();
+            Ok(eligible[next_index].profile_id)
+        }
+        RotationStrategy::WeightedRoundRobin { weights } => {
+            let total_weight: u32 = weights.iter().map(|(_, w)| w).sum();
+            let mut random = rand::thread_rng().gen_range(0..total_weight);
+            for (gateway_id, weight) in weights {
+                random = random.saturating_sub(*weight);
+                if random == 0 {
+                    return Ok(*gateway_id);
+                }
+            }
+            Ok(eligible[0].profile_id) // fallback
+        }
+        RotationStrategy::CostBased => {
+            // Calculate total fee for each eligible gateway
+            let mut scored: Vec<(&GatewayProfile, i64)> = eligible.iter()
+                .map(|p| {
+                    let fee = calculate_total_fee(p, transaction);
+                    (p, fee.amount_minor_units)
+                })
+                .collect();
+            scored.sort_by_key(|(_, fee)| *fee);
+            Ok(scored[0].0.profile_id)
+        }
+        RotationStrategy::SuccessRateBased => {
+            let mut scored: Vec<(&GatewayProfile, f64)> = eligible.iter()
+                .map(|p| (p, p.success_rate))
+                .collect();
+            scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
+            Ok(scored[0].0.profile_id)
+        }
+        RotationStrategy::VolumeCapped => {
+            // Select first gateway that hasn't hit daily limit
+            for profile in &eligible {
+                if !daily_limit_exceeded(profile, &state.daily_volume) {
+                    return Ok(profile.profile_id);
+                }
+            }
+            Err(PlatformError::Conflict(ConflictError::AllGatewaysVolumeExceeded))
+        }
+    }
+}
+```
+
+### Order-Gateway Profile Link
+
+Every `PaymentIntent` records which gateway profile was used:
+
+```rust
+// Extended PaymentIntent entity
+pub struct PaymentIntent {
+    // ... existing fields ...
+    pub gateway_profile_id: Uuid,        // which gateway handled this order
+    pub gateway_profile_version: i32,    // snapshot of profile at time of transaction
+    pub routing_attempt_gateway_ids: Vec<Uuid>, // gateway used at each hop
+}
+```
+
+### Gateway Profile Audit Event
+
+```rust
+pub struct GatewayProfileSelected {
+    pub payment_intent_id: Uuid,
+    pub gateway_profile_id: Uuid,
+    pub connector_id: String,
+    pub rotation_strategy: String,
+    pub selection_reason: String,        // "priority_1", "round_robin_2", "lowest_cost", etc.
+    pub fee_calculated: Money,
+    pub daily_volume_after: Money,
+}
+```
+
+---
+
+## 4. Gateway Profile Repository
+
+```rust
+#[async_trait]
+pub trait GatewayProfileRepository: Send + Sync {
+    async fn load(&self, id: Uuid) -> Result<Option<GatewayProfile>, PlatformError>;
+    async fn save(&self, profile: &GatewayProfile) -> Result<(), PlatformError>;
+    async fn find_active_for_operator(&self, operator_id: Uuid) -> Result<Vec<GatewayProfile>, PlatformError>;
+    async fn find_by_connector(&self, connector_id: &str) -> Result<Vec<GatewayProfile>, PlatformError>;
+    async fn find_by_link(&self, link_id: Uuid) -> Result<Option<GatewayProfile>, PlatformError>;
+    async fn check_daily_volume(&self, profile_id: Uuid) -> Result<Money, PlatformError>;
+    async fn check_monthly_volume(&self, profile_id: Uuid) -> Result<Money, PlatformError>;
+    async fn increment_daily_volume(&self, profile_id: Uuid, amount: Money) -> Result<(), PlatformError>;
+    async fn get_success_rate(&self, profile_id: Uuid, window_hours: u32) -> Result<f64, PlatformError>;
+}
+```
+
+---
+
+## 5. Gateway Profile Error Catalog
+
+| Code | HTTP | gRPC | Description |
+|---|---|---|---|
+| `GATEWAY_PROFILE_NOT_FOUND` | 404 | NOT_FOUND | Gateway profile does not exist |
+| `BELOW_MINIMUM_AMOUNT` | 400 | INVALID_ARGUMENT | Transaction below gateway minimum |
+| `EXCEEDS_MAXIMUM_AMOUNT` | 400 | INVALID_ARGUMENT | Transaction exceeds gateway maximum |
+| `DAILY_VOLUME_EXCEEDED` | 429 | RESOURCE_EXHAUSTED | Daily volume limit reached |
+| `MONTHLY_VOLUME_EXCEEDED` | 429 | RESOURCE_EXHAUSTED | Monthly volume limit reached |
+| `UNSUPPORTED_CARD_SCHEME` | 400 | INVALID_ARGUMENT | Card scheme not enabled for gateway |
+| `UNSUPPORTED_CURRENCY` | 400 | INVALID_ARGUMENT | Currency not enabled for gateway |
+| `GATEWAY_DISABLED` | 409 | FAILED_PRECONDITION | Gateway profile is disabled |
+| `GATEWAY_MAINTENANCE` | 503 | UNAVAILABLE | Gateway in maintenance mode |
+| `ALL_GATEWAYS_VOLUME_EXCEEDED` | 429 | RESOURCE_EXHAUSTED | All gateways hit daily limit |
+| `ROTATION_STRATEGY_INVALID` | 400 | INVALID_ARGUMENT | Unknown rotation strategy |
+
+---
+
+## 6. Capability Flags
 
 ```rust
 pub struct ConnectorCapabilities {

@@ -444,7 +444,111 @@ message SubscriptionView {
 
 ---
 
-## 8. Other Services (abbreviated)
+## 8. gateway-profile-service (gateway_profile.v1)
+
+```protobuf
+syntax = "proto3";
+package gateway_profile.v1;
+import "common.v1/money.proto";
+
+service GatewayProfileService {
+  rpc CreateGatewayProfile(CreateGatewayProfileRequest) returns (CreateGatewayProfileResponse);
+  rpc GetGatewayProfile(GetGatewayProfileRequest) returns (GatewayProfileView);
+  rpc ListGatewayProfiles(ListGatewayProfilesRequest) returns (ListGatewayProfilesResponse);
+  rpc UpdateGatewayProfile(UpdateGatewayProfileRequest) returns (UpdateGatewayProfileResponse);
+  rpc DeleteGatewayProfile(DeleteGatewayProfileRequest) returns (DeleteGatewayProfileResponse);
+  rpc GetGatewayRotationState(GetRotationStateRequest) returns (RotationStateView);
+  rpc UpdateRotationStrategy(UpdateRotationStrategyRequest) returns (UpdateRotationStrategyResponse);
+  rpc GetGatewayAnalytics(GetGatewayAnalyticsRequest) returns (GatewayAnalyticsResponse);
+}
+
+message CreateGatewayProfileRequest {
+  string connector_id = 1;
+  string merchant_acquirer_link_id = 2;
+  common.v1.Money min_transaction_amount = 3;
+  common.v1.Money max_transaction_amount = 4;
+  common.v1.Money daily_volume_limit = 5;
+  common.v1.Money monthly_volume_limit = 6;
+  common.v1.Money max_refund_amount = 7;
+  common.v1.Money fixed_fee = 8;
+  int32 percentage_fee_bps = 9;
+  int32 cross_border_fee_bps = 10;
+  int32 currency_conversion_fee_bps = 11;
+  repeated string enabled_card_schemes = 12;
+  repeated string enabled_currencies = 13;
+  int32 routing_priority = 14;
+  uint32 rate_limit_per_second = 15;
+  uint32 rate_limit_per_day = 16;
+  double success_rate_threshold = 17;
+  uint32 latency_threshold_ms = 18;
+  bool auto_disable_on_low_success = 19;
+}
+
+message GatewayProfileView {
+  string profile_id = 1;
+  string connector_id = 2;
+  string merchant_acquirer_link_id = 3;
+  string status = 4;
+  common.v1.Money min_transaction_amount = 5;
+  common.v1.Money max_transaction_amount = 6;
+  common.v1.Money daily_volume_limit = 7;
+  common.v1.Money daily_volume_used = 8;
+  common.v1.Money monthly_volume_limit = 9;
+  common.v1.Money monthly_volume_used = 10;
+  common.v1.Money fixed_fee = 11;
+  int32 percentage_fee_bps = 12;
+  int32 cross_border_fee_bps = 13;
+  int32 currency_conversion_fee_bps = 14;
+  repeated string enabled_card_schemes = 15;
+  repeated string enabled_currencies = 16;
+  int32 routing_priority = 17;
+  uint32 rate_limit_per_second = 18;
+  uint32 rate_limit_per_day = 19;
+  double success_rate = 20;
+  double success_rate_threshold = 21;
+  uint32 latency_threshold_ms = 22;
+  bool auto_disable_on_low_success = 23;
+  string circuit_breaker_state = 24;
+}
+
+message RotationStateView {
+  string strategy = 1; // priority | round_robin | weighted_round_robin | cost_based | success_rate_based | volume_capped
+  string last_used_gateway_id = 2;
+  string next_gateway_id = 3;
+  map<string, int64> daily_volume_by_gateway = 4;
+  repeated WeightEntry weights = 5;
+}
+
+message WeightEntry {
+  string gateway_id = 1;
+  uint32 weight = 2;
+}
+
+message UpdateRotationStrategyRequest {
+  string strategy = 1;
+  repeated WeightEntry weights = 2; // for weighted_round_robin
+}
+
+message GatewayAnalyticsResponse {
+  repeated GatewayMetrics metrics = 1;
+}
+
+message GatewayMetrics {
+  string gateway_id = 1;
+  string connector_name = 2;
+  int64 total_transactions = 3;
+  double success_rate = 4;
+  double avg_latency_ms = 5;
+  common.v1.Money total_volume = 6;
+  common.v1.Money total_fees = 7;
+  common.v1.Money daily_volume_used = 8;
+  common.v1.Money daily_volume_limit = 9;
+}
+```
+
+---
+
+## 9. Other Services (abbreviated)
 
 ```protobuf
 // compliance-service (compliance.v1)

@@ -233,9 +233,68 @@ pub struct AuthorizePaymentIntentCommand {
 1. Load active `RoutingPolicy`
 2. Filter rules by card scheme, currency, amount
 3. Map to active `MerchantAcquirerLink` IDs
-4. Exclude already-attempted links
-5. Order by priority
-6. Select first candidate
+4. Load `GatewayProfile` for each candidate link
+5. Filter by gateway profile limits (min/max amount, daily/monthly volume, card scheme, currency)
+6. Filter by gateway profile status (active only)
+7. Exclude already-attempted links
+8. Order by routing priority from `GatewayProfile`
+9. Select first candidate
+10. Validate total fee against merchant's cost threshold (if configured)
+
+```rust
+// Enhanced routing with gateway profiles
+pub async fn select_route_with_profiles(
+    intent: &PaymentIntent,
+    policy: &RoutingPolicy,
+    links: &[MerchantAcquirerLink],
+    profiles: &[GatewayProfile],
+    attempted_hops: &[Uuid],
+) -> Result<RouteSelection, PlatformError> {
+    let mut candidates: Vec<(Uuid, i32)> = vec![];
+
+    for rule in &policy.rules {
+        // 1. Match rule conditions
+        if !rule.matches(intent.card_scheme, intent.currency, intent.amount) {
+            continue;
+        }
+
+        // 2. Find matching link
+        let link = links.iter()
+            .find(|l| l.id == rule.acquirer_link_id && l.status == "active")
+            .ok_or(PlatformError::NotFound)?;
+
+        // 3. Find gateway profile
+        let profile = profiles.iter()
+            .find(|p| p.merchant_acquirer_link_id == link.id && p.status == "active")
+            .ok_or(PlatformError::NotFound)?;
+
+        // 4. Validate against gateway profile limits
+        validate_transaction_against_profile(
+            &intent.amount, profile, &intent.card_scheme, &intent.currency,
+        )?;
+
+        // 5. Check daily volume
+        let daily_volume = profile_repo.check_daily_volume(profile.id).await?;
+        if daily_volume.amount_minor_units + intent.amount.amount_minor_units > profile.daily_volume_limit_minor {
+            continue; // Skip this gateway — daily limit reached
+        }
+
+        // 6. Exclude attempted
+        if attempted_hops.contains(&link.id) {
+            continue;
+        }
+
+        candidates.push((link.id, profile.routing_priority));
+    }
+
+    // 7. Sort by priority
+    candidates.sort_by_key(|(_, priority)| *priority);
+
+    candidates.first()
+        .map(|(id, _)| RouteSelection::Acquirer(*id))
+        .ok_or(PlatformError::Conflict(ConflictError::NoEligibleRoute))
+}
+```
 
 **Failover**:
 - On retryable decline → immediately attempt next candidate
