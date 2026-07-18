@@ -99,7 +99,7 @@ Then the PaymentIntent transitions through Authorizing (Acquirer A) -> Failed(si
 
 - **K8S-001**: Each microservice (Part 4 §1.1) is a separate Deployment with its own resource requests/limits, HorizontalPodAutoscaler thresholds tuned per service's load profile — `orchestration-service` and `connector-gateway` scale on a combination of request-rate and p99-latency signals (given their checkout-critical-path role, Part 5 §8 NFR-ORC-001), while `analytics-service` scales primarily on NATS consumer lag (Part 9 §6 XSTORE-002).
 - **K8S-002**: GPU-backed node pool, tainted/labeled so only `ai-assistant-service`'s inference pods (Ollama-hosted Qwen3 32B / Qwen3-VL 8B, Part 6 §2, Part 4 §8) schedule there — general CPU-only services are never scheduled onto GPU nodes, avoiding wasted expensive capacity.
-- **K8S-003**: Namespace-per-environment (dev/staging/prod), not namespace-per-tenant — tenant isolation is enforced at the application/data layer (Parts 3, 4, 8, 9), not by giving each tenant its own Kubernetes namespace, which would not scale operationally to a large multi-tenant SaaS base.
+- **K8S-003**: Namespace-per-environment (dev/staging/prod), keeping the deployment topology simple for single-tenant operation.
 - **K8S-004**: Service mesh (Part 4 §8) provides mTLS, and additionally provides the observability hooks (§5) for per-service-pair traffic metrics.
 
 ### 4.2 Configuration & Secrets
@@ -149,7 +149,7 @@ Total checkout latency budget (target, tenant-perceived)
 ### 6.3 Scalability Targets (Structural, Not Numeric Placeholders)
 
 - **SCALE-001**: Every service in Part 4 §1.1 is independently horizontally scalable (stateless application layer; all state in Postgres/Redis/ClickHouse/OpenSearch/MinIO) — this is a structural guarantee verifiable by architecture review (no in-memory-only state that would break under multi-replica scaling), separate from the specific replica-count numbers which are a capacity-planning exercise against real traffic projections once pilot-merchant volume is known.
-- **SCALE-002**: The event-store partitioning (Part 9 §1.1, by `tenant_id, aggregate_type, aggregate_id`) means database scaling can proceed via read replicas for query-heavy projections and, if a single Postgres instance's write throughput becomes the bottleneck at large scale, via tenant-range sharding across multiple Postgres instances — flagged here as an architecture escape hatch that exists because of the tenant-scoped key design, not as an MVP requirement.
+- **SCALE-002**: The event-store partitioning (by `aggregate_type, aggregate_id`) means database scaling can proceed via read replicas for query-heavy projections and, if a single Postgres instance's write throughput becomes the bottleneck at large scale, via sharding across multiple Postgres instances — flagged here as an architecture escape hatch, not an MVP requirement.
 
 ---
 
@@ -230,7 +230,7 @@ Total checkout latency budget (target, tenant-perceived)
 |---|---|
 | CONS-002 (Part 1, TDD) | §1 entire section |
 | SUCC-003 (Part 1, AI top-50 validated pre-GA) | §1.2 AI evaluation suite row, §3.1 stage 6 |
-| SUCC-004 (Part 1, zero cross-tenant leakage pre-GA) | §3.1 stage 3/5 (security scanning), Part 8 §7 SECTEST-001 executed here |
+| SUCC-004 (Part 1, zero data leakage pre-GA) | §3.1 stage 3/5 (security scanning), Part 8 §7 SECTEST-001 executed here |
 | SUCC-005 (Part 1, 100% audit completeness) | §1.4 COV-001 applied to event-sourced invariants, §7 DR-001 RPO discipline |
 | BR-020-2 (Part 2, bounded failover latency) | §6.2 methodology |
 | Part 5 OQ-011 | §6.2 PERF-002 (resolution mechanism defined, number pending benchmark) |

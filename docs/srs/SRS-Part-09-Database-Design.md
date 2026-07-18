@@ -15,7 +15,7 @@
 | Part | 9 of 12 — Database Design |
 | Depends On | Part 3 (aggregates/events), Part 4 (per-service datastore ownership), Part 5 (event store needs), Part 6 (vector index needs), Part 7 (settlement staging), Part 8 (encryption/audit storage requirements) |
 | Feeds Into | Part 10 (API contracts reflect these schemas), Part 11 (backup/DR, capacity planning, migration/CI practices) |
-| Golden Rule | Every table/index includes `tenant_id` as a leading key/partition column (Part 4 §7 MT-002); no table is designed "tenant-agnostic and filtered later." |
+| Golden Rule | Every table/index is designed for single-tenant deployment — no tenant_id columns needed. Access control is enforced at the application layer via RBAC/ABAC (Part 8), not at the data layer. |
 
 ---
 
@@ -23,11 +23,10 @@
 
 ### 1.1 Shared Event Store Schema Pattern
 
-Each event-sourced service (BC-05 `orchestration-service`, BC-08 `subscription-service`, BC-09 `reconciliation-service`, BC-10 `dispute-service`, BC-16 `marketplace-service`) owns its own Postgres database using the same event-store table shape, so the pattern is documented once here rather than five times.
+Each event-sourced service (BC-05 `orchestration-service`, BC-08 `subscription-service`, BC-09 `reconciliation-service`, BC-10 `dispute-service`) owns its own Postgres database using the same event-store table shape, so the pattern is documented once here rather than four times.
 
 ```sql
 CREATE TABLE event_store (
-    tenant_id           UUID        NOT NULL,
     aggregate_type       TEXT        NOT NULL,
     aggregate_id         UUID        NOT NULL,
     event_sequence       BIGINT      NOT NULL,   -- per-aggregate monotonic version
@@ -40,27 +39,26 @@ CREATE TABLE event_store (
     causation_id         UUID        NULL,
     correlation_id       UUID        NOT NULL,
     payload              BYTEA       NOT NULL,   -- protobuf-encoded (Part 10)
-    PRIMARY KEY (tenant_id, aggregate_type, aggregate_id, event_sequence)
+    PRIMARY KEY (aggregate_type, aggregate_id, event_sequence)
 );
 
 CREATE UNIQUE INDEX event_store_event_id_uq ON event_store (event_id);
-CREATE INDEX event_store_correlation_idx ON event_store (tenant_id, correlation_id);
-CREATE INDEX event_store_occurred_at_idx ON event_store (tenant_id, occurred_at);
+CREATE INDEX event_store_correlation_idx ON event_store (correlation_id);
+CREATE INDEX event_store_occurred_at_idx ON event_store (occurred_at);
 ```
 
-- **DB-001 (Optimistic concurrency)**: Appends specify `expected_event_sequence`; the insert is conditioned (application-level check-then-insert within a transaction, or a Postgres `EXCLUDE`/unique-constraint-based guard on `(tenant_id, aggregate_type, aggregate_id, event_sequence)`) so a concurrent writer's stale-sequence append fails and must reload+retry (Part 5 §4.2 CONC-001).
+- **DB-001 (Optimistic concurrency)**: Appends specify `expected_event_sequence`; the insert is conditioned (application-level check-then-insert within a transaction, or a Postgres `EXCLUDE`/unique-constraint-based guard on `(aggregate_type, aggregate_id, event_sequence)`) so a concurrent writer's stale-sequence append fails and must reload+retry (Part 5 §4.2 CONC-001).
 - **DB-002 (Payload encoding)**: `payload` is protobuf, not JSON, for compactness and schema evolution discipline (Part 10 defines `.proto` schemas per event type, with explicit backward-compatibility rules — additive fields only within a version, breaking changes bump `event_version`).
 - **DB-003 (Snapshotting)**: For aggregates with long event streams (e.g., a `Subscription` that has renewed monthly for years), a `aggregate_snapshot` table stores periodic materialized state (every N events or T time) to bound replay cost:
 
 ```sql
 CREATE TABLE aggregate_snapshot (
-    tenant_id        UUID NOT NULL,
     aggregate_type   TEXT NOT NULL,
     aggregate_id     UUID NOT NULL,
     as_of_sequence   BIGINT NOT NULL,
     state            BYTEA NOT NULL,   -- protobuf-encoded materialized aggregate state
     created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
-    PRIMARY KEY (tenant_id, aggregate_type, aggregate_id, as_of_sequence)
+    PRIMARY KEY (aggregate_type, aggregate_id, as_of_sequence)
 );
 ```
 
@@ -70,7 +68,6 @@ Projections are plain, indexed-for-query Postgres tables (or ClickHouse for heav
 
 ```sql
 CREATE TABLE reconciliation_exception_projection (
-    tenant_id             UUID NOT NULL,
     exception_id          UUID NOT NULL,
     settlement_record_id   UUID NOT NULL,
     payment_intent_id      UUID NULL,       -- null until/unless manually matched
@@ -80,9 +77,9 @@ CREATE TABLE reconciliation_exception_projection (
     detected_at            TIMESTAMPTZ NOT NULL,
     resolved_at            TIMESTAMPTZ NULL,
     resolved_by_actor_id   UUID NULL,
-    PRIMARY KEY (tenant_id, exception_id)
+    PRIMARY KEY (exception_id)
 );
-CREATE INDEX recon_exc_status_idx ON reconciliation_exception_projection (tenant_id, status, detected_at);
+CREATE INDEX recon_exc_status_idx ON reconciliation_exception_projection (status, detected_at);
 ```
 
 ### 1.3 Non-Event-Sourced Service Schemas (Representative)
@@ -90,9 +87,9 @@ CREATE INDEX recon_exc_status_idx ON reconciliation_exception_projection (tenant
 For BC-01/02/03/13/14 (Tier-2-audited per Part 8 §5.1), tables are conventional normalized CRUD-plus-audit-log:
 
 ```sql
--- tenant-service (SVC-01)
-CREATE TABLE tenant (
-    tenant_id       UUID PRIMARY KEY,
+-- operator-management (SVC-01)
+CREATE TABLE operator (
+    operator_id     UUID PRIMARY KEY,
     legal_name      TEXT NOT NULL,
     trade_license_no TEXT NOT NULL,
     country         CHAR(2) NOT NULL DEFAULT 'AE',
@@ -103,7 +100,6 @@ CREATE TABLE tenant (
 -- iam-service (SVC-02)
 CREATE TABLE principal (
     principal_id    UUID PRIMARY KEY,
-    tenant_id       UUID NOT NULL REFERENCES tenant(tenant_id),
     principal_type  TEXT NOT NULL,  -- 'human' | 'api_key' | 'service'
     email           TEXT NULL,
     password_hash   TEXT NULL,      -- argon2id
@@ -113,16 +109,14 @@ CREATE TABLE principal (
 );
 
 CREATE TABLE role_assignment (
-    tenant_id       UUID NOT NULL,
     principal_id    UUID NOT NULL,
     role            TEXT NOT NULL,
     abac_conditions JSONB NOT NULL DEFAULT '{}',  -- e.g., {"max_refund_amount_minor": 500000}
-    PRIMARY KEY (tenant_id, principal_id, role)
+    PRIMARY KEY (principal_id, role)
 );
 
--- Tier 2 audit log (shared pattern across BC-01/02/03/13/14)
+-- Tier 2 audit log
 CREATE TABLE audit_log (
-    tenant_id       UUID NOT NULL,
     audit_id        UUID NOT NULL,
     actor_id        UUID NULL,
     action          TEXT NOT NULL,
@@ -130,7 +124,7 @@ CREATE TABLE audit_log (
     after_state      JSONB NULL,
     occurred_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
     source_ip        INET NULL,
-    PRIMARY KEY (tenant_id, audit_id)
+    PRIMARY KEY (audit_id)
 );
 ```
 
@@ -142,14 +136,13 @@ Connector credentials (Part 7 §2.2) are stored as:
 
 ```sql
 CREATE TABLE merchant_acquirer_link (
-    tenant_id            UUID NOT NULL,
     link_id               UUID NOT NULL,
     connector_id           TEXT NOT NULL,
     status                 TEXT NOT NULL,   -- Connected-Untested | Active | Disabled
     encrypted_config       BYTEA NOT NULL,   -- envelope-encrypted JSON blob (Part 8 §3 SEC-001)
     dek_wrapped            BYTEA NOT NULL,   -- the DEK, wrapped by platform KEK
     created_at             TIMESTAMPTZ NOT NULL DEFAULT now(),
-    PRIMARY KEY (tenant_id, link_id)
+    PRIMARY KEY (link_id)
 );
 ```
 
@@ -161,12 +154,11 @@ No column in this table ever holds a plaintext secret, satisfying CRED-001/ENC-0
 
 | Use | Key Pattern | TTL | Owning Service |
 |---|---|---|---|
-| Idempotency dedup (fast path, Part 5 §4.2 CONC-002) | `idem:{tenant_id}:{idempotency_key}` → payment_intent_id | 24h | `orchestration-service` |
-| Hot routing policy cache | `routing_policy:{tenant_id}:active` → serialized policy | Invalidated on `RoutingPolicyActivated`, not purely TTL-based | `orchestration-service` |
-| Session/permission cache | `perm:{tenant_id}:{principal_id}` → resolved role/ABAC set | 5 min or invalidated on `RoleAssigned` | `iam-service` |
-| API Gateway rate-limit counters | `ratelimit:{tenant_id}:{endpoint}:{window}` | Sliding window, short TTL | `api-gateway` |
-| Notification delivery dedup | `notif_sent:{tenant_id}:{notification_id}` | 7 days | `notification-service` |
-| AI Gateway per-tenant usage quota counters | `ai_quota:{tenant_id}:{period}` | Rolling per billing period | `ai-gateway` |
+| Idempotency dedup (fast path, Part 5 §4.2 CONC-002) | `idem:{idempotency_key}` → payment_intent_id | 24h | `orchestration-service` |
+| Hot routing policy cache | `routing_policy:active` → serialized policy | Invalidated on `RoutingPolicyActivated`, not purely TTL-based | `orchestration-service` |
+| Session/permission cache | `perm:{principal_id}` → resolved role/ABAC set | 5 min or invalidated on `RoleAssigned` | `iam-service` |
+| API Gateway rate-limit counters | `ratelimit:{endpoint}:{window}` | Sliding window, short TTL | `api-gateway` |
+| Notification delivery dedup | `notif_sent:{notification_id}` | 7 days | `notification-service` |
 
 - **REDIS-001**: Redis is treated as a performance/availability optimization layer only, never a system of record — every cache entry above has a durable Postgres (or event-store) source of truth it can be rebuilt from (Part 5 §4.2 CONC-002 principle applied platform-wide).
 
@@ -180,7 +172,6 @@ Append-only, denormalized, wide event tables optimized for the analytical query 
 
 ```sql
 CREATE TABLE payment_events (
-    tenant_id          UUID,
     event_type          LowCardinality(String),
     payment_intent_id   UUID,
     acquirer_id          LowCardinality(String),
@@ -192,8 +183,8 @@ CREATE TABLE payment_events (
     occurred_at            DateTime64(3),
     event_date             Date MATERIALIZED toDate(occurred_at)
 ) ENGINE = MergeTree
-PARTITION BY (toYYYYMM(event_date))
-ORDER BY (tenant_id, event_date, acquirer_id, card_scheme);
+PARTITION BY toYYYYMM(event_date)
+ORDER BY (event_date, acquirer_id, card_scheme);
 ```
 
 - **CH-001**: This table is populated by a dedicated NATS-consuming ingestion process within `analytics-service` (SVC-15) subscribing to the full domain event catalog (Part 3 §4), flattening each event into this wide-row shape — analytics never queries the transactional Postgres event stores directly, keeping the checkout-hot-path database isolated from heavy analytical query load (an explicit reliability requirement, not just a performance nicety).
@@ -203,15 +194,15 @@ ORDER BY (tenant_id, event_date, acquirer_id, card_scheme);
 CREATE MATERIALIZED VIEW auth_rate_hourly_mv
 ENGINE = SummingMergeTree
 PARTITION BY toYYYYMM(hour)
-ORDER BY (tenant_id, hour, acquirer_id, card_scheme)
+ORDER BY (hour, acquirer_id, card_scheme)
 AS
 SELECT
-    tenant_id, acquirer_id, card_scheme,
+    acquirer_id, card_scheme,
     toStartOfHour(occurred_at) AS hour,
     countIf(event_type = 'PaymentAuthorized') AS approved_count,
     countIf(event_type = 'PaymentFailed') AS declined_count
 FROM payment_events
-GROUP BY tenant_id, acquirer_id, card_scheme, hour;
+GROUP BY acquirer_id, card_scheme, hour;
 ```
 
 This same `auth_rate_hourly_mv`-style rollup is exactly the "summary document" source referenced in Part 6 §3.1 ING-001 for the AI Assistant's ingestion path, and (H3) the baseline data source for GOAL-010's anomaly detection (Part 6 §7).
@@ -220,9 +211,9 @@ This same `auth_rate_hourly_mv`-style rollup is exactly the "summary document" s
 
 ## 4. OpenSearch — Vector & Text Retrieval Index Design
 
-### 4.1 Tenant Partitioning Strategy
+### 4.1 Index Strategy
 
-- **OS-001**: Each tenant is provisioned a dedicated OpenSearch index (`rag_index_{tenant_id}`) rather than a shared index with a `tenant_id` filter field, directly implementing Part 6 §1 AI-P-002's requirement that tenant isolation be structural rather than query-time-filtered. This trades a larger number of indices (operationally managed via index templates and lifecycle policies) for a categorically stronger isolation guarantee.
+- **OS-001**: A single OpenSearch index (`rag_index`) is used for the RAG retrieval. The index is designed with strong field-level access control to ensure the operator can only query their own data.
 
 ### 4.2 Index Mapping (Representative)
 
@@ -252,12 +243,12 @@ This same `auth_rate_hourly_mv`-style rollup is exactly the "summary document" s
 
 | Bucket | Contents | Encryption | Retention |
 |---|---|---|---|
-| `kyb-evidence-{tenant_id}` | Trade licenses, ID documents, proof of address | Per-object KMS-backed (Part 8 §4.2 ENC-004) | Per AUD-001 floor (Part 8) |
-| `settlement-files-{tenant_id}` | Raw ingested settlement files (SFTP drops, scanned advices) | Per-object KMS-backed | Per AUD-001 floor |
-| `exported-reports-{tenant_id}` | Reconciliation report exports (UC-071) | Per-object KMS-backed | Per AUD-001 floor (audit reproducibility, BR-071-1) |
-| `document-uploads-{tenant_id}` | General merchant-uploaded documents (AI Assistant ad hoc, PROC-06) | Per-object KMS-backed | Configurable, shorter default unless linked to a compliance/financial record |
+| `kyb-evidence` | Trade licenses, ID documents, proof of address | Per-object KMS-backed (Part 8 §4.2 ENC-004) | Per AUD-001 floor (Part 8) |
+| `settlement-files` | Raw ingested settlement files (SFTP drops, scanned advices) | Per-object KMS-backed | Per AUD-001 floor |
+| `exported-reports` | Reconciliation report exports (UC-071) | Per-object KMS-backed | Per AUD-001 floor (audit reproducibility, BR-071-1) |
+| `document-uploads` | General operator-uploaded documents (AI Assistant ad hoc, PROC-06) | Per-object KMS-backed | Configurable, shorter default unless linked to a compliance/financial record |
 
-- **MINIO-001**: Bucket-per-tenant (rather than a shared bucket with prefix-based access control) mirrors the OS-001 rationale — categorical isolation over shared-with-filtering, wherever the operational overhead of per-tenant provisioning is acceptable (buckets are cheap to provision programmatically at tenant-onboarding time, UC-001).
+- **MINIO-001**: Single-bucket design with path-based organization (e.g., `kyb-evidence/license-001.pdf`) is simpler for single-tenant deployment. Access control is enforced at the application layer.
 
 ---
 
@@ -269,7 +260,6 @@ Every event-sourced service includes an `outbox` table alongside its `event_stor
 
 ```sql
 CREATE TABLE outbox (
-    tenant_id       UUID NOT NULL,
     outbox_id       UUID NOT NULL,
     aggregate_type  TEXT NOT NULL,
     aggregate_id    UUID NOT NULL,
@@ -278,10 +268,10 @@ CREATE TABLE outbox (
     payload         BYTEA NOT NULL,     -- same protobuf-encoded EventEnvelope as event_store
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
     published_at    TIMESTAMPTZ NULL,   -- set by the relay process after NATS publish confirms
-    PRIMARY KEY (tenant_id, outbox_id)
+    PRIMARY KEY (outbox_id)
 );
 
-CREATE INDEX outbox_unpublished_idx ON outbox (tenant_id, created_at) WHERE published_at IS NULL;
+CREATE INDEX outbox_unpublished_idx ON outbox (created_at) WHERE published_at IS NULL;
 ```
 
 - **DB-005**: The outbox entry is written in the SAME Postgres transaction as the `event_store` append (Part 3 OUTBOX-001). This guarantees that if the event is committed to Postgres, it will eventually be published to NATS — no events are silently lost.
@@ -295,7 +285,6 @@ CREATE INDEX outbox_unpublished_idx ON outbox (tenant_id, created_at) WHERE publ
 ```sql
 CREATE TABLE event_store_archive (
     -- identical schema to event_store (Part 9 §1.1)
-    tenant_id           UUID        NOT NULL,
     aggregate_type       TEXT        NOT NULL,
     aggregate_id         UUID        NOT NULL,
     event_sequence       BIGINT      NOT NULL,
@@ -309,7 +298,7 @@ CREATE TABLE event_store_archive (
     correlation_id       UUID        NOT NULL,
     payload              BYTEA       NOT NULL,
     archived_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
-    PRIMARY KEY (tenant_id, aggregate_type, aggregate_id, event_sequence)
+    PRIMARY KEY (aggregate_type, aggregate_id, event_sequence)
 );
 ```
 
@@ -318,36 +307,7 @@ CREATE TABLE event_store_archive (
 
 ---
 
-## 8. ClickHouse — Tenant Isolation Enhancement
-
-### 8.1 Tenant Partitioning
-
-- **CH-003**: For stronger query-level tenant isolation, `tenant_id` is added as a partition key in addition to `event_date`:
-
-```sql
--- Updated payment_events table
-CREATE TABLE payment_events (
-    tenant_id          UUID,
-    event_type          LowCardinality(String),
-    payment_intent_id   UUID,
-    acquirer_id          LowCardinality(String),
-    card_scheme          LowCardinality(String),
-    currency             LowCardinality(String),
-    amount_minor_units    Int64,
-    decline_reason        LowCardinality(String),
-    latency_ms            UInt32,
-    occurred_at            DateTime64(3),
-    event_date             Date MATERIALIZED toDate(occurred_at)
-) ENGINE = MergeTree
-PARTITION BY (toYYYYMM(event_date), tenant_id)
-ORDER BY (tenant_id, event_date, acquirer_id, card_scheme);
-```
-
-- **CH-004**: Partition-level isolation means ClickHouse physically separates tenant data at the storage layer, not just at the query layer. A query without a `tenant_id` filter scans only the metadata, not other tenants' data rows.
-
----
-
-## 9. Connection Pool Management
+## 8. Connection Pool Management
 
 ### 9.1 PgBouncer / Built-In Connection Pooling
 
@@ -357,7 +317,7 @@ ORDER BY (tenant_id, event_date, acquirer_id, card_scheme);
   - Idle timeout: 300 seconds
   - Max lifetime: 1800 seconds (prevents stale connections)
 
-- **POOL-002**: For multi-tenant workloads, the connection pool is shared across tenants within a service (tenant isolation is enforced at the query level via `tenant_id` in WHERE clauses, Part 4 MT-002, not at the connection level).
+- **POOL-002**: The connection pool is shared across all application processes (authorization is enforced at the query level via RBAC/ABAC (Part 8), not at the connection level).
 
 - **POOL-003**: Read-heavy services (`analytics-service`, `ai-assistant-service`) use read-replica Postgres connections for query operations, with the primary reserved for writes. Read-replica lag is monitored as a first-class metric (Part 11 OBS-004).
 

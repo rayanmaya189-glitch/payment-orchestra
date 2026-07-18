@@ -40,7 +40,6 @@
 | SVC-13 | `document-service` | BC-13 Document Management | Rust | PostgreSQL (metadata) + MinIO (blobs) |
 | SVC-14 | `notification-service` | BC-14 Notification Service | Rust | PostgreSQL + Redis (delivery dedup) |
 | SVC-15 | `analytics-service` | BC-15 Analytics & Reporting | Rust (ingestion) | ClickHouse |
-| SVC-16 | `marketplace-service` | BC-16 Marketplace/Sub-Merchant | Rust | PostgreSQL |
 | SVC-17 | `api-gateway` | Cross-cutting (not a bounded context) | Rust (Axum) | Redis (rate-limit counters only) |
 | SVC-18 | `ai-gateway` | Cross-cutting routing/guardrail layer in front of SVC-12 | Rust | Redis (rate limits), Postgres (guardrail audit log) |
 
@@ -56,8 +55,8 @@
 ### 2.1 Responsibilities
 
 - **GW-001**: Single ingress point for all external REST/gRPC-Web traffic (merchant dashboard, merchant server-to-server API calls, SDKs).
-- **GW-002**: TLS termination, request authentication (validates JWT/API-key issued by SVC-02 IAM), and tenant-context extraction attached to every downstream request (enforcing PRIN-03 from Part 3 — no request reaches a domain service without a resolved tenant context).
-- **GW-003**: Per-tenant and per-endpoint rate limiting (Redis-backed sliding window), protecting downstream services from noisy-neighbor tenants in the multi-tenant deployment.
+- **GW-002**: TLS termination, request authentication (validates JWT/API-key issued by SVC-02 IAM), and actor-context extraction attached to every downstream request — no request reaches a domain service without a resolved actor context.
+- **GW-003**: Per-endpoint rate limiting (Redis-backed sliding window), protecting downstream services from excessive request volume.
 - **GW-004**: Request routing to the correct backend service based on path/version (`/v1/payments/*` → SVC-05, `/v1/invoices/*` → SVC-06, etc.), with API versioning support (Part 10 defines the versioning policy in full).
 - **GW-005**: Webhook signature verification pass-through configuration is NOT done here — inbound acquirer webhooks land on SVC-04 (`connector-gateway`) directly via dedicated, acquirer-specific signed endpoints, since each acquirer has a different signature/verification scheme that belongs in the ACL, not the generic gateway.
 
@@ -71,12 +70,12 @@
 
 ### 3.1 Why a Separate Gateway from the General API Gateway
 
-The AI Gateway exists because AI-Assistant traffic has distinct requirements that would otherwise bloat SVC-17: prompt-injection guardrails, output-citation verification (BIZ-023), per-tenant AI-usage quota (a distinct commercial dimension from general API rate limits per BIZ-032), and routing to the correct model tier (Qwen3 32B for reasoning vs. Qwen3-VL 8B for document/vision tasks). Concentrating these concerns in SVC-18 keeps SVC-12 (`ai-assistant-service`) focused purely on RAG orchestration logic (detailed in Part 6).
+The AI Gateway exists because AI-Assistant traffic has distinct requirements that would otherwise bloat SVC-17: prompt-injection guardrails, output-citation verification (BIZ-023), AI-usage quota enforcement, and routing to the correct model tier (Qwen3 32B for reasoning vs. Qwen3-VL 8B for document/vision tasks). Concentrating these concerns in SVC-18 keeps SVC-12 (`ai-assistant-service`) focused purely on RAG orchestration logic (detailed in Part 6).
 
 ### 3.2 Responsibilities
 
 - **AIGW-001**: Route assistant requests to SVC-12; route document/vision-heavy requests specifically toward the Qwen3-VL 8B model pool vs. the Qwen3 32B reasoning pool (model selection policy, refined in Part 6).
-- **AIGW-002**: Enforce per-tenant AI usage quotas/tiers (commercial model support, BIZ-032).
+- **AIGW-002**: Enforce AI usage quotas/tiers (commercial model support).
 - **AIGW-003**: Apply input guardrails (basic prompt-injection pattern screening on user-supplied content that will be embedded in a RAG prompt, e.g., content pulled from uploaded documents) before it reaches the model — detailed guardrail design in Part 6.
 - **AIGW-004**: Log every AI request/response pair (with citations) to the guardrail audit log (Postgres) for compliance review (BIZ-023, BIZ-040 adjacent).
 - **AIGW-005**: Circuit-break to a graceful degradation response ("Assistant temporarily unavailable, here are the raw records") if the Ollama inference pool is unhealthy or over capacity, rather than queuing indefinitely and degrading the whole platform's perceived reliability.
@@ -166,9 +165,6 @@ Each domain service publishes its own `.proto` service definition (full contract
 ### 5.12 SVC-15 `analytics-service`
 - Pure event consumer across effectively all streams; writes append-only into ClickHouse; exposes read-only query endpoints for dashboards (UC-070) and report export (UC-071). Never receives direct write commands from users — all its data is derived.
 
-### 5.13 SVC-16 `marketplace-service`
-- Consulted synchronously by `orchestration-service` at routing time (via `SplitConfigurationActivated` state, cached) when a transaction is flagged as a marketplace/split transaction; integrates with the external licensed split-disbursement partner via its own ACL.
-
 ---
 
 ## 6. Scheduling & Background Jobs
@@ -184,11 +180,10 @@ For MVP, scheduling is implemented as in-process cron-style schedulers within th
 
 ---
 
-## 7. Multi-Tenancy Enforcement at the Service Layer
+## 7. Authentication & Authorization at the Service Layer
 
-- **MT-001**: Every gRPC request (internal, service-to-service) carries a `tenant_context` metadata field populated by API Gateway (§2) at ingress and propagated unchanged through every downstream hop — no service is permitted to "look up" a tenant from a body field for authorization purposes; only the propagated, gateway-verified context is trusted.
-- **MT-002**: Every database query in every service includes `tenant_id` in its `WHERE` clause via a shared Rust data-access macro/pattern (detailed in Part 9) — code review and automated lint rules (Part 11) enforce that no raw query bypasses this pattern.
-- **MT-003**: NATS subjects do not need per-tenant subject partitioning at the transport level (all tenants share the same subject namespace, e.g., `events.orchestration.payment_intent.payment_authorized.v1`), but every event payload's envelope (Part 3 §4) carries `tenant_id`, and every consumer's projection logic enforces tenant scoping when writing to its own store (defense in depth: transport-level sharing is fine because storage-level isolation is enforced downstream).
+- **AUTH-001**: Every gRPC request (internal, service-to-service) carries an `actor_context` metadata field populated by API Gateway (§2) at ingress and propagated unchanged through every downstream hop — no service is permitted to "look up" an actor from a body field for authorization purposes; only the propagated, gateway-verified context is trusted.
+- **AUTH-002**: Every database query in every service follows the application's access-control pattern (detailed in Part 8) — code review and automated lint rules (Part 11) enforce that no raw query bypasses authorization checks.
 
 ---
 
@@ -198,7 +193,7 @@ For MVP, scheduling is implemented as in-process cron-style schedulers within th
 
 - Each service in §1.1 is an independently deployable, independently scalable container. `orchestration-service` and `connector-gateway` are provisioned with the highest replica-count floor and tightest autoscaling responsiveness, since they sit on the checkout-latency-critical path.
 - `ai-assistant-service` and its Ollama inference backend are deployed on GPU-backed node pools, separate from the general CPU-only service mesh, with the `ai-gateway` mediating so that a spike in AI usage cannot starve GPU resources needed for anything else (there is nothing else GPU-bound at MVP, but this isolation is kept as a forward-looking discipline).
-- All services are deployed behind a service mesh providing mTLS between services (Part 8, zero-trust internal networking) — this is what makes MT-001's "trust only the propagated gateway context" claim enforceable rather than aspirational: services physically cannot be reached except through authenticated mesh identities.
+- All services are deployed behind a service mesh providing mTLS between services (Part 8, zero-trust internal networking) — this is what makes the "trust only the propagated gateway context" claim enforceable rather than aspirational: services physically cannot be reached except through authenticated mesh identities.
 
 ---
 
@@ -206,11 +201,9 @@ For MVP, scheduling is implemented as in-process cron-style schedulers within th
 
 | Requirement/Context | Realized By |
 |---|---|
-| BIZ-030 (tenant isolation) | §7 MT-001/002/003 |
 | BIZ-021 (self-hosted AI) | §3, §8 GPU-isolated `ai-assistant-service` deployment |
 | BIZ-023 (citable AI answers) | §3.2 AIGW-004 guardrail audit log |
 | BR-020-2 (bounded failover latency) | §4.1 synchronous gRPC choice for orchestration↔connector-gateway |
-| PRIN-03 (Part 3, structural tenant scoping) | §7 MT-002 |
 | BC-12 read-only Conformist (Part 3 §1.3) | §4.1 "direct read-model queries... never the write-model database" |
 
 ---

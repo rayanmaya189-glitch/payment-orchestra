@@ -25,7 +25,7 @@
 
 - **AUTH-001**: Email/password with mandatory MFA (TOTP or WebAuthn) for any role above read-only, enforced at `iam-service` (SVC-02).
 - **AUTH-002**: Session tokens are short-lived JWTs (access token) plus a longer-lived refresh token, both tenant- and principal-scoped; refresh tokens are revocable (stored server-side reference, not purely stateless) so a compromised session can be invalidated immediately — a pure stateless-refresh design was rejected specifically because it cannot be revoked before natural expiry, which is unacceptable for a financial-operations product.
-- **AUTH-003**: Password policy and MFA enrollment enforcement details (minimum length, breach-list checking) are configurable per tenant's security policy tier (ties to BIZ-032 tiered commercial model — higher tiers may mandate stricter policy).
+- **AUTH-003**: Password policy and MFA enrollment enforcement details (minimum length, breach-list checking) are configurable at the platform level.
 
 ### 1.2 Machine/API Clients (Merchant Server-to-Server)
 
@@ -34,7 +34,7 @@
 
 ### 1.3 Service-to-Service (Internal Mesh)
 
-- **AUTH-006**: mTLS via the service mesh (Part 4 §8) provides service identity; `iam-service`'s `ValidatePermission` call additionally carries the propagated tenant/principal context (Part 4 §7 MT-001) so that internal service identity (mesh certificate) and business-actor identity (the human/API-key principal on whose behalf the call is made) are both verifiable and distinct — a compromised service credential alone cannot impersonate an arbitrary tenant's principal without also forging the propagated context, which the mesh's mTLS design prevents from being injected except by the authenticated gateway.
+- **AUTH-006**: mTLS via the service mesh (Part 4 §8) provides service identity; `iam-service`'s `ValidatePermission` call additionally carries the propagated actor context (Part 4 §7) so that internal service identity (mesh certificate) and business-actor identity (the human/API-key principal on whose behalf the call is made) are both verifiable and distinct.
 
 ---
 
@@ -96,7 +96,7 @@ Default roles (extensible per tenant, Part 2 UC-001 step 5):
 
 | Tier | Applies To | Mechanism |
 |---|---|---|
-| Tier 1 — Event-sourced audit (source of truth) | BC-05, BC-08, BC-09, BC-10, BC-16 | The domain event stream itself (Part 3 §4 envelope: actor, timestamp, causation/correlation IDs) |
+| Tier 1 — Event-sourced audit (source of truth) | BC-05, BC-08, BC-09, BC-10 | The domain event stream itself (Part 3 §4 envelope: actor, timestamp, causation/correlation IDs) |
 | Tier 2 — Command/action audit log | BC-01, BC-02, BC-03, BC-13, BC-14, plus all AI Assistant interactions (Part 6 §3.2, §5) | Append-only audit table per service: actor, action, before/after state snapshot (where meaningful), timestamp, source IP/session |
 
 ### 5.2 Retention
@@ -127,7 +127,7 @@ Default roles (extensible per tenant, Part 2 UC-001 step 5):
 
 ## 7. Multi-Tenant Isolation — Security Testing Requirements (Preview, Full Detail in Part 11)
 
-- **SECTEST-001**: A dedicated cross-tenant isolation test suite (referenced already in Part 6 §6.2 for the AI Assistant specifically) must run against every release: automated attempts to access another tenant's data via every API surface, using deliberately similar/adjacent test fixtures across tenants to catch subtle leakage (e.g., off-by-one tenant-ID bugs, cache-key collisions).
+- **SECTEST-001**: A dedicated security isolation test suite must run against every release: automated attempts to access unauthorized data via every API surface, using role-violation test fixtures to catch authorization bypass (e.g., a Read-Only user attempting mutating operations, a Developer role attempting acquirer credential changes).
 - **SECTEST-002**: Periodic third-party penetration testing (cadence to be set in Part 11) covering the API Gateway, AI Gateway, and connector webhook endpoints specifically, given their exposure to untrusted/external input.
 - **SECTEST-003**: Static analysis and dependency vulnerability scanning integrated into CI/CD (Part 11) — Rust's memory-safety guarantees reduce but do not eliminate the need for this (logic-level vulnerabilities, e.g., authorization bypass, are not caught by memory safety).
 
@@ -137,7 +137,7 @@ Default roles (extensible per tenant, Part 2 UC-001 step 5):
 
 This Part is the authoritative home for the *security/compliance framing* of controls whose *mechanism* is detailed in Part 6:
 
-- **AISEC-001**: Tenant isolation of retrieval indices (Part 6 §1 AI-P-002) is a security control, validated by SECTEST-001's cross-tenant suite extended to include AI Assistant query paths specifically.
+- **AISEC-001**: Retrieval index access control is a security control, validated by SECTEST-001's security suite extended to include AI Assistant query paths specifically.
 - **AISEC-002**: The AI guardrail audit log (Part 4 §3.2 AIGW-004, Part 6 §3.2 step 6) is a Tier 2 audit mechanism (§5.1 above) and subject to the same retention floor (§5.2).
 - **AISEC-003**: Prompt-injection screening (Part 6 §5.1 GRD-IN-001) is treated as a security control subject to the same penetration-testing cadence as other externally-exposed input surfaces (§7 SECTEST-002).
 
@@ -145,8 +145,8 @@ This Part is the authoritative home for the *security/compliance framing* of con
 
 ## 9. Incident Response Posture (Preview)
 
-- **IR-001**: A documented incident response runbook (finalized in Part 11 operationally, but its existence is a compliance requirement recorded here) must cover: suspected credential compromise (tenant or platform-level), suspected cross-tenant data exposure, AI guardrail bypass patterns, and acquirer-side outage handling.
-- **IR-002**: Any confirmed cross-tenant data exposure or credential compromise affecting live payment credentials triggers a defined notification process to affected tenants and, where required by UAE regulatory/data-protection obligations, to relevant authorities — exact notification timelines and thresholds require legal counsel input (ties to Part 1 §6.4 pattern of flagging legal-dependent items rather than guessing at specifics).
+- **IR-001**: A documented incident response runbook (finalized in Part 11 operationally, but its existence is a compliance requirement recorded here) must cover: suspected credential compromise (platform-level), suspected data exposure, AI guardrail bypass patterns, and acquirer-side outage handling.
+- **IR-002**: Any confirmed data exposure or credential compromise affecting live payment credentials triggers a defined notification process to the affected operator and, where required by UAE regulatory/data-protection obligations, to relevant authorities.
 
 ---
 
@@ -159,7 +159,7 @@ This Part is the authoritative home for the *security/compliance framing* of con
 | **Spoofing** | API Gateway endpoints, webhook ingress | TLS + JWT/API-key auth (§1), webhook signature verification (Part 7), mTLS for internal traffic (§1.3 AUTH-006) |
 | **Tampering** | Payment intent amounts, routing policies | Event-sourcing immutability (PRIN-05), optimistic concurrency (Part 5 CONC-001), idempotency keys |
 | **Repudiation** | Configuration changes, money-movement events | Two-tier audit framework (§5), immutable event stream, `PermissionDenied` logging (§2.3 AUTHZ-001) |
-| **Information Disclosure** | Cross-tenant data leakage | Tenant-scoped queries (Part 4 MT-002), structural isolation (OS-001, MINIO-001), encrypted fields (§4), SECTEST-001 cross-tenant test suite |
+| **Information Disclosure** | Unauthorized data access | RBAC/ABAC enforcement (§2), encrypted fields (§4), SECTEST-001 security test suite |
 | **Denial of Service** | Checkout path, AI Assistant | Rate limiting (Part 4 GW-003, Part 10 RL-001), circuit breakers (Part 3 §9.3), GPU isolation (Part 4 K8S-002) |
 | **Elevation of Privilege** | RBAC bypass, ABAC threshold bypass | Permission validation on every request (Part 4 GW-002), ABAC enforcement at aggregate command level (§2.2 ABAC-001), step-up re-auth for sensitive actions (ABAC-002) |
 
@@ -202,7 +202,6 @@ This Part is the authoritative home for the *security/compliance framing* of con
 
 | Requirement | Realized By |
 |---|---|
-| BIZ-030 (tenant isolation) | §2.2 ABAC-003, §7 SECTEST-001 |
 | BIZ-040 (immutable audit) | §5 (both tiers), §5.3 AUD-003 |
 | BIZ-041 (data residency) | §6 table row 4 |
 | BIZ-042 (RBAC/ABAC, elevated-permission audit) | §2, §2.3 |

@@ -168,16 +168,7 @@ Extends 3.2 by re-weighting `candidates` using a rolling window (e.g., trailing 
 
 ---
 
-## 6. Marketplace-Split Addendum (BC-16 Integration, H2)
-
-When a `PaymentIntent` is flagged (at `CreatePaymentIntent` time, via a `split_configuration_id` reference) as a marketplace transaction:
-
-- **MKT-SPLIT-001**: Step 5 above (`connector-gateway` authorize call) additionally carries the active `SplitConfiguration` (from `marketplace-service`, SVC-16), which `connector-gateway`'s ACL translates into whatever the licensed split-disbursement partner's own API expects (this may mean the "acquirer" in this flow is actually the licensed partner's payment API, not a traditional card acquirer directly — Part 7 documents this per-partner).
-- **MKT-SPLIT-002**: Per Part 3 INV-09 and Part 2 EX-080a, if the licensed partner rejects the split configuration at authorization time, the engine does **not** fall back to processing the payment as a non-split, platform-held transaction — it either (a) fails the transaction outright, or (b) processes it as fully non-split *only if* the tenant has explicitly pre-configured that fallback behavior for their marketplace integration, making the fallback an explicit tenant choice rather than an implicit platform default (protects the no-custody boundary, Part 1 §6, from being silently violated under a "just make it work" implementation shortcut).
-
----
-
-## 7. Scheduled Consistency Jobs (Owned by `orchestration-service`)
+## 6. Scheduled Consistency Jobs (Owned by `orchestration-service`)
 
 - **JOB-007**: Authorization-expiry sweep — periodically scans `Authorized` `PaymentIntent`s whose acquirer authorization validity window (acquirer-specific, from BC-04 connector metadata) has passed without capture, and transitions them to `AuthorizationExpired` (Part 3 state machine, §2.1 above).
 - **JOB-008**: Stuck-`Authorizing` reconciliation — detects `PaymentIntent`s that have remained in `Authorizing` beyond an anomalous duration (indicating a lost/never-received acquirer response) and triggers a status-check call to the relevant acquirer (where supported) rather than leaving the intent in permanent limbo; this is the systematic version of the ad hoc EX-020b safeguard.
@@ -232,10 +223,7 @@ When an acquirer returns a partial authorization (approved for less than the req
 - **SUB-PAUSE-002**: Mid-cycle plan changes trigger proration: unused portion of current billing period is credited toward the new plan's first period.
 - **SUB-PAUSE-003**: Trial period logic is fully configurable: duration, trial amount, automatic conversion, and notification timing.
 
-### 9.7 Marketplace-Split Failure Mode Refinement
-
-- **MKT-SPLIT-003**: When the licensed partner rejects a split configuration, the engine logs a `SplitPaymentRejected` event with the normalized rejection reason for analytics.
-- **MKT-SPLIT-004**: The tenant-configured fallback behavior for split rejection is cached in Redis by `marketplace-service` to avoid synchronous lookup on every payment attempt.
+### 9.7 Scheduled Consistency Jobs (Renumbered from §6)
 
 ---
 
@@ -249,7 +237,6 @@ When an acquirer returns a partial authorization (approved for less than the req
 | BR-020-2 (latency budget) | §3.4 RTY-002, §8 NFR-ORC-001 |
 | EX-020b (double-auth on network partition) | §4.1 acquirer-facing idempotency, §7 JOB-008 |
 | BR-022-1 / INV-03 (refund same acquirer) | §1 `RefundPaymentIntent` guard |
-| EX-080a / INV-09 (no custody fallback on split failure) | §6 MKT-SPLIT-002 |
 | GOAL-009 (H3 smart routing) | §3.3 |
 | Partial authorization handling | §9.1 PARTIAL-AUTH-001, PARTIAL-AUTH-002 |
 | Currency precision (multi-decimal) | §9.2 CURRENCY-001 through CURRENCY-003 |
@@ -257,7 +244,6 @@ When an acquirer returns a partial authorization (approved for less than the req
 | Zero-amount authorization | §9.4 ZERO-AUTH-001, ZERO-AUTH-002 |
 | Max transaction amount validation | §9.5 MAX-AMT-001, MAX-AMT-002 |
 | Subscription pause/resume/proration | §9.6 SUB-PAUSE-001 through SUB-PAUSE-003 |
-| Marketplace split failure refinement | §9.7 MKT-SPLIT-003, MKT-SPLIT-004 |
 
 ---
 

@@ -22,17 +22,17 @@
 
 | Part | Title | Core Contribution |
 |---|---|---|
-| 1 | Vision, Business Requirements, Scope, Stakeholders | Why the product exists; BIZ-xxx register; the no-custody constraint |
-| 2 | Business Processes & Use Cases | UC-xxx catalog with full flows, tied to BIZ-xxx |
-| 3 | DDD & Bounded Contexts | 16 bounded contexts + Saga Coordinator (BC-17), 5 core aggregates + saga_instances, 22-event domain catalog + outbox pattern |
+| 1 | Vision, Business Requirements, Scope, Stakeholders | Why the product exists; BIZ-xxx register; the no-custody constraint; single-tenant deployment model |
+| 2 | Business Processes & Use Cases | UC-xxx catalog with full flows, tied to BIZ-xxx; operator onboarding lifecycle |
+| 3 | DDD & Bounded Contexts | 15 bounded contexts + Saga Coordinator (BC-17), core aggregates + saga_instances, domain event catalog + outbox pattern |
 | 4 | Microservice Architecture | 18-service catalog, API/AI Gateway, gRPC/NATS communication, outbox relay, circuit breakers, feature flags, graceful degradation framework |
 | 5 | Payment Orchestration Engine | State machine, routing algorithm, idempotency, marketplace-split addendum, partial auth handling, currency precision, subscription pause/resume |
 | 6 | AI Payment Assistant & RAG | Model routing, RAG pipeline, guardrails, evaluation harness, production quality monitoring, tool use (H2), multi-step reasoning (H2), enhanced prompt injection defense |
 | 7 | Gateway Connector Framework | ACL trait design, capability flags, decline normalization, settlement formats, circuit breakers, bulkhead isolation, per-connector retry config |
 | 8 | Identity, Security & Compliance | RBAC/ABAC, secrets/encryption, audit framework, UAE regulatory mapping, threat model (STRIDE), API key acquirer scoping, secrets rotation automation |
-| 9 | Database Design | Postgres/Redis/ClickHouse/OpenSearch/MinIO schemas, outbox table, event store archival, ClickHouse tenant partitioning, connection pooling |
+| 9 | Database Design | Postgres/Redis/ClickHouse/OpenSearch/MinIO schemas (single-tenant, no tenant_id columns), outbox table, event store archival, connection pooling |
 | 10 | APIs & gRPC Contracts | REST conventions, proto contracts, webhook contract, SDK strategy, gRPC service versioning, webhook replay protection, SDK deprecation/migration |
-| 11 | Testing, DevOps & Deployment | TDD standards, CI/CD, K8s topology, observability, DR, load testing, chaos engineering, canary deployment, expand-contract migrations |
+| 11 | Testing, DevOps & Deployment | TDD standards, CI/CD, K8s topology, observability, DR, load testing, chaos engineering, canary deployment, expand-contract migrations; single-tenant deployment model |
 | 12 | Appendices & Roadmap | This document |
 
 ---
@@ -44,13 +44,12 @@
 | Business Requirement (Part 1) | Use Case (Part 2) | Bounded Context / Aggregate (Part 3) | Microservice (Part 4) | Deep-Dive Part | Data Layer (Part 9) | API Surface (Part 10) | Test Gate (Part 11) |
 |---|---|---|---|---|---|---|---|
 | BIZ-010 (configurable routing) | UC-011 | BC-05 / `RoutingPolicy` (AGG-02) | `orchestration-service` (SVC-05) | Part 5 §3 | `event_store` (orchestration DB) | `/v1/routing-policies` | Unit tests on INV-05, E2E UC-011 |
-| BIZ-011 (no custody) | UC-080 (marketplace) | Structural absence of platform-owned-balance aggregate; BC-16 ACL | `marketplace-service` (SVC-16) | Part 5 §6 | `sub_merchant_account` tables | `/v1/sub-merchants` | Architecture review (no numeric test possible for an absence) |
+| BIZ-011 (no custody) | Structural absence of platform-owned-balance aggregate | Architecture review (no numeric test possible for an absence) |
 | BIZ-012 / GOAL-002 (failover) | UC-020 AF-020a | BC-05 / `PaymentIntent.RoutingAttempt` | `orchestration-service`, `connector-gateway` | Part 5 §3–5 | `event_store`, `payment_events` (ClickHouse) | `AuthorizePaymentIntent` gRPC/REST | E2E failover test, GOAL-002 metric dashboard |
 | BIZ-013 (unified reconciliation) | UC-040/041 | BC-09 / `SettlementBatch` | `reconciliation-service` (SVC-09) | Part 5 (settlement events consumed), Part 9 §1 | `event_store` (reconciliation DB), `reconciliation_exception_projection` | `/v1/reconciliation/exceptions` | Idempotent-ingestion property test (INV-06) |
-| BIZ-020/021/023 (AI Assistant) | UC-050 | BC-12 (read-only Conformist) | `ai-assistant-service` (SVC-12), `ai-gateway` (SVC-18) | Part 6 | OpenSearch per-tenant index, Postgres citation log | `/v1/assistant/query` | Top-50 eval suite, EVAL-001 regression gate |
-| BIZ-030 (tenant isolation) | (cross-cutting) | Shared kernel `TenantId`, PRIN-03 | All services, enforced at API Gateway | Part 4 §7 | Every table's `tenant_id` leading key | (cross-cutting header/context) | SECTEST-001 cross-tenant suite |
+| BIZ-020/021/023 (AI Assistant) | UC-050 | BC-12 (read-only Conformist) | `ai-assistant-service` (SVC-12), `ai-gateway` (SVC-18) | Part 6 | OpenSearch index, Postgres citation log | `/v1/assistant/query` | Top-50 eval suite, EVAL-001 regression gate |
 | BIZ-040 (immutable audit) | (cross-cutting) | Event sourcing (PRIN-05) + Tier 2 audit log | All services | Part 8 §5 | `event_store`, `audit_log` (DB-004 privilege-enforced) | (audit export endpoints, per-service) | COV-001 on event-sourced invariants |
-| BIZ-043 (KYB evidence, not decisioning) | UC-002 | BC-03 / `KybCase` | `compliance-service` (SVC-03) | Part 8 §6 | `kyb_case` tables, `kyb-evidence-{tenant_id}` MinIO bucket | `/v1/kyb-cases` | Integration test against partner ACL mock |
+| BIZ-043 (KYB evidence, not decisioning) | UC-002 | BC-03 / `KybCase` | `compliance-service` (SVC-03) | Part 8 §6 | `kyb_case` tables, `kyb-evidence` MinIO bucket | `/v1/kyb-cases` | Integration test against partner ACL mock |
 
 ---
 
@@ -79,7 +78,6 @@
 | ID | Description | Owner | Blocks |
 |---|---|---|---|
 | ASSUMP-001 / OQ-001 (Part 1 §6.4) | Confirm no-custody/licensing posture with UAE legal counsel per business model | Legal (STK-014) | Finalizing Part 5 marketplace-split behavior, GA launch |
-| OQ-002 (Part 1) | Confirm licensed split-disbursement partner for marketplace mode | Product/Legal | Part 5 §6, Part 16 (marketplace-service) implementation |
 | OQ-003 (Part 1) / OQ-016 (Part 7) | Confirm final MVP acquirer/PSP shortlist | Product (STK-007) | Part 7 connector implementation start |
 | OQ-004 (Part 1) | Confirm GPU/inference infrastructure budget | Product/Eng leadership | Part 6 model variant selection, Part 11 §6 benchmarking |
 | OQ-005 (Part 2) | Finalize dunning retry schedule defaults | Product | UC-031 final configuration defaults |
@@ -128,7 +126,7 @@
 | OQ-051 (Part 11) | Confirm chaos engineering tooling choice | Engineering/Infra | Part 11 §7.2 CHAOS-001 |
 | OQ-052 (Part 11) | Finalize database migration tooling | Engineering | Part 11 §7.4 MIG-002 |
 
-**Program management note**: Items with a Legal owner (ASSUMP-001/OQ-001, OQ-002, OQ-018, OQ-019) are the highest-priority blockers for GA. Items from the gap analysis (OQ-029 through OQ-052) represent new engineering decisions that should be resolved during M1–M2 to avoid blocking later milestones. Priority recommendation: resolve OQ-029 (saga persistence), OQ-030 (outbox relay), and OQ-031 (circuit breaker thresholds) before M2 implementation begins, as they are foundational patterns that affect multiple services.
+**Program management note**: Items with a Legal owner (ASSUMP-001/OQ-001, OQ-018, OQ-019) are the highest-priority blockers for GA. Items from the gap analysis (OQ-029 through OQ-052) represent new engineering decisions that should be resolved during M1–M2 to avoid blocking later milestones. Priority recommendation: resolve OQ-029 (saga persistence), OQ-030 (outbox relay), and OQ-031 (circuit breaker thresholds) before M2 implementation begins, as they are foundational patterns that affect multiple services.
 
 ---
 
@@ -151,9 +149,8 @@
 
 ### 5.2 Horizon 2 — GCC Expansion
 
-- Saudi Arabia adapter work (mada scheme, SAMA-relevant reporting) layered onto BC-04's connector framework (Part 7) and BC-09's reconciliation format handling (Part 9) — validates the "adapters, not redesign" claim from Part 1 §2.3 pillar 5.
+- Saudi Arabia adapter work (mada scheme, SAMA-relevant reporting) layered onto BC-04's connector framework (Part 7) and BC-09's reconciliation format handling (Part 9) — validates the "adapters, not redesign" claim from Part 1 §2.3 pillar 4.
 - Multi-currency reconciliation (BIZ-016) — extends `Money`/FX-provenance value objects (Part 3 PRIN-04).
-- Marketplace/sub-merchant orchestration (BIZ-017, Part 3 BC-16, Part 5 §6) — contingent on OQ-002 legal/partner resolution.
 
 ### 5.3 Horizon 3 — Platform Maturity
 

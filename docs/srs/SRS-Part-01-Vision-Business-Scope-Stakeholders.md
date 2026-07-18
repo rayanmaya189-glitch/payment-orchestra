@@ -18,7 +18,7 @@
 | Primary Region | United Arab Emirates (UAE) |
 | Expansion Regions | GCC (KSA, Bahrain, Oman, Kuwait, Qatar), broader MENA, selected APAC markets (future) |
 | Custody Model | **No payment custody** — software orchestration, routing, and reconciliation only. All funds flow between licensed acquirers, PSPs, and banks; the platform never becomes a holder of client/merchant funds. |
-| Tenancy Model | Multi-tenant SaaS, tenant-isolated data and configuration |
+| Tenancy Model | Single-tenant deployment (one merchant/operator per deployment) |
 | Architecture Style | API-first, Domain-Driven Design, Microservices, Event-Driven (NATS JetStream), CQRS |
 | Core Language/Runtime | Rust (all backend services) |
 | AI Stack | Ollama-hosted Qwen3 32B (reasoning), Qwen3-VL 8B (vision/OCR), BGE-M3 (embeddings) + reranker (RAG) |
@@ -38,11 +38,11 @@ This is Part 1 of a 12-part SRS series. Each part is self-contained but cross-re
 
 ## 1. Purpose of This Document
 
-This SRS defines the complete functional, non-functional, architectural, and operational requirements for a **multi-tenant, AI-native payment orchestration platform**. The platform enables merchants, platforms, and payment service providers operating in the UAE (with expansion to the wider GCC and MENA region) to:
+This SRS defines the complete functional, non-functional, architectural, and operational requirements for a **single-tenant, AI-native payment orchestration platform**. The platform enables a merchant, platform, or payment service provider operating in the UAE (with expansion to the wider GCC and MENA region) to:
 
 1. Accept, route, and reconcile payments across multiple acquirers, PSPs, and payment rails **without the platform ever holding merchant or customer funds**.
 2. Manage the full payment lifecycle — invoices, payment links, subscriptions, settlements — through a unified, API-first control plane.
-3. Interact with an **AI Payment Assistant** capable of answering operational questions, investigating transaction anomalies, drafting reports, and assisting with reconciliation using retrieval-augmented generation (RAG) over the tenant's own data.
+3. Interact with an **AI Payment Assistant** capable of answering operational questions, investigating transaction anomalies, drafting reports, and assisting with reconciliation using retrieval-augmented generation (RAG) over the operator's own data.
 4. Operate under UAE regulatory expectations (Central Bank of the UAE retail payment services regulation, AML/CFT obligations, data residency expectations) while retaining an architecture capable of expanding to additional jurisdictions without a rewrite.
 
 This Part 1 establishes **why** the system exists, **what** business outcomes it must produce, and **who** it serves. It intentionally avoids prescribing technical solutions (covered in Parts 3–11) except where the business requirement directly constrains architecture (e.g., "no custody" is a business/regulatory requirement with deep architectural consequences, so it is called out here and expanded technically later).
@@ -68,11 +68,10 @@ Merchants and platforms operating in the UAE and the region today face a fragmen
 
 ### 2.3 Product Vision Pillars
 
-1. **Orchestration, not custody.** The platform routes and coordinates payments across licensed, regulated providers. It never becomes a money transmitter or payment institution itself with respect to end-customer funds; all settlement of funds occurs directly between the merchant's acquirer/bank and the merchant (or between platform sub-merchants and the platform's regulated payment partner, where applicable). This is a foundational business and legal constraint, detailed in §6.
+1. **Orchestration, not custody.** The platform routes and coordinates payments across licensed, regulated providers. It never becomes a money transmitter or payment institution itself with respect to end-customer funds; all settlement of funds occurs directly between the merchant's acquirer/bank and the merchant. This is a foundational business and legal constraint, detailed in §6.
 2. **API-first, headless by default.** Every capability exposed in the dashboard must first exist as a versioned REST and gRPC API. The dashboard is a reference client, not the product boundary.
-3. **AI as a first-class operator, not a bolt-on chatbot.** The AI Payment Assistant is built on a RAG architecture directly over the tenant's own domain events, ledger entries, and reconciliation state, using locally-hosted models (Ollama + Qwen3 family) to preserve data residency and reduce dependency on third-party model providers for sensitive financial data.
-4. **Multi-tenant from the first line of code.** Every aggregate, every table, every cache key, every vector index is tenant-scoped. There is no "single-tenant mode" to retrofit later.
-5. **UAE-first, region-ready.** Domain models separate "core payment orchestration concepts" (currency-agnostic, rail-agnostic) from "jurisdictional adapters" (UAE Central Bank rules, AANI instant payment rail, VAT invoicing rules) so that adding Saudi Arabia (SAMA, mada, SARIE) or another GCC market is a matter of adding adapters, not redesigning bounded contexts.
+3. **AI as a first-class operator, not a bolt-on chatbot.** The AI Payment Assistant is built on a RAG architecture directly over the operator's own domain events, ledger entries, and reconciliation state, using locally-hosted models (Ollama + Qwen3 family) to preserve data residency and reduce dependency on third-party model providers for sensitive financial data.
+4. **UAE-first, region-ready.** Domain models separate "core payment orchestration concepts" (currency-agnostic, rail-agnostic) from "jurisdictional adapters" (UAE Central Bank rules, AANI instant payment rail, VAT invoicing rules) so that adding Saudi Arabia (SAMA, mada, SARIE) or another GCC market is a matter of adding adapters, not redesigning bounded contexts.
 
 ### 2.4 Product Vision — What This Product Is NOT
 
@@ -104,7 +103,6 @@ Business goals are grouped into three horizons. Each goal has an associated obje
 |---|---|---|
 | GOAL-006 | Add Saudi Arabia support | Support mada scheme routing and SAMA-relevant reporting adapters without modifying core orchestration domain model |
 | GOAL-007 | Multi-currency settlement reporting | Support multi-currency ledgers and FX-aware reconciliation across at least AED, SAR, USD |
-| GOAL-008 | Partner/platform (marketplace) support | Support sub-merchant / split-payment orchestration for marketplace and platform business models |
 
 ### 3.3 Horizon 3 — Platform Maturity
 
@@ -131,13 +129,12 @@ Business requirements are the "why" that drives functional requirements in later
 | ID | Requirement | Priority | Horizon |
 |---|---|---|---|
 | BIZ-010 | The platform must allow a tenant to connect multiple acquirers/PSPs and define routing rules (priority order, cost-based, success-rate-based) without any code change — configuration only. | Must | H1 |
-| BIZ-011 | The platform must never take custody of end-customer or merchant funds; all fund movement occurs directly between the acquirer/bank and the merchant's settlement account, or between a licensed payment institution partner and the merchant where sub-merchant models require it. | Must | H1 |
+| BIZ-011 | The platform must never take custody of end-customer or merchant funds; all fund movement occurs directly between the acquirer/bank and the merchant's settlement account. | Must | H1 |
 | BIZ-012 | The platform must support automatic failover to a secondary acquirer/PSP when the primary declines, times out, or is in a degraded state, according to tenant-configured rules. | Must | H1 |
 | BIZ-013 | The platform must provide a unified transaction ledger (read model) reconciling data from all connected acquirers against the tenant's internal order/invoice records. | Must | H1 |
 | BIZ-014 | The platform must support invoicing and payment-link generation as first-class products, not just raw transaction processing. | Must | H1 |
 | BIZ-015 | The platform must support recurring billing / subscription orchestration (retry logic for failed renewals, dunning workflows). | Must | H1 |
 | BIZ-016 | The platform must support multi-currency transactions with accurate FX recording for reconciliation (not FX conversion/settlement itself, which remains with licensed providers). | Should | H2 |
-| BIZ-017 | The platform must support marketplace/platform split-payment orchestration (routing a portion of a transaction to a sub-merchant) via licensed payment partner rails, without the platform itself holding the split funds. | Should | H2 |
 
 ### 4.2 AI & Intelligence Business Requirements
 
@@ -149,14 +146,14 @@ Business requirements are the "why" that drives functional requirements in later
 | BIZ-023 | The AI Assistant must be able to cite the specific transactions/events it used to produce an answer (auditability of AI output), not present unattributed conclusions. | Must | H1 |
 | BIZ-024 | The platform must support proactive anomaly detection and alerting (e.g., authorization rate drops, unusual decline patterns) as an evolution of the AI Assistant. | Could | H3 |
 
-### 4.3 Multi-Tenancy & Commercial Model Requirements
+### 4.3 Security & Operational Requirements
 
 | ID | Requirement | Priority | Horizon |
 |---|---|---|---|
-| BIZ-030 | The platform must support fully isolated multi-tenant operation: no tenant can access or infer another tenant's data under any normal or failure condition. | Must | H1 |
-| BIZ-031 | The platform must support tenant-level configuration of acquirers, routing rules, fee schedules, and branding (for payment links/invoices) without engineering involvement. | Must | H1 |
-| BIZ-032 | The platform must support a tiered commercial model (e.g., transaction-based pricing, subscription tiers for AI Assistant usage, add-on modules) — the domain model must not hard-code a single pricing scheme. | Should | H1 |
-| BIZ-033 | The platform must support reseller/partner tenancy (a partner manages multiple sub-tenant merchants) for platform/PayFac-adjacent business models, while preserving BIZ-011 (no custody). | Could | H2 |
+| BIZ-040 | The platform must maintain immutable audit logs of all configuration changes, routing decisions, and money-movement-relevant events, retained per UAE regulatory retention expectations (see Part 8 for specifics). | Must | H1 |
+| BIZ-041 | The platform must support data residency controls appropriate to UAE data protection expectations (PDPL) and, where applicable, sector-specific guidance for payment data. | Must | H1 |
+| BIZ-042 | The platform must support role-based and attribute-based access control so that sensitive operations (e.g., changing settlement bank details) require elevated permissions and produce audit trail entries. | Must | H1 |
+| BIZ-043 | The platform must support KYC/KYB evidence storage and status tracking for merchants (evidence storage and workflow only; the platform does not perform its own regulated KYC/KYB decisioning — this is delegated to a licensed partner or the tenant's own compliance process, unless/until the platform itself is licensed). | Must | H1 |
 
 ### 4.4 Compliance & Trust Requirements
 
@@ -208,11 +205,10 @@ Because of BIZ-011/CUST-001–003:
 
 - The **Payment Orchestration Engine** (Part 5) is modeled as a *state machine and router*, never as a *ledger of owned funds*. Its "ledger" is a reconciliation/read-model ledger, not a general ledger of the platform's own liabilities to merchants.
 - Settlement Service (Part 4/5) reconciles *bank/acquirer settlement files* against *internal order state*; it does not compute or hold "amount owed to merchant by platform," because the platform does not owe merchants funds — the acquirer/bank does.
-- Any future sub-merchant/marketplace split-payment feature (BIZ-017) must route splits through a licensed payment partner's split/disbursement API, not through an internal platform-owned pooled account.
 
 ### 6.4 Explicit Assumption Requiring Legal Sign-off
 
-**ASSUMP-001**: This SRS assumes UAE legal counsel will confirm, per specific tenant business model (straightforward merchant orchestration vs. marketplace/sub-merchant vs. reseller-of-payment-services), whether the "no custody, orchestration only" posture keeps the *platform operator* outside UAE Central Bank licensable categories. Where a specific tenant's business model requires the platform operator (not the tenant) to hold a license, that is a business/legal decision outside engineering scope, and the architecture in Part 5–8 must be extensible to a "licensed mode" without a full rewrite (i.e., the ledger and settlement bounded contexts should be designed so that "who legally owns the float" is a configuration/policy concern layered on top of the same event model, not baked into the aggregate design as "no custody, full stop, forever"). This is recorded here so it is not silently forgotten by the time Part 5 makes concrete modeling decisions.
+**ASSUMP-001**: This SRS assumes UAE legal counsel will confirm whether the "no custody, orchestration only" posture keeps the *platform operator* outside UAE Central Bank licensable categories. Where the platform operator's business model requires a license, that is a business/legal decision outside engineering scope, and the architecture must be extensible to a "licensed mode" without a full rewrite.
 
 ---
 
@@ -220,7 +216,7 @@ Because of BIZ-011/CUST-001–003:
 
 ### 7.1 In Scope (MVP / Horizon 1 unless marked H2/H3)
 
-- **SCOPE-001**: Multi-tenant merchant onboarding, KYC/KYB evidence workflow (not decisioning), tenant configuration.
+- **SCOPE-001**: Merchant onboarding, KYC/KYB evidence workflow (not decisioning), operator configuration.
 - **SCOPE-002**: Connector framework for acquirer/PSP integration (initially 3+ UAE-relevant providers) — see Part 7.
 - **SCOPE-003**: Payment orchestration: authorize, capture, void, refund, retry/failover routing — see Part 5.
 - **SCOPE-004**: Invoice generation and payment-link generation, including branded/hosted payment pages.
@@ -233,9 +229,6 @@ Because of BIZ-011/CUST-001–003:
 - **SCOPE-011**: Webhooks and SDKs for merchant/platform integration — see Part 10.
 - **SCOPE-012**: Fraud/risk scoring signals surfaced to merchants (initially rule-based/heuristic; ML-based risk scoring is H2/H3) — see Part 5/6.
 - **SCOPE-013 (H2)**: Multi-currency reconciliation, GCC expansion adapters (Saudi Arabia first).
-- **SCOPE-014 (H2)**: Marketplace/sub-merchant split-payment orchestration via licensed partner rails.
-- **SCOPE-015 (H3)**: Predictive/smart routing based on historical authorization-rate analytics.
-- **SCOPE-016 (H3)**: Proactive AI-driven anomaly detection and alerting.
 
 ### 7.2 Out of Scope (explicitly, for this SRS and the foreseeable roadmap)
 
@@ -260,10 +253,9 @@ Because of BIZ-011/CUST-001–003:
 
 | ID | Stakeholder | Category | Primary Interest |
 |---|---|---|---|
-| STK-001 | Merchant Finance/Ops Team | External — Tenant User | Fast, accurate reconciliation; clear settlement visibility; fewer manual spreadsheets |
-| STK-002 | Merchant Engineering Team | External — Tenant User | Clean API-first integration, reliable webhooks, good SDKs |
-| STK-003 | Merchant Business Owner / Founder | External — Tenant Decision-Maker | Revenue recovery via failover, cost transparency, trust/compliance assurance |
-| STK-004 | Platform/Marketplace Operator (H2 persona) | External — Tenant (Reseller) | Sub-merchant orchestration, split payments, partner-level reporting |
+| STK-001 | Merchant Finance/Ops Team | External — Operator User | Fast, accurate reconciliation; clear settlement visibility; fewer manual spreadsheets |
+| STK-002 | Merchant Engineering Team | External — Operator User | Clean API-first integration, reliable webhooks, good SDKs |
+| STK-003 | Merchant Business Owner / Founder | External — Operator Decision-Maker | Revenue recovery via failover, cost transparency, trust/compliance assurance |
 | STK-005 | Acquirer/PSP Partner | External — Integration Partner | Stable, well-documented connector integration; clear settlement file formats |
 | STK-006 | UAE Regulator (Central Bank of the UAE) | External — Regulatory | Compliance with retail payment services regulation, AML/CFT, data residency |
 | STK-007 | Platform Product Management | Internal | Feature prioritization, roadmap alignment with business goals (§3) |
@@ -281,8 +273,7 @@ Because of BIZ-011/CUST-001–003:
 |---|---|---|
 | STK-001 (Finance/Ops) | Reconciliation automation, unified ledger view | BIZ-013, BIZ-016 |
 | STK-002 (Merchant Eng) | API-first, webhooks, SDKs | SCOPE-011 (detailed in Part 10) |
-| STK-003 (Business Owner) | Failover/revenue recovery, transparent fees | BIZ-012, BIZ-032 |
-| STK-004 (Platform Operator) | Sub-merchant orchestration | BIZ-017, BIZ-033 |
+| STK-003 (Business Owner) | Failover/revenue recovery, transparent fees | BIZ-012 |
 | STK-006 (Regulator) | Audit trail, data residency, KYC/KYB evidence | BIZ-040, BIZ-041, BIZ-043 |
 | STK-009 (AI/ML Team) | Grounded, citable AI answers on self-hosted infra | BIZ-020, BIZ-021, BIZ-023 |
 | STK-010 (Security/Compliance) | RBAC/ABAC, immutable logs | BIZ-042, BIZ-040 |
@@ -306,7 +297,6 @@ Brief personas are introduced here because they justify business requirements; f
 
 - **Persona: "Fatima, Finance Operations Lead"** at a mid-size UAE e-commerce merchant. Needs daily reconciliation confidence and monthly close automation. Primary consumer of BIZ-013, BIZ-016, and the AI Assistant's reconciliation Q&A.
 - **Persona: "Rashid, Head of Engineering"** at a merchant integrating the platform. Needs stable APIs, sandbox environment, clear webhook semantics, idempotency guarantees. Primary consumer of SCOPE-011 and Part 10.
-- **Persona: "Aisha, Marketplace Operator"** running a multi-vendor platform (H2 persona). Needs sub-merchant onboarding and split-payment routing without becoming a fund custodian herself. Primary consumer of BIZ-017, BIZ-033.
 - **Persona: "Omar, Compliance Officer"** at the platform operator (internal stakeholder acting on behalf of STK-010/STK-014). Needs audit completeness and defensible "no custody" posture documentation. Primary consumer of BIZ-040–043 and §6.
 
 ---
@@ -316,14 +306,14 @@ Brief personas are introduced here because they justify business requirements; f
 ### 10.1 Assumptions
 
 - **ASSUMP-001**: See §6.4 (custody/licensing legal confirmation, per tenant business model).
-- **ASSUMP-002**: Tenants will hold their own merchant acquiring relationships (or use a licensed payment-institution partner for sub-merchant models); the platform does not need to become a party to card scheme rules directly.
+- **ASSUMP-002**: The operator will hold their own merchant acquiring relationships; the platform does not need to become a party to card scheme rules directly.
 - **ASSUMP-003**: Self-hosted model inference (Ollama + Qwen3 32B / Qwen3-VL 8B) is assumed to provide acceptable latency and quality for the AI Assistant's operational use cases at MVP scale; a fallback/upgrade path (larger models, additional GPU capacity) is assumed to be available if quality benchmarks (Part 6) are not met.
 - **ASSUMP-004**: UAE data residency expectations can be satisfied by hosting the full stack (Postgres, Redis, ClickHouse, OpenSearch, MinIO, Ollama) within UAE-region cloud/data-center infrastructure; specific provider selection is a Part 9/Part 11 concern.
 
 ### 10.2 Dependencies
 
 - **DEP-001**: Availability and API stability of at least 3 UAE acquirer/PSP partners for MVP connector development (Part 7).
-- **DEP-002**: Legal/compliance sign-off per §6.4 before GA launch in any new business-model configuration (e.g., before enabling marketplace/sub-merchant mode).
+- **DEP-002**: Legal/compliance sign-off per §6.4 before GA launch.
 - **DEP-003**: GPU/inference infrastructure capacity for Ollama-hosted models (Qwen3 32B, Qwen3-VL 8B) sized per Part 11 performance/scalability targets.
 - **DEP-004**: Bank/acquirer settlement file formats and delivery mechanisms (SFTP, API, webhook) must be documented per partner for the Reconciliation Engine (Part 5/9).
 
@@ -331,7 +321,7 @@ Brief personas are introduced here because they justify business requirements; f
 
 - **CONS-001**: All backend services must be implemented in Rust (organizational technology constraint).
 - **CONS-002**: All domain logic must be developed test-first (TDD) — see Part 11 for standards; this is a process constraint that affects estimation and delivery cadence, recorded here because it is a business decision (quality/maintainability trade-off), not merely a technical preference.
-- **CONS-003**: The platform must not, in its base architecture, require a payment institution license for the platform operator (see §6, §6.4) — this constrains certain product features (e.g., BIZ-017 marketplace splits) to route through licensed partners rather than internal pooled accounts.
+- **CONS-003**: The platform must not, in its base architecture, require a payment institution license for the platform operator (see §6, §6.4) — all fund movement must route through licensed partners rather than internal pooled accounts.
 - **CONS-004**: Primary data residency is UAE; architecture must not assume a single global region deployment (Part 9/11 will define region-aware deployment topology).
 
 ---
@@ -343,7 +333,7 @@ High-level program success criteria (detailed, measurable acceptance criteria pe
 - **SUCC-001**: At GA, at least 3 acquirer/PSP integrations are live and passing end-to-end reconciliation tests in production for at least one pilot merchant.
 - **SUCC-002**: Automated failover recovers a measurable percentage (target range in GOAL-002) of transactions that would otherwise fail on a single-provider setup, validated with real pilot merchant traffic.
 - **SUCC-003**: The AI Assistant answers the "top 50" defined operational questions (final list in Part 6) with accuracy validated by a human QA review process before GA, and every answer is traceable to source events/records.
-- **SUCC-004**: Zero cross-tenant data leakage findings in a pre-GA multi-tenant isolation security review (Part 8).
+- **SUCC-004**: Zero data leakage findings in a pre-GA security review (Part 8).
 - **SUCC-005**: 100% of money-movement-relevant domain events are captured in the immutable audit log with no gaps identified in a pre-GA audit trail completeness review.
 
 ---
@@ -365,10 +355,9 @@ High-level program success criteria (detailed, measurable acceptance criteria pe
 
 These must be resolved (or explicitly deferred with owner and date) before the Payment Orchestration Engine domain model (Part 5) is finalized, since they affect aggregate boundaries:
 
-1. **OQ-001**: Confirm with UAE legal counsel whether the base "orchestration only, no custody" model requires any platform-operator license for the MVP merchant-direct use case (non-marketplace). Owner: STK-014. 
-2. **OQ-002**: For the H2 marketplace/sub-merchant model (BIZ-017), confirm which licensed partner(s) will provide the split-disbursement rail, since the domain model for "split payment" must be designed against a real partner API contract, not a generic assumption. Owner: STK-007/STK-014.
-3. **OQ-003**: Confirm final list of MVP acquirer/PSP partners (DEP-001) so Part 7 (Gateway Connector Framework) can be scoped against real API documentation rather than generic assumptions.
-4. **OQ-004**: Confirm target GPU/inference infrastructure budget and availability (DEP-003), since this materially affects which Qwen3 model variants/quantizations are feasible at target latency (to be finalized in Part 6 and Part 11).
+1. **OQ-001**: Confirm with UAE legal counsel whether the base "orchestration only, no custody" model requires any platform-operator license for the MVP. Owner: STK-014. 
+2. **OQ-003**: Confirm final list of MVP acquirer/PSP partners (DEP-001) so Part 7 (Gateway Connector Framework) can be scoped against real API documentation rather than generic assumptions.
+3. **OQ-004**: Confirm target GPU/inference infrastructure budget and availability (DEP-003), since this materially affects which Qwen3 model variants/quantizations are feasible at target latency (to be finalized in Part 6 and Part 11).
 
 ---
 

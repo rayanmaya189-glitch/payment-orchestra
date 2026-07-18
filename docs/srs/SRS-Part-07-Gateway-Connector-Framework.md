@@ -64,7 +64,6 @@ pub struct ConnectorCapabilities {
     pub supports_native_idempotency_key: bool,     // else engine uses status-check-before-retry (Part 5 §4.1)
     pub supports_webhook_settlement: bool,          // vs. polling-only or file-drop-only
     pub supports_realtime_status_check: bool,
-    pub supports_marketplace_split: bool,           // relevant to BC-16 (Part 3/5 §6)
     pub supported_card_schemes: Vec<CardScheme>,
     pub supported_currencies: Vec<CurrencyCode>,
     pub settlement_format: SettlementFormat,        // Webhook | PollingApi | SftpFile | ScannedDocument

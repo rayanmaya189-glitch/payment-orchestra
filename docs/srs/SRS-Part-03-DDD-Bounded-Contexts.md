@@ -31,7 +31,7 @@ This platform is modeled using **strategic DDD** (context mapping, ubiquitous la
 
 | ID | Bounded Context | Type | Consistency Model |
 |---|---|---|---|
-| BC-01 | Tenant Management | Core Supporting | Strongly consistent (Postgres, transactional) |
+| BC-01 | Operator Management | Core Supporting | Strongly consistent (Postgres, transactional) |
 | BC-02 | Identity & Access (IAM) | Generic Supporting | Strongly consistent |
 | BC-03 | Merchant Compliance (KYB) | Core Supporting | Strongly consistent + async partner integration |
 | BC-04 | Gateway Connector Framework | Core (Anti-Corruption Layer) | Strongly consistent, adapter pattern |
@@ -46,7 +46,6 @@ This platform is modeled using **strategic DDD** (context mapping, ubiquitous la
 | BC-13 | Document Management | Generic Supporting | Strongly consistent metadata, object storage for blobs |
 | BC-14 | Notification Service | Generic Supporting | Eventually consistent, at-least-once delivery |
 | BC-15 | Analytics & Reporting | Generic Supporting | Eventually consistent (ClickHouse), append-only |
-| BC-16 | Marketplace / Sub-Merchant (H2) | Core Supporting | Strongly consistent, ACL to licensed partner |
 | BC-17 | Saga Coordinator | Cross-Cutting Infrastructure | Durable state machine, Postgres-backed |
 
 ### 1.2 Context Map — Relationships
@@ -74,10 +73,10 @@ Using standard DDD context-mapping patterns (Partnership, Customer/Supplier, Con
               ▼
         (no outbound writes except via owning context's command API)
 
- [BC-01 Tenant Management] ── Shared Kernel (Tenant ID, Tenant status) ── ALL contexts
- [BC-02 Identity & Access]  ── Shared Kernel (Principal, Role, Permission) ── ALL contexts
+ [BC-01 Operator Management] ── provides identity context ── ALL contexts
+ [BC-02 Identity & Access]  ── provides authentication/authorization context ── ALL contexts
  [BC-03 Merchant Compliance] ──ACL──> External KYB Partner API
- [BC-16 Marketplace] ──ACL──> External Licensed Split-Disbursement Partner
+```
  [BC-13 Document Management] ── Open Host Service (upload/fetch/OCR-trigger API) ── BC-03, BC-09, BC-12
  [BC-14 Notification Service] ── Open Host Service (send notification API) ── BC-05, BC-06, BC-08, BC-10
 ```
@@ -87,7 +86,7 @@ Using standard DDD context-mapping patterns (Partnership, Customer/Supplier, Con
 - **BC-04 (Gateway Connector Framework) is deliberately separated from BC-05 (Payment Orchestration)** even though they are tightly related, because BC-04's entire reason to exist is translating N different acquirer APIs into one normalized internal protocol (the Anti-Corruption Layer pattern). Merging them would leak acquirer-specific concepts (e.g., a specific PSP's proprietary decline code taxonomy) into the core orchestration domain model, violating BIZ-010's requirement that routing be configurable without code change per acquirer.
 - **BC-09 (Settlement & Reconciliation) is separate from BC-05 (Payment Orchestration)** because they have fundamentally different temporal characteristics: orchestration is synchronous/near-real-time (seconds), reconciliation is batch/asynchronous (settlement files arrive hours to days later) and reasons over a different aggregate root (`SettlementBatch` vs `PaymentIntent`). Conflating them would force the orchestration hot path to carry reconciliation-batch complexity it doesn't need.
 - **BC-12 (AI Payment Assistant) is modeled as a read-only Conformist** against every other context specifically so that the "no unauthorized AI-driven money movement" guardrail (BR-041-1, BR-050-1 from Part 2) is a *structural* property of the architecture, not merely a prompt-level instruction to the model. The AI service has no command API for money-movement contexts in its dependency graph — this is enforced at the network/service-mesh level in Part 4, not just documented here.
-- **BC-16 (Marketplace) is separate from BC-05** because its entire existence is conditional (H2, only for platform/reseller tenants) and because it must integrate with an external licensed partner for actual fund splitting (Part 1 §6.4) — keeping it a distinct context means the core BC-05 model never has to represent "split" as a first-class concept, preserving BC-05's applicability to the simpler majority of MVP tenants (direct merchants).
+- **BC-12 (AI Payment Assistant) is modeled as a read-only Conformist** against every other context specifically so that the "no unauthorized AI-driven money movement" guardrail is a *structural* property of the architecture, not merely a prompt-level instruction to the model.
 
 ---
 
@@ -97,16 +96,15 @@ A full glossary appendix will be assembled in Part 12; the terms below are those
 
 | Term | Definition | Owning Context |
 |---|---|---|
-| **Tenant** | A registered organization (merchant or platform operator) using the platform under its own isolated data/config boundary. | BC-01 |
-| **Merchant Acquirer Link** | A configured, credentialed connection between a tenant and a specific acquirer/PSP. | BC-04 |
+| **Operator** | The registered organization (merchant or platform operator) using the platform. | BC-01 |
+| **Merchant Acquirer Link** | A configured, credentialed connection between the operator and a specific acquirer/PSP. | BC-04 |
 | **Routing Policy** | The active, versioned set of rules determining which acquirer(s) a `PaymentIntent` is routed to, and in what fallback order. | BC-05 |
 | **Payment Intent** | The aggregate root representing a single attempted payment through its full lifecycle (Created → Authorized → Captured/Failed/Refunded). | BC-05 |
 | **Settlement Record** | A normalized representation of a single settled-transaction line from an acquirer's settlement file/webhook. | BC-09 |
 | **Settlement Batch** | The aggregate root representing one ingested settlement file/batch and its matching outcome against `PaymentIntent`s. | BC-09 |
 | **Reconciliation Exception** | A `SettlementRecord` that could not be automatically matched to a `PaymentIntent`. | BC-09 |
 | **Chargeback Case** | The aggregate root tracking a dispute from receipt through representment to final outcome. | BC-10 |
-| **Sub-Merchant Account** | A merchant onboarded under a Platform/Marketplace Operator tenant, with its own KYB and split-payment configuration. | BC-16 |
-| **Grounding Context (RAG)** | The retrieved set of tenant-scoped documents/events assembled to ground an AI Assistant answer. | BC-12 |
+| **Grounding Context (RAG)** | The retrieved set of documents/events assembled to ground an AI Assistant answer. | BC-12 |
 | **Custody** | Legal/economic control over funds. The platform, by design (Part 1 §6), never acquires custody of merchant/customer funds in any bounded context. | Cross-cutting (Part 1) |
 
 ---
@@ -172,15 +170,6 @@ For each core-domain bounded context, this section defines: purpose, aggregates 
 - **Invariants**: **INV-08**: A `ChargebackCase` must always reference exactly one `PaymentIntent` and cannot be created for a `PaymentIntent` that was never `Captured`.
 - **Domain Events**: `EVT-17 ChargebackReceived`, `EVT-18 RepresentmentSubmitted`, `EVT-19 ChargebackResolved`.
 
-### 3.4 BC-16 — Marketplace / Sub-Merchant (H2)
-
-#### AGG-05: `SubMerchantAccount` (Aggregate Root)
-
-- **Entities**: `SplitConfiguration` (versioned, per sub-merchant).
-- **Value Objects**: `SplitPercentage` / `SplitFixedAmount`, `LicensedPartnerReference` (opaque reference to the external partner's own sub-merchant/disbursement account — the ACL boundary artifact for this context, mirroring `AcquirerReference` in BC-05).
-- **Invariants**: **INV-09**: A `SubMerchantAccount` cannot be used in a live split transaction until its own KYB status (via BC-03) is `Approved` *and* the licensed partner confirms its own sub-merchant account is active (dual-approval gate — EX-080a in Part 2).
-- **Domain Events**: `EVT-20 SubMerchantOnboarded`, `EVT-21 SplitConfigurationActivated`, `EVT-22 SplitPaymentRouted`.
-
 ---
 
 ## 4. Domain Event Catalog (Consolidated)
@@ -190,7 +179,6 @@ All domain events are versioned, immutable, tenant-scoped, and published to NATS
 ```
 EventEnvelope {
   event_id: ULID
-  tenant_id: TenantId
   aggregate_type: string
   aggregate_id: string
   event_type: string
@@ -224,9 +212,6 @@ EventEnvelope {
 | EVT-17 | ChargebackReceived | BC-10 | BC-14, BC-15, BC-12 |
 | EVT-18 | RepresentmentSubmitted | BC-10 | BC-15 |
 | EVT-19 | ChargebackResolved | BC-10 | BC-06 (funds impact note), BC-15 |
-| EVT-20 | SubMerchantOnboarded | BC-16 | BC-15 |
-| EVT-21 | SplitConfigurationActivated | BC-16 | BC-05 (consulted at routing time) |
-| EVT-22 | SplitPaymentRouted | BC-16 | BC-09, BC-15 |
 
 *(Supporting-context events — Tenant lifecycle, IAM role changes, KYB status changes, notification delivery, document upload/OCR completion — are cataloged in §5 alongside their owning contexts, to keep this table focused on money-movement-relevant events per BIZ-040's audit priority.)*
 
@@ -234,9 +219,9 @@ EventEnvelope {
 
 ## 5. Supporting & Generic Bounded Contexts (Brief)
 
-### 5.1 BC-01 — Tenant Management
-- **Aggregate**: `Tenant` (root), entities: `TenantMember`. Events: `TenantRegistered`, `TenantVerified`, `TenantSuspended`.
-- Owns tenant status used as a **shared kernel value** (`TenantId`, `TenantStatus`) referenced (read-only) by every other context.
+### 5.1 BC-01 — Operator Management
+- **Aggregate**: `Operator` (root), entities: `OperatorMember`. Events: `OperatorRegistered`, `OperatorVerified`, `OperatorSuspended`.
+- Owns operator identity used across all contexts (single-tenant, so operator context is implicit but still modeled for lifecycle management).
 
 ### 5.2 BC-02 — Identity & Access (IAM)
 - **Aggregate**: `Principal` (root — represents a human user or a service account), entities: `RoleAssignment`. Value objects: `Permission`, `Role` (RBAC), `AttributeCondition` (ABAC, e.g., "can approve reconciliation exceptions only up to X amount" — ties to OQ-006, Part 2).
@@ -276,9 +261,9 @@ EventEnvelope {
 
 - **PRIN-01 (Consistency boundary = transaction boundary)**: Each aggregate is the sole authority for its own invariants; a single command can mutate exactly one aggregate instance transactionally. Cross-aggregate effects happen via domain events consumed asynchronously (never a distributed transaction spanning two aggregates).
 - **PRIN-02 (Small aggregates)**: Aggregates are kept as small as correctness allows (e.g., `PaymentIntent` does not embed `Invoice` — they reference each other by ID) to minimize contention and keep event streams focused.
-- **PRIN-03 (Tenant scoping is structural, not incidental)**: Every aggregate ID is a composite/prefixed key that includes `tenant_id`; no repository method exists that can load an aggregate without a tenant context in scope (enforced at the Rust type-system level in Part 4 — a `TenantScoped<T>` wrapper type that cannot be constructed without an authenticated tenant context).
+- **PRIN-03 (Identity-based aggregate access)**: Every aggregate is identified by a unique ID (ULID); no aggregate can be loaded without providing its specific ID (enforced at the Rust type-system level in Part 4).
 - **PRIN-04 (Money is never a float)**: All `Money` value objects use integer minor-unit representation; currency conversion, where it appears at all (BIZ-016), is always an explicit, recorded operation producing a new `Money` value with provenance (rate, source, timestamp), never an implicit cast.
-- **PRIN-05 (Events are the audit log; there is no separate bolt-on audit table for event-sourced contexts)**: For BC-05, BC-09, BC-10, BC-08, BC-16, the event stream *is* the audit trail (BIZ-040). For non-event-sourced supporting contexts (BC-01, BC-02, BC-13, BC-14), a lighter-weight append-only audit log table captures command execution (actor, timestamp, before/after) without full event sourcing overhead, since replay/rebuild-from-events is not a requirement for those contexts.
+- **PRIN-05 (Events are the audit log; there is no separate bolt-on audit table for event-sourced contexts)**: For BC-05, BC-09, BC-10, BC-08, the event stream *is* the audit trail (BIZ-040). For non-event-sourced supporting contexts (BC-01, BC-02, BC-13, BC-14), a lighter-weight append-only audit log table captures command execution (actor, timestamp, before/after) without full event sourcing overhead, since replay/rebuild-from-events is not a requirement for those contexts.
 
 ---
 
@@ -296,7 +281,6 @@ EventEnvelope {
 |---|---|---|---|
 | Acquirer Connector ACL | BC-05's domain model | Each connected acquirer/PSP | Part 7 |
 | KYB Partner ACL | BC-03's domain model | External KYB/AML decisioning API | Part 8 |
-| Split-Disbursement Partner ACL | BC-16's domain model | Licensed marketplace-split partner | Part 5 (marketplace addendum) |
 | Bank Settlement File ACL | BC-09's domain model | Bank/acquirer settlement file formats (varied) | Part 9 |
 
 ---
@@ -322,13 +306,12 @@ The SRS describes event-driven cross-service coordination but never explicitly d
 | SAGA-03 | Reconciliation Resolution Saga | `ResolveReconciliationException` | Match → Confirm → Update settlement status | Undo match on confirmation failure |
 | SAGA-04 | Invoice Payment Saga | `InvoiceSent` + payment completion | Create intent → Authorize → Capture → Update invoice | Void intent if invoice cancelled mid-flow |
 
-**Implementation Rule (SAGA-001)**: Each saga is modeled as a durable state machine persisted in its own Postgres `saga_instances` table, keyed by `tenant_id` + `saga_id`. Saga state transitions are recorded as events in a dedicated `saga_events` stream, providing audit trails consistent with PRIN-05. No saga relies on in-memory state — crash recovery replays the saga event stream to rebuild current state.
+**Implementation Rule (SAGA-001)**: Each saga is modeled as a durable state machine persisted in its own Postgres `saga_instances` table, keyed by `saga_id`. Saga state transitions are recorded as events in a dedicated `saga_events` stream, providing audit trails consistent with PRIN-05. No saga relies on in-memory state — crash recovery replays the saga event stream to rebuild current state.
 
 **Saga Instance Schema:**
 
 ```sql
 CREATE TABLE saga_instances (
-    tenant_id       UUID NOT NULL,
     saga_id         UUID NOT NULL,
     saga_type       TEXT NOT NULL,
     aggregate_id    UUID NOT NULL,       -- the primary aggregate this saga operates on
@@ -336,7 +319,7 @@ CREATE TABLE saga_instances (
     current_step    TEXT NOT NULL,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
-    PRIMARY KEY (tenant_id, saga_id)
+    PRIMARY KEY (saga_id)
 );
 ```
 
@@ -350,7 +333,6 @@ Event publishing reliability requires the Transactional Outbox pattern to guaran
 
 ```sql
 CREATE TABLE outbox (
-    tenant_id       UUID NOT NULL,
     outbox_id       UUID NOT NULL,
     aggregate_type  TEXT NOT NULL,
     aggregate_id    UUID NOT NULL,
@@ -359,10 +341,10 @@ CREATE TABLE outbox (
     payload         BYTEA NOT NULL,     -- same protobuf-encoded EventEnvelope as event_store
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
     published_at    TIMESTAMPTZ NULL,   -- set by the relay process after NATS publish confirms
-    PRIMARY KEY (tenant_id, outbox_id)
+    PRIMARY KEY (outbox_id)
 );
 
-CREATE INDEX outbox_unpublished_idx ON outbox (tenant_id, created_at) WHERE published_at IS NULL;
+CREATE INDEX outbox_unpublished_idx ON outbox (created_at) WHERE published_at IS NULL;
 ```
 
 **Relay Process (OUTBOX-001)**: A dedicated relay process (implemented within each event-sourced service, not a separate microservice for MVP) polls unpublished outbox entries, publishes to NATS JetStream, and marks them published. The relay runs at sub-second polling intervals to minimize propagation lag. On crash recovery, the relay resumes from the last unconfirmed publish — at-least-once delivery is guaranteed; exactly-once effect is achieved at the consumer level per Part 4 §4.2.
@@ -414,7 +396,6 @@ CREATE INDEX outbox_unpublished_idx ON outbox (tenant_id, created_at) WHERE publ
 
 ```sql
 CREATE TABLE tenant_event_counter (
-    tenant_id       UUID PRIMARY KEY,
     next_sequence   BIGINT NOT NULL DEFAULT 0
 );
 ```
@@ -428,11 +409,10 @@ This counter is NOT used for aggregate consistency (that's `event_sequence`); it
 | Part 1/2 Requirement | Enforced By (this Part) |
 |---|---|
 | BIZ-010 (configurable routing, no code change) | BC-05 `RoutingPolicy` aggregate, versioned rules (INV-05) |
-| BIZ-011 (no custody) | Structural absence of any "platform-owned balance" aggregate anywhere in this catalog; BC-16 ACL to licensed partner |
+| BIZ-011 (no custody) | Structural absence of any "platform-owned balance" aggregate anywhere in this catalog |
 | BIZ-012 (failover) | AGG-01 `RoutingAttempt` entity + EVT-02/EVT-06/EVT-07 |
 | BIZ-013 (unified ledger/reconciliation) | BC-09 `SettlementBatch`/`SettlementRecord` |
 | BIZ-020/021/023 (AI grounded, citable, self-hosted) | BC-12 modeled as read-only Conformist with `GroundingCitation` records |
-| BIZ-030 (tenant isolation) | PRIN-03, shared-kernel `TenantId` |
 | BIZ-040 (immutable audit) | Event sourcing discipline (PRIN-05), full envelope in §4 |
 | BR-020-1/INV-02 (no double capture/auth) | AGG-01 invariants INV-01/INV-02 |
 | BR-022-1/INV-03 (refund same acquirer) | AGG-01 invariant INV-03 |

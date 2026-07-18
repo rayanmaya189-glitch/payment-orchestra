@@ -1,5 +1,5 @@
 # Software Requirements Specification
-## Multi-Tenant AI-Native Payment Orchestration Platform (UAE-First, Multi-Country Ready)
+## AI-Native Payment Orchestration Platform (UAE-First, Multi-Country Ready)
 
 **Document Series:** 12-Part Enterprise SRS
 **Part 2 of 12:** Business Processes & Use Cases
@@ -20,13 +20,13 @@
 
 ### 0.1 Reading Guide
 
-Section 1 gives an end-to-end process map (the "shape" of how a tenant moves through the platform). Section 2 defines actors precisely (mapped to Part 1 stakeholders/personas). Sections 3–11 provide fully worked use cases, one process area at a time, each with: goal, actors, preconditions, main flow, alternate flows, exception flows, postconditions, business rules, and non-functional notes forward-referenced to later parts. Section 12 gives the full use-case-to-requirement traceability table.
+Section 1 gives an end-to-end process map (the "shape" of how an operator moves through the platform). Section 2 defines actors precisely (mapped to Part 1 stakeholders/personas). Sections 3–11 provide fully worked use cases, one process area at a time, each with: goal, actors, preconditions, main flow, alternate flows, exception flows, postconditions, business rules, and non-functional notes forward-referenced to later parts. Section 12 gives the full use-case-to-requirement traceability table.
 
 ---
 
 ## 1. End-to-End Process Map
 
-At the highest level, a tenant's lifecycle on the platform moves through five macro-processes:
+At the highest level, the operator's lifecycle on the platform moves through five macro-processes:
 
 ```
 PROC-01 Tenant & Merchant Onboarding
@@ -52,7 +52,7 @@ PROC-07 Dispute, Refund & Chargeback Handling
 PROC-08 Reporting & Analytics
 ```
 
-Two additional cross-cutting processes apply throughout: **PROC-09 Identity, Access & Audit** (every actor action in every process above is authenticated, authorized, and audit-logged) and **PROC-10 Marketplace/Sub-Merchant Orchestration** (H2, layered on top of PROC-01–PROC-05 for platform/reseller tenants).
+Two additional cross-cutting processes apply throughout: **PROC-09 Identity, Access & Audit** (every actor action in every process above is authenticated, authorized, and audit-logged).
 
 ---
 
@@ -62,10 +62,9 @@ Actors are precise, callable roles used consistently across all use cases in thi
 
 | Actor ID | Name | Type | Maps To |
 |---|---|---|---|
-| ACT-01 | Merchant Admin | Human (Tenant) | STK-003 |
-| ACT-02 | Merchant Finance Operator | Human (Tenant) | STK-001 |
-| ACT-03 | Merchant Developer | Human (Tenant) | STK-002 |
-| ACT-04 | Platform/Marketplace Operator | Human (Tenant, H2) | STK-004 |
+| ACT-01 | Merchant Admin | Human (Operator) | STK-003 |
+| ACT-02 | Merchant Finance Operator | Human (Operator) | STK-001 |
+| ACT-03 | Merchant Developer | Human (Operator) | STK-002 |
 | ACT-05 | End Customer | Human (Indirect) | STK-013 |
 | ACT-06 | Platform Compliance Officer | Human (Internal) | STK-010 |
 | ACT-07 | Platform Support/Ops Engineer | Human (Internal) | STK-011 |
@@ -77,22 +76,22 @@ Actors are precise, callable roles used consistently across all use cases in thi
 
 ---
 
-## 3. PROC-01 — Tenant & Merchant Onboarding
+## 3. PROC-01 — Operator Onboarding
 
 ### 3.1 Process Narrative
 
-A new tenant (merchant or platform operator) signs up, provides business and KYB information, uploads compliance documents, and is provisioned a tenant workspace. Onboarding is evidence-collection and workflow only per BIZ-043 (Part 1) — the platform does not perform regulated KYC/KYB decisioning itself; it either delegates to a licensed partner's KYB API or supports the tenant's own compliance team review workflow, and tracks status.
+A new operator (merchant or platform operator) signs up, provides business and KYB information, uploads compliance documents, and is provisioned. Onboarding is evidence-collection and workflow only per BIZ-043 (Part 1) — the platform does not perform regulated KYC/KYB decisioning itself.
 
-### UC-001: Register New Tenant
+### UC-001: Register New Operator
 
-- **Satisfies**: BIZ-030, BIZ-031, SCOPE-001
+- **Satisfies**: SCOPE-001
 - **Primary Actor**: ACT-01 (Merchant Admin)
-- **Preconditions**: Actor has a valid business email; no existing tenant is registered with that email domain (configurable per tenant-uniqueness policy).
+- **Preconditions**: Actor has a valid business email.
 - **Main Flow**:
-  1. ACT-01 submits company legal name, trade license number, country of incorporation (UAE at MVP), business email, and desired subdomain/workspace name.
-  2. System creates a new Tenant aggregate in `Pending` status (see Part 3 for aggregate definition) with a unique tenant ID.
+  1. ACT-01 submits company legal name, trade license number, country of incorporation (UAE at MVP), business email.
+  2. System creates a new Operator aggregate in `Pending` status (see Part 3 for aggregate definition) with a unique operator ID.
   3. System sends email verification to ACT-01.
-  4. ACT-01 verifies email; Tenant status moves to `Active-Unverified` (can configure sandbox, cannot process live transactions).
+  4. ACT-01 verifies email; Operator status moves to `Active-Unverified` (can configure sandbox, cannot process live transactions).
   5. System provisions default RBAC roles (Admin, Finance Operator, Developer, Read-Only) with ACT-01 assigned as first Admin.
 - **Alternate Flows**:
   - **AF-001a**: Trade license number fails basic format validation → inline validation error, no aggregate created.
@@ -106,19 +105,19 @@ A new tenant (merchant or platform operator) signs up, provides business and KYB
 
 - **Satisfies**: BIZ-043, BIZ-040
 - **Primary Actor**: ACT-01, secondary ACT-06 (Compliance Officer, internal reviewer path)
-- **Preconditions**: Tenant in `Active-Unverified` state (UC-001 complete).
+- **Preconditions**: Operator in `Active-Unverified` state (UC-001 complete).
 - **Main Flow**:
   1. ACT-01 uploads trade license, Emirates ID/passport of authorized signatory, proof of business address, and bank account verification letter via the document upload flow (uses MinIO-backed storage, Part 4/9).
   2. System runs each uploaded document through the OCR/document pipeline (Qwen3-VL 8B vision model, Part 6) to extract structured fields (license number, expiry date, signatory name) for pre-fill and validation.
   3. System creates a `KybCase` in `Submitted` status and routes it either to (a) an integrated licensed KYB partner API for automated decisioning, or (b) an internal review queue for ACT-06 if no automated partner is configured for the tenant's jurisdiction/risk tier.
   4. ACT-06 (or partner system) reviews evidence and sets `KybCase` status to `Approved` or `Rejected` (with reason).
-  5. On `Approved`, Tenant status transitions to `Active-Verified`; live processing unblocked (subject to UC-003 acquirer connection).
+  5. On `Approved`, Operator status transitions to `Active-Verified`; live processing unblocked (subject to UC-003 acquirer connection).
 - **Alternate Flows**:
   - **AF-002a**: Extracted OCR fields conflict with manually entered fields → flagged for ACT-06 manual reconciliation before approval.
   - **AF-002b**: Partner KYB API times out or errors → case automatically falls back to internal review queue (ACT-06) rather than blocking indefinitely.
 - **Exception Flows**:
   - **EX-002a**: `KybCase` rejected → ACT-01 notified with reason category (not necessarily full partner rationale, to respect partner confidentiality terms) and may resubmit corrected evidence, creating a new `KybCase` version linked to the same Tenant.
-- **Postconditions**: Tenant KYB status recorded and immutably logged (BIZ-040); Tenant either unblocked for live processing or remains restricted.
+- **Postconditions**: Operator KYB status recorded and immutably logged (BIZ-040); Operator either unblocked for live processing or remains restricted.
 - **Business Rules**: BR-002-1: The platform itself never renders a KYB "decision" as a regulated act when a licensed partner is configured — the partner's decision is stored as-is; when no partner is configured, ACT-06's decision is an internal risk-acceptance decision by the platform operator, not a regulated KYB decision, and must be labeled as such in the audit record (ties to Part 1 §6.4 custody/licensing posture).
 
 ### UC-003: Connect First Acquirer/PSP
@@ -133,7 +132,7 @@ A new tenant (merchant or platform operator) signs up, provides business and KYB
 
 - **Satisfies**: BIZ-010, SCOPE-002
 - **Primary Actor**: ACT-01 or ACT-03 (Admin or Developer role, per RBAC)
-- **Preconditions**: Tenant status `Active-Verified` (UC-002 complete) for live mode; sandbox mode available pre-verification.
+- **Preconditions**: Operator status `Active-Verified` (UC-002 complete) for live mode; sandbox mode available pre-verification.
 - **Main Flow**:
   1. Actor selects an acquirer/PSP from the supported connector catalog (Part 7 defines the Gateway Connector Framework and initial supported list).
   2. Actor supplies the credentials/configuration required by that connector's onboarding schema (API key, merchant ID, webhook secret, etc. — schema varies per connector, defined in Part 7).
@@ -146,8 +145,8 @@ A new tenant (merchant or platform operator) signs up, provides business and KYB
   - **AF-010b**: Actor connects a second (or third) acquirer for redundancy → each additional acquirer link is independent; routing rules (UC-011) determine priority among `Active` links.
 - **Exception Flows**:
   - **EX-010a**: Acquirer sandbox unreachable during test transaction → link remains `Connected-Untested`; actor can retry or contact support (ACT-07).
-- **Postconditions**: One or more `Active` `MerchantAcquirerLink`s exist for the tenant; routing configuration (UC-011) can now reference them.
-- **Business Rules**: BR-010-1: A tenant cannot process live transactions with zero `Active` acquirer links. BR-010-2: Acquirer credentials are stored encrypted at rest and are never returned in full via any read API after initial save (Part 8, secrets handling).
+- **Postconditions**: One or more `Active` `MerchantAcquirerLink`s exist for the operator; routing configuration (UC-011) can now reference them.
+- **Business Rules**: BR-010-1: The operator cannot process live transactions with zero `Active` acquirer links. BR-010-2: Acquirer credentials are stored encrypted at rest and are never returned in full via any read API after initial save (Part 8, secrets handling).
 
 ### UC-011: Configure Routing Rules
 
@@ -173,7 +172,7 @@ A new tenant (merchant or platform operator) signs up, provides business and KYB
 
 - **Satisfies**: BIZ-010, BIZ-012, BIZ-013, GOAL-001, GOAL-002
 - **Primary Actor**: ACT-05 (End Customer, via merchant's checkout UI/API), system actor ACT-10 (Orchestration Engine)
-- **Preconditions**: Tenant has an active `RoutingPolicy` (UC-011); order/invoice or ad hoc charge request exists.
+- **Preconditions**: The operator has an active `RoutingPolicy` (UC-011); order/invoice or ad hoc charge request exists.
 - **Main Flow**:
   1. ACT-05 submits payment details (via merchant's own checkout, hosted payment page, or payment link — see PROC-04) which the merchant's system (or the platform's hosted page) forwards to the platform's Payment Intent API.
   2. ACT-10 creates a `PaymentIntent` in `Created` status, evaluates the active `RoutingPolicy`, and selects the first eligible acquirer.
@@ -286,8 +285,8 @@ A new tenant (merchant or platform operator) signs up, provides business and KYB
   4. Actor sees the answer plus expandable citations linking to the underlying data records.
 - **Alternate Flows**: **AF-050a**: Actor uploads a document (e.g., a scanned bank advice) as part of the question → Qwen3-VL 8B vision pipeline extracts structured content first, which is then included in the RAG context.
 - **Exception Flows**: **EX-050a**: Retrieval finds insufficient grounding data to answer confidently → Assistant explicitly states it cannot answer reliably rather than fabricating a plausible-sounding but ungrounded answer (critical guardrail, detailed in Part 6).
-- **Postconditions**: Question and answer (with citations) logged for audit and for future retrieval-quality evaluation (Part 6 evaluation harness); strictly scoped to the asking tenant's own data (BIZ-030 isolation).
-- **Business Rules**: BR-050-1: The Assistant must never answer using another tenant's data, even implicitly through model weights fine-tuned across tenants — retrieval indices are tenant-partitioned at the storage layer (Part 3/9), not merely filtered at query time, to prevent leakage via ranking artifacts.
+- **Postconditions**: Question and answer (with citations) logged for audit and for future retrieval-quality evaluation (Part 6 evaluation harness).
+- **Business Rules**: BR-050-1: The Assistant's retrieval is bounded to the operator's own data.
 
 ---
 
@@ -326,28 +325,12 @@ A new tenant (merchant or platform operator) signs up, provides business and KYB
 
 ---
 
-## 11. PROC-10 — Marketplace / Sub-Merchant Orchestration (H2)
-
-### UC-080: Onboard a Sub-Merchant Under a Platform Operator Tenant
-
-- **Satisfies**: BIZ-017, BIZ-033
-- **Primary Actor**: ACT-04 (Platform/Marketplace Operator)
-- **Preconditions**: ACT-04's own tenant is `Active-Verified` and configured in "Platform/Reseller" mode; a licensed split-disbursement partner is configured (Part 1 §6.4, OQ-002).
-- **Main Flow**:
-  1. ACT-04 invites/onboards a sub-merchant, collecting sub-merchant KYB evidence (reuses UC-002 pattern, scoped under the parent tenant).
-  2. System creates a `SubMerchantAccount` linked both to the parent platform tenant and to the licensed partner's own sub-merchant/disbursement account (the licensed partner, not the platform, is the entity capable of legally splitting/holding funds momentarily per card scheme rules where applicable).
-  3. When an end customer transaction involves a marketplace purchase, UC-020's routing includes a split instruction (e.g., 90% to sub-merchant, 10% platform commission) passed through to the licensed partner's split-payment API.
-- **Exception Flows**: **EX-080a**: Licensed partner rejects a split configuration (e.g., percentages don't sum correctly, or sub-merchant not yet fully KYB-approved) → transaction proceeds only as a non-split payment or is blocked per tenant policy, never falls back to the platform holding the split itself (hard architectural/compliance boundary, Part 1 §6).
-- **Postconditions**: Split payments are fully attributable per sub-merchant for reporting (PROC-08) while custody remains exclusively with the licensed partner/acquirer, never the platform.
-
----
-
 ## 12. Use Case Traceability Matrix (Summary)
 
 | Use Case | Business Requirement(s) | Bounded Context (preview, Part 3) |
 |---|---|---|
-| UC-001 Register Tenant | BIZ-030, BIZ-031 | Tenant Management |
-| UC-002 KYB Evidence | BIZ-043, BIZ-040 | Tenant Management / Compliance |
+| UC-001 Register Operator | SCOPE-001 | Operator Management |
+| UC-002 KYB Evidence | BIZ-043, BIZ-040 | Operator Management / Compliance |
 | UC-010 Connect Acquirer | BIZ-010 | Gateway Connector Framework |
 | UC-011 Routing Rules | BIZ-010, BIZ-012 | Payment Orchestration |
 | UC-020 Authorize & Capture | BIZ-010, BIZ-012, BIZ-013 | Payment Orchestration |
@@ -360,7 +343,6 @@ A new tenant (merchant or platform operator) signs up, provides business and KYB
 | UC-050 AI Assistant Q&A | BIZ-020, BIZ-021, BIZ-023 | AI Payment Assistant (RAG) |
 | UC-060 Chargeback | BIZ-013, BIZ-040 | Dispute Management |
 | UC-070/071 Reporting | BIZ-013 | Analytics & Reporting |
-| UC-080 Sub-Merchant Onboarding | BIZ-017, BIZ-033 | Marketplace / Tenant Management |
 
 *(Full matrix including NFR cross-references will be consolidated in Part 12, Appendices.)*
 

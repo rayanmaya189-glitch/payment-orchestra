@@ -141,7 +141,7 @@ Each question in the final list is paired with a **ground-truth answer** (valida
 | **Factual accuracy** | Does the answer's substantive content match ground truth? | Human-graded rubric + automated numeric-value extraction/comparison where the answer contains figures |
 | **Citation validity** | Does every cited source actually support the claim it's attached to? | Automated check (GRD-OUT-001) + periodic human audit sample |
 | **Grounding honesty** | Does the Assistant correctly decline to answer when it lacks sufficient grounding, rather than guessing? | Adversarial test set of intentionally unanswerable questions (EX-050a) |
-| **Tenant isolation** | Does the Assistant ever surface another tenant's data? | Automated cross-tenant leakage test suite (Part 8 security testing, run against a multi-tenant test fixture with deliberately similar data across tenants to stress-test isolation) |
+| **Security** | Does the Assistant ever surface unauthorized data? | Automated security test suite against authorization boundaries (Part 8 security testing) |
 | **Latency** | Time to first token / time to complete answer | Load-test harness (Part 11) |
 
 ### 6.3 Regression Gate
@@ -170,7 +170,7 @@ Each question in the final list is paired with a **ground-truth answer** (valida
 
 ### 9.1 Production Model Quality Monitoring
 
-- **AIMON-001**: A lightweight feedback loop is integrated into the Assistant UI: every answer includes a thumbs-up/thumbs-down feedback button. Feedback is stored per `(query, answer, session_id, tenant_id)` with timestamp, and aggregated daily into a quality-score dashboard accessible to the AI/ML team (STK-009).
+- **AIMON-001**: A lightweight feedback loop is integrated into the Assistant UI: every answer includes a thumbs-up/thumbs-down feedback button. Feedback is stored per `(query, answer, session_id)` with timestamp, and aggregated daily into a quality-score dashboard accessible to the AI/ML team (STK-009).
 - **AIMON-002**: A daily automated drift-detection job compares the current model's answer quality against the ground-truth "top 50" regression suite (§6.1). If factual accuracy drops below the EVAL-001 threshold, an alert is raised before any production degradation impacts merchants.
 - **AIMON-003**: Retrieval quality metrics (average relevance score of top-K results, citation hit rate) are logged per query and aggregated into hourly rollups in ClickHouse, enabling trend analysis of retrieval pipeline health.
 
@@ -185,7 +185,6 @@ Each question in the final list is paired with a **ground-truth answer** (valida
 
 ```sql
 CREATE TABLE conversation_history (
-    tenant_id       UUID NOT NULL,
     session_id      UUID NOT NULL,
     message_seq     INT NOT NULL,
     role            TEXT NOT NULL,       -- 'user' | 'assistant'
@@ -193,7 +192,7 @@ CREATE TABLE conversation_history (
     citations       JSONB NULL,
     feedback        TEXT NULL,           -- 'positive' | 'negative' | NULL
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
-    PRIMARY KEY (tenant_id, session_id, message_seq)
+    PRIMARY KEY (session_id, message_seq)
 );
 ```
 
@@ -202,9 +201,9 @@ CREATE TABLE conversation_history (
 ### 9.4 Tool Use / Function Calling (H2 Enhancement)
 
 - **AITOOL-001**: The Assistant is extended with tool-use capability so it can invoke read-only API endpoints of other services to answer questions requiring fresh data:
-  - `GetReconciliationExceptions(tenant_id, date_range)`
-  - `GetPaymentIntentStatus(tenant_id, payment_intent_id)`
-  - `GetAuthorizationRateStats(tenant_id, acquirer, scheme, period)`
+  - `GetReconciliationExceptions(date_range)`
+  - `GetPaymentIntentStatus(payment_intent_id)`
+  - `GetAuthorizationRateStats(acquirer, scheme, period)`
 
 - **AITOOL-002**: Tool calls are bounded to read-only endpoints — the Assistant has no write-path tool access, preserving AI-P-003 (no autonomous money movement).
 - **AITOOL-003**: Tool call results are included in the RAG context and cited like any other retrieved source.

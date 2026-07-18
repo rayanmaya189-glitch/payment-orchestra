@@ -67,10 +67,8 @@ message Money {
 }
 
 message CreatePaymentIntentRequest {
-  string tenant_id = 1;
-  Money amount = 2;
-  string idempotency_key = 3;
-  optional string split_configuration_id = 4; // BC-16 marketplace addendum, Part 5 §6
+  Money amount = 1;
+  string idempotency_key = 2;
 }
 
 message CreatePaymentIntentResponse {
@@ -79,9 +77,8 @@ message CreatePaymentIntentResponse {
 }
 
 message AuthorizePaymentIntentRequest {
-  string tenant_id = 1;
-  string payment_intent_id = 2;
-  string payment_method_token = 3;
+  string payment_intent_id = 1;
+  string payment_method_token = 2;
 }
 
 message AuthorizePaymentIntentResponse {
@@ -106,7 +103,7 @@ service OrchestrationService {
 }
 ```
 
-- **GRPC-001**: `tenant_id` is present explicitly in every message for clarity/testability even though it is also carried in call metadata (Part 4 §7 MT-001) — the service layer validates that the metadata-derived tenant context matches any explicit `tenant_id` field, rejecting mismatches, as a defense-in-depth check against a caller bug that might construct a request with the wrong tenant ID in the body.
+- **GRPC-001**: Actor context is carried in call metadata by API Gateway — the service layer validates this context on every request.
 - **GRPC-002**: All money fields use the shared `Money` message (integer minor units, Part 3 PRIN-04) across every service's proto definitions — this is a genuinely shared library type (a small shared proto package, `common.v1`), one of the few deliberate exceptions to "services own their own contracts," since inconsistent money representation across service boundaries would be a correctness hazard.
 
 ### 2.2 Event Schema (Protobuf, Ties to Part 3 §4 / Part 9 §1.1)
@@ -117,17 +114,16 @@ package events.v1;
 
 message EventEnvelope {
   string event_id = 1;
-  string tenant_id = 2;
-  string aggregate_type = 3;
-  string aggregate_id = 4;
-  string event_type = 5;
-  uint32 event_version = 6;
-  int64 occurred_at_unix_ms = 7;
-  string actor_type = 8;
-  string actor_id = 9;
-  string causation_id = 10;
-  string correlation_id = 11;
-  bytes payload = 12; // event-type-specific message, e.g., PaymentAuthorizedV1
+  string aggregate_type = 2;
+  string aggregate_id = 3;
+  string event_type = 4;
+  uint32 event_version = 5;
+  int64 occurred_at_unix_ms = 6;
+  string actor_type = 7;
+  string actor_id = 8;
+  string causation_id = 9;
+  string correlation_id = 10;
+  bytes payload = 11; // event-type-specific message, e.g., PaymentAuthorizedV1
 }
 
 message PaymentAuthorizedV1 {
@@ -178,7 +174,7 @@ message PaymentAuthorizedV1 {
 
 ## 5. Rate Limiting Contract
 
-- **RL-001**: Rate limits are tiered by commercial plan (BIZ-032) and disclosed via standard headers (`X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`) on every response, not just on 429s, so integrators can proactively pace requests.
+- **RL-001**: Rate limits are disclosed via standard headers (`X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`) on every response, not just on 429s, so integrators can proactively pace requests.
 - **RL-002**: AI Assistant endpoints (routed via `ai-gateway`, Part 4 §3) have a *separate* quota dimension from general API rate limits (Part 9 §2 `ai_quota:*` keys).
 
 ---
@@ -220,7 +216,6 @@ message PaymentAuthorizedV1 {
 | Part 7 §1.2 (webhook signature symmetry) | §3.1 WEBHOOK-002 |
 | Part 3 §4 event envelope | §2.2 protobuf `EventEnvelope` |
 | GOAL-011 (SDK ecosystem) | §4 |
-| BIZ-032 (tiered commercial model) | §5 RL-001/002 |
 | gRPC service versioning (internal) | §6 GRPC-VER-001 through GRPC-VER-003 |
 | Webhook replay protection | §7 WEBHOOK-REPLAY-001 through WEBHOOK-REPLAY-003 |
 | SDK deprecation and migration | §8 SDK-DEP-001 through SDK-DEP-003 |
