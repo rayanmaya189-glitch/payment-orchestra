@@ -154,6 +154,13 @@ Business requirements are the "why" that drives functional requirements in later
 | BIZ-041 | The platform must support data residency controls appropriate to UAE data protection expectations (PDPL) and, where applicable, sector-specific guidance for payment data. | Must | H1 |
 | BIZ-042 | The platform must support role-based and attribute-based access control so that sensitive operations (e.g., changing settlement bank details) require elevated permissions and produce audit trail entries. | Must | H1 |
 | BIZ-043 | The platform must support KYC/KYB evidence storage and status tracking for merchants (evidence storage and workflow only; the platform does not perform its own regulated KYC/KYB decisioning — this is delegated to a licensed partner or the tenant's own compliance process, unless/until the platform itself is licensed). | Must | H1 |
+| BIZ-044 | The platform must comply with OWASP Top 10 (2021) security controls and be assessed against PCI-DSS 4.0 requirements appropriate to its scope (SAQ-A or SAQ-A-EP). | Must | H1 |
+| BIZ-045 | The platform must implement AML/CFT transaction monitoring with rule-based suspicious activity detection and SAR generation capability. | Must | H1 |
+| BIZ-046 | The platform must implement fraud scoring integration with real-time risk assessment before authorization attempts. | Must | H1 |
+| BIZ-047 | The platform must generate regulatory reports required by UAE Central Bank (transaction volumes, chargeback rates, system availability). | Must | H1 |
+| BIZ-048 | The platform must implement defense-in-depth security: database-level row-level security, container hardening, network policies, and security headers. | Must | H1 |
+| BIZ-049 | The platform must implement supply chain security: SBOM generation, dependency pinning, container image signing, and CVE response SLAs. | Must | H1 |
+| BIZ-050 | The platform must implement privileged access management: just-in-time access, session recording, and no standing production access. | Should | H1 |
 
 ### 4.4 Compliance & Trust Requirements
 

@@ -176,10 +176,80 @@ message PaymentAuthorizedV1 {
 
 - **RL-001**: Rate limits are disclosed via standard headers (`X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`) on every response, not just on 429s, so integrators can proactively pace requests.
 - **RL-002**: AI Assistant endpoints (routed via `ai-gateway`, Part 4 §3) have a *separate* quota dimension from general API rate limits (Part 9 §2 `ai_quota:*` keys).
+- **RL-003**: Per-endpoint rate limits: checkout endpoints (`/v1/payment-intents`) have higher limits than admin endpoints (`/v1/routing-policies`). Login endpoints have strict limits (10 per IP per minute).
+- **RL-004**: Rate limit response includes `Retry-After` header when rate-limited (429 response), indicating when the client can retry.
 
 ---
 
-## 6. gRPC Service Versioning (Internal)
+## 6. API Security
+
+### 6.1 Request Size and Timeout Limits
+
+- **APISEC-001**: Request size limits enforced at API Gateway:
+  - Standard requests: maximum 1MB
+  - Document upload endpoints: maximum 10MB
+  - Payment creation: maximum 100KB
+  - Limits enforced before body parsing to prevent memory exhaustion (OWASP A04).
+
+- **APISEC-002**: Request timeouts:
+  - API Gateway → domain service: 30 seconds (general), 10 seconds (checkout path)
+  - Domain service → external acquirer: configurable per connector (default: 15 seconds authorize, 30 seconds settlement)
+  - Timeout violations return explicit `REQUEST_TIMEOUT` error (Part 10 API-005 error format).
+
+### 6.2 Input Validation
+
+- **APISEC-003**: All API inputs validated against OpenAPI/gRPC schema at API Gateway before reaching domain services:
+  - Type validation (string, integer, enum)
+  - Length/range validation (min/max, string length)
+  - Format validation (email, UUID, ISO 4217, ISO 8601)
+  - Required field validation
+  - Pattern validation (regex for structured fields like trade license numbers)
+
+- **APISEC-004**: Domain-specific semantic validation happens in command handlers (Part 3 PRIN-01) — Gateway handles syntactic; domain handles semantic (e.g., "amount must be positive," "currency must be supported").
+
+### 6.3 CORS Policy
+
+- **APISEC-005**: CORS configuration:
+  - `Access-Control-Allow-Origin`: Only explicitly whitelisted origins (operator-configured)
+  - `Access-Control-Allow-Methods`: GET, POST, PUT, PATCH, DELETE, OPTIONS
+  - `Access-Control-Allow-Headers`: Content-Type, Authorization, X-Api-Key, X-Idempotency-Key, X-Request-ID
+  - `Access-Control-Allow-Credentials`: true (for cookie-based auth)
+  - `Access-Control-Max-Age`: 86400 (24 hours preflight cache)
+  - Default: no cross-origin requests allowed if no origins whitelisted.
+
+### 6.4 Error Handling Security
+
+- **APISEC-006**: API error responses never expose:
+  - Stack traces or internal error details
+  - Database query errors or connection strings
+  - File paths or internal service names
+  - Version information that could reveal attack surface
+  - Internal IP addresses or hostnames
+
+- **APISEC-007**: Error codes are stable, documented enums (API-005). Generic error messages returned to callers; detailed context logged server-side.
+
+### 6.5 Response Security
+
+- **APISEC-008**: API responses never include:
+  - Internal implementation details (framework versions, database types)
+  - Debug information in production (stack traces, variable dumps)
+  - Sensitive data in error details (partial credentials, internal IDs)
+
+### 6.6 Webhook Security (Outbound)
+
+- **APISEC-009**: Outbound webhook security:
+  - HMAC-SHA256 signature over `timestamp.event_id.body` (Part 10 §7 WEBHOOK-REPLAY-002)
+  - Replay protection via timestamp window (5 minutes) and event_id dedup (24 hours)
+  - URL validation: only HTTPS endpoints, resolved IPs checked against private ranges (Part 8 SSRF-002)
+  - IP allowlisting documented for merchants who need to whitelist platform IPs
+
+### 6.7 gRPC Security
+
+- **APISEC-010**: Internal gRPC communication security:
+  - mTLS enforced via service mesh (Part 4 §8)
+  - Actor context propagated in call metadata (GRPC-001)
+  - Request size limits: 4MB default, configurable per service
+  - Deadlines enforced on all gRPC calls (matching API-002 timeout specifications)
 
 - **GRPC-VER-001**: Internal gRPC services use package-level versioning: `orchestration.v1`, `orchestration.v2`, etc. Breaking changes to internal gRPC contracts require a new package version.
 - **GRPC-VER-002**: During a version transition, the old version remains available for at least one release cycle (N-1 compatibility) to allow dependent services to upgrade gracefully. The old version is marked as deprecated in the proto definition.

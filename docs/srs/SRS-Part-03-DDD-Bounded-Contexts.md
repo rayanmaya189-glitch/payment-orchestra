@@ -325,6 +325,12 @@ CREATE TABLE saga_instances (
 
 **Design Principle (SAGA-002)**: Sagas never hold custody of funds (consistent with Part 1 §6). A saga's compensation logic for payment flows is always "revert the orchestration state machine" (void, cancel), never "move funds back through a platform-controlled account."
 
+**Design Principle (SAGA-003)**: Saga steps must be idempotent — compensation actions (void, cancel) must detect and skip already-completed operations rather than failing on duplicate execution. This is enforced by checking the target aggregate's current state before executing the compensation action.
+
+**Design Principle (SAGA-004)**: Saga steps have configurable timeouts (default: 30 seconds for synchronous steps, 5 minutes for async steps). When a step times out, the saga transitions to `Compensating` state and triggers compensation for all completed steps. Timeout values are part of the saga configuration, not hardcoded.
+
+**Design Principle (SAGA-005)**: Concurrent sagas operating on the same aggregate are detected via optimistic concurrency control (Part 5 CONC-001) — if two sagas attempt to mutate the same PaymentIntent, one will fail the concurrency check and must retry after reloading the aggregate state.
+
 ### 9.2 Outbox Pattern (Transactional Outbox)
 
 Event publishing reliability requires the Transactional Outbox pattern to guarantee that domain events are published to NATS JetStream if and only if the corresponding aggregate state change commits to Postgres.

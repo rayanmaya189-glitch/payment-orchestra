@@ -29,10 +29,10 @@
 | 5 | Payment Orchestration Engine | State machine, routing algorithm, idempotency, marketplace-split addendum, partial auth handling, currency precision, subscription pause/resume |
 | 6 | AI Payment Assistant & RAG | Model routing, RAG pipeline, guardrails, evaluation harness, production quality monitoring, tool use (H2), multi-step reasoning (H2), enhanced prompt injection defense |
 | 7 | Gateway Connector Framework | ACL trait design, capability flags, decline normalization, settlement formats, circuit breakers, bulkhead isolation, per-connector retry config |
-| 8 | Identity, Security & Compliance | RBAC/ABAC, secrets/encryption, audit framework, UAE regulatory mapping, threat model (STRIDE), API key acquirer scoping, secrets rotation automation |
+| 8 | Identity, Security & Compliance | RBAC/ABAC, secrets/encryption (HSM-backed, AES-256, TLS 1.3), audit framework, UAE regulatory mapping, threat model (STRIDE + abuse cases), OWASP Top 10 controls, PCI-DSS scope minimization, AML/CFT monitoring, fraud scoring, security headers, container hardening, SSRF prevention, PAM, data classification, supply chain security |
 | 9 | Database Design | Postgres/Redis/ClickHouse/OpenSearch/MinIO schemas (single-tenant, no tenant_id columns), outbox table, event store archival, connection pooling |
-| 10 | APIs & gRPC Contracts | REST conventions, proto contracts, webhook contract, SDK strategy, gRPC service versioning, webhook replay protection, SDK deprecation/migration |
-| 11 | Testing, DevOps & Deployment | TDD standards, CI/CD, K8s topology, observability, DR, load testing, chaos engineering, canary deployment, expand-contract migrations; single-tenant deployment model |
+| 10 | APIs & gRPC Contracts | REST conventions, proto contracts, webhook contract, SDK strategy, gRPC service versioning, webhook replay protection, SDK deprecation/migration, API security (request limits, input validation, CORS, error handling), gRPC security |
+| 11 | Testing, DevOps & Deployment | TDD standards, CI/CD, K8s topology, observability, DR, load testing, chaos engineering, canary deployment, expand-contract migrations, security testing pipeline (SAST/DAST/SCA), penetration testing, PCI-DSS compliance gates, compliance documentation |
 | 12 | Appendices & Roadmap | This document |
 
 ---
@@ -50,6 +50,11 @@
 | BIZ-020/021/023 (AI Assistant) | UC-050 | BC-12 (read-only Conformist) | `ai-assistant-service` (SVC-12), `ai-gateway` (SVC-18) | Part 6 | OpenSearch index, Postgres citation log | `/v1/assistant/query` | Top-50 eval suite, EVAL-001 regression gate |
 | BIZ-040 (immutable audit) | (cross-cutting) | Event sourcing (PRIN-05) + Tier 2 audit log | All services | Part 8 §5 | `event_store`, `audit_log` (DB-004 privilege-enforced) | (audit export endpoints, per-service) | COV-001 on event-sourced invariants |
 | BIZ-043 (KYB evidence, not decisioning) | UC-002 | BC-03 / `KybCase` | `compliance-service` (SVC-03) | Part 8 §6 | `kyb_case` tables, `kyb-evidence` MinIO bucket | `/v1/kyb-cases` | Integration test against partner ACL mock |
+| BIZ-044 (OWASP/PCI-DSS compliance) | Cross-cutting | Security controls across all contexts | All services | Part 8 §7, §10 | RLS policies (DB-011), encrypted fields | Security headers (HDR-001), CORS (APISEC-005) | §7.1 SECPIPE-001/002, §7.2 PENTEST, §7.4 PCI |
+| BIZ-045 (AML/CFT monitoring) | Cross-cutting | BC-11 Fraud & Risk, compliance-service | `risk-service`, `compliance-service` | Part 8 §11.1 | AML alert queue, SAR generation | `/v1/aml/alerts` | AML rule validation tests |
+| BIZ-046 (Fraud scoring) | Cross-cutting | BC-11 Fraud & Risk Scoring | `risk-service` (SVC-11) | Part 5 §3.1 | Risk score cache (Redis) | `/v1/risk/score` | Fraud scoring accuracy tests |
+| BIZ-048 (Defense-in-depth) | Cross-cutting | RLS policies, NetworkPolicies, security headers | All services, K8s | Part 8 §7.3, §7.4 | RLS policies (DB-011) | Security headers (HDR-001) | RLS tests, header tests |
+| BIZ-049 (Supply chain security) | Cross-cutting | SBOM, dependency pinning, image signing | CI/CD pipeline | Part 8 §7.6 | SBOM artifacts | N/A | Dependency scanning, image signing verification |
 
 ---
 
@@ -124,7 +129,14 @@
 | OQ-049 (Part 10) | Confirm X-SDK-Version header tracking for MVP vs. H2 | Product | Part 10 §8 SDK-DEP-003 |
 | OQ-050 (Part 11) | Finalize canary deployment thresholds against real baseline | Engineering/SRE | Part 11 §7.3 CANARY-001 |
 | OQ-051 (Part 11) | Confirm chaos engineering tooling choice | Engineering/Infra | Part 11 §7.2 CHAOS-001 |
-| OQ-052 (Part 11) | Finalize database migration tooling | Engineering | Part 11 §7.4 MIG-002 |
+| OQ-052 (Part 11) | Finalize database migration tooling | Engineering | Part 11 §8.4 MIG-002 |
+| OQ-053 (Part 8) | Confirm HSM vs. cloud-native KMS for KEK management | Security/Infra | Part 8 §3 SEC-001, §13 KMP-001 |
+| OQ-054 (Part 8) | Finalize SIEM platform selection | Security/Infra | Part 8 §7.5 LOGSEC-003 |
+| OQ-055 (Part 8) | Confirm PCI-DSS SAQ type with QSA | Compliance | Part 8 §7.5 SECTEST-005, §4.3 ENC-008 |
+| OQ-056 (Part 8) | Finalize red team exercise scope and cadence | Security | Part 8 §10.4 TM-002 |
+| OQ-057 (Part 10) | Confirm API request size limits per endpoint type | Product/Security | Part 10 §6.1 APISEC-001 |
+| OQ-058 (Part 11) | Confirm PCI-DSS ASV scan provider and schedule | Compliance | Part 11 §7.4 PCI-002 |
+| OQ-059 (Part 1) | Finalize AML transaction monitoring rule set | Compliance/Legal | Part 8 §11.1 AML-001 |
 
 **Program management note**: Items with a Legal owner (ASSUMP-001/OQ-001, OQ-018, OQ-019) are the highest-priority blockers for GA. Items from the gap analysis (OQ-029 through OQ-052) represent new engineering decisions that should be resolved during M1–M2 to avoid blocking later milestones. Priority recommendation: resolve OQ-029 (saga persistence), OQ-030 (outbox relay), and OQ-031 (circuit breaker thresholds) before M2 implementation begins, as they are foundational patterns that affect multiple services.
 

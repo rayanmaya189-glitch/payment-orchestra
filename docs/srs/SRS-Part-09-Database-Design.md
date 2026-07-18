@@ -130,6 +130,12 @@ CREATE TABLE audit_log (
 
 - **DB-004**: `audit_log` is append-only at the database-privilege level — the application's database role for these services is granted `INSERT`/`SELECT` only on `audit_log`, with no `UPDATE`/`DELETE` grant at all (Part 8 §5.3 AUD-003 enforced at the DB-permission layer, not merely by application code discipline).
 
+- **DB-011 (Row-Level Security)**: All Postgres tables containing operator data implement Row-Level Security (RLS) policies as a defense-in-depth layer. Even if the application layer has an authorization bypass, the database enforces that queries can only access data belonging to the authenticated principal's operator context. RLS policies are applied at the table level and enforced by Postgres row-security policies, not application logic.
+
+- **DB-012 (Database Activity Monitoring)**: All database queries are logged to a tamper-evident audit trail (separate from the application audit log). Queries accessing Restricted-classification data (Part 8 ENC-009) trigger alerts. Database connection attempts from unauthorized source IPs are rejected and logged.
+
+- **DB-013 (Database Connection Security)**: Database connections use TLS 1.3 (matching Part 8 ENC-001). Database credentials are rotated automatically via the secrets management system (Part 8 SEC-003). No application hardcodes database credentials.
+
 ### 1.4 Encrypted Field Storage (Ties to Part 8 §3/§4)
 
 Connector credentials (Part 7 §2.2) are stored as:

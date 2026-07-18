@@ -101,6 +101,9 @@ Then the PaymentIntent transitions through Authorizing (Acquirer A) -> Failed(si
 - **K8S-002**: GPU-backed node pool, tainted/labeled so only `ai-assistant-service`'s inference pods (Ollama-hosted Qwen3 32B / Qwen3-VL 8B, Part 6 §2, Part 4 §8) schedule there — general CPU-only services are never scheduled onto GPU nodes, avoiding wasted expensive capacity.
 - **K8S-003**: Namespace-per-environment (dev/staging/prod), keeping the deployment topology simple for single-tenant operation.
 - **K8S-004**: Service mesh (Part 4 §8) provides mTLS, and additionally provides the observability hooks (§5) for per-service-pair traffic metrics.
+- **K8S-005**: Kubernetes NetworkPolicies: default-deny all ingress/egress at the namespace level; explicit allow-lists per service pair (e.g., `api-gateway` → `orchestration-service` on port 50051, `orchestration-service` → `connector-gateway` on port 50052). No service can communicate with another without an explicit NetworkPolicy.
+- **K8S-006**: Pod Security Standards: all pods run under the `restricted` profile — non-root user, read-only root filesystem, no privilege escalation, no host network/IPC/PID namespace sharing.
+- **K8S-007**: Container images use distroless or scratch base images (no shell, no package manager). Images are signed using cosign/sigstore and verified by a Kubernetes admission controller before deployment.
 
 ### 4.2 Configuration & Secrets
 
@@ -153,7 +156,70 @@ Total checkout latency budget (target, tenant-perceived)
 
 ---
 
-## 7. Load Testing & Chaos Engineering
+## 7. Security Testing & Compliance Gates
+
+### 7.1 Security Testing Pipeline
+
+- **SECPIPE-001**: Security testing is integrated at every stage of the CI/CD pipeline:
+  1. **Static Analysis (SAST)**: `cargo-audit`, `cargo-deny`, Clippy security lints — blocking on critical/high findings
+  2. **Dependency Scanning**: `cargo-audit` against RustSec advisory database — blocking on any known vulnerability
+  3. **Container Scanning**: Trivy/Grype scanning of built container images — blocking on critical/high CVEs
+  4. **Secret Scanning**: TruffleHog/gitleaks scanning for committed secrets — blocking on any finding
+  5. **Software Bill of Materials (SBOM)**: Generated in SPDX/CycloneDX format for every release — non-blocking but required for compliance
+
+- **SECPIPE-002**: Pre-production security gates:
+  1. **Row-Level Security (RLS) tests**: Verify that RLS policies prevent cross-service data access (Part 8 SECTEST-004)
+  2. **Authorization bypass tests**: Automated tests attempting unauthorized API access (Part 8 SECTEST-001)
+  3. **SSRF validation tests**: Verify URL validation blocks private IP ranges (Part 8 SSRF-001/002)
+  4. **Security header tests**: Verify all required security headers are present (Part 8 HDR-001)
+
+### 7.2 Penetration Testing
+
+- **PENTEST-001**: External penetration testing conducted quarterly by a qualified third-party firm, covering:
+  - API Gateway endpoints (REST and gRPC-Web)
+  - AI Gateway and prompt injection vectors
+  - Connector webhook endpoints (inbound)
+  - Payment link hosted pages
+  - Admin dashboard
+
+- **PENTEST-002**: Penetration test findings are tracked in a vulnerability management system with SLA:
+  - Critical (CVSS >= 9.0): Remediate within 24 hours
+  - High (CVSS >= 7.0): Remediate within 7 days
+  - Medium (CVSS >= 4.0): Remediate within 30 days
+  - Low (CVSS < 4.0): Remediate within 90 days or accept risk with documented justification
+
+### 7.3 Red Team Exercises
+
+- **REDTEAM-001**: Semi-annual red team exercises conducted by an external security firm, targeting:
+  - Authentication and session management bypass
+  - Authorization escalation (horizontal and vertical)
+  - AI Assistant data exfiltration attempts
+  - Supply chain attack vectors
+  - Insider threat scenarios
+
+### 7.4 PCI-DSS Compliance
+
+- **PCI-001**: PCI-DSS Self-Assessment Questionnaire (SAQ) completed annually by a Qualified Security Assessor (QSA). The platform targets SAQ-A or SAQ-A-EP scope depending on final architecture review.
+- **PCI-002**: Quarterly Approved Scanning Vendor (ASV) scans of all externally-facing endpoints.
+- **PCI-003**: Internal vulnerability scans quarterly, with rescans until passing.
+- **PCI-004**: Network segmentation documentation maintained and tested quarterly to confirm CDE isolation.
+
+### 7.5 Compliance Documentation
+
+- **COMPLDOC-001**: The following security documentation must be maintained:
+  - Information Security Policy (ISP)
+  - Acceptable Use Policy
+  - Incident Response Plan (Part 8 IR-001)
+  - Business Continuity Plan
+  - Disaster Recovery Plan (Part 11 §8)
+  - Data Classification Policy (Part 8 ENC-009)
+  - Key Management Procedures (Part 8 §13)
+  - Vendor Risk Assessment Procedures
+  - Security Awareness Training Program
+
+---
+
+## 8. Load Testing & Chaos Engineering
 
 ### 7.1 Load Testing Strategy
 
@@ -207,7 +273,7 @@ Total checkout latency budget (target, tenant-perceived)
 
 ---
 
-## 8. Disaster Recovery & Backup
+## 9. Disaster Recovery & Backup
 
 - **DR-001**: Postgres: continuous WAL archiving + periodic base backups, point-in-time-recovery capable, cross-availability-zone replication at minimum, with the specific Recovery Point Objective (RPO)/Recovery Time Objective (RTO) targets to be set jointly by Engineering and Product against acceptable business risk (a near-zero RPO is expected for the event-store databases specifically, given BIZ-040's audit-completeness requirement — losing even a small window of committed financial events is a compliance issue, not just a data-loss inconvenience).
 - **DR-002**: ClickHouse/OpenSearch: since these are rebuildable projections (Part 3 §7, Part 9 §6) from the Postgres event stores and NATS JetStream retained streams, their DR strategy can tolerate a coarser RTO (rebuild-from-source is an acceptable recovery path) provided NATS retention (Part 3 OQ-008, Part 9 OQ-021) is sufficient to cover the realistic rebuild window — this is exactly why those two open items must be resolved before DR runbooks can be finalized.
@@ -216,7 +282,7 @@ Total checkout latency budget (target, tenant-perceived)
 
 ---
 
-## 10. Release & Change Management
+## 11. Release & Change Management
 
 - **REL-001**: Semantic versioning for external API surfaces (Part 10 §1.1); internal service versions tracked independently since internal services can be deployed more frequently than the public API surface changes.
 - **REL-002**: Feature flags for any H2/H3-scoped capability (Part 1 §7.1) being developed incrementally ahead of its full business/legal readiness (e.g., marketplace splits, Part 1 §6.4 OQ-002) — code can exist and be tested in staging well before it is enabled for any real tenant, decoupling "engineering done" from "legally/commercially launched."
@@ -224,26 +290,31 @@ Total checkout latency budget (target, tenant-perceived)
 
 ---
 
-## 11. Traceability
+## 12. Traceability
 
 | Requirement | Realized By |
 |---|---|
 | CONS-002 (Part 1, TDD) | §1 entire section |
 | SUCC-003 (Part 1, AI top-50 validated pre-GA) | §1.2 AI evaluation suite row, §3.1 stage 6 |
-| SUCC-004 (Part 1, zero data leakage pre-GA) | §3.1 stage 3/5 (security scanning), Part 8 §7 SECTEST-001 executed here |
-| SUCC-005 (Part 1, 100% audit completeness) | §1.4 COV-001 applied to event-sourced invariants, §7 DR-001 RPO discipline |
-| BR-020-2 (Part 2, bounded failover latency) | §6.2 methodology |
-| Part 5 OQ-011 | §6.2 PERF-002 (resolution mechanism defined, number pending benchmark) |
-| Part 6 OQ-014 | §6 methodology applies equally to GPU capacity planning |
-| Part 3 OQ-008 / Part 9 OQ-021 | §8 DR-002 (explicitly blocked on their resolution) |
-| Load testing strategy | §7.1 LT-001 through LT-003 |
-| Chaos engineering | §7.2 CHAOS-001 through CHAOS-003 |
-| Canary/blue-green deployment | §7.3 CANARY-001 through CANARY-004 |
-| Database migration strategy (expand-contract) | §7.4 MIG-001 through MIG-003 |
+| SUCC-004 (Part 1, zero data leakage pre-GA) | §3.1 stage 3/5 (security scanning), §7.1 SECPIPE-001/002 |
+| SUCC-005 (Part 1, 100% audit completeness) | §1.4 COV-001 applied to event-sourced invariants, §9 DR-001 RPO discipline |
+| BR-020-2 (Part 2, bounded failover latency) | §7.2 methodology |
+| Part 5 OQ-011 | §7.2 PERF-002 (resolution mechanism defined, number pending benchmark) |
+| Part 6 OQ-014 | §7 methodology applies equally to GPU capacity planning |
+| Part 3 OQ-008 / Part 9 OQ-021 | §9 DR-002 (explicitly blocked on their resolution) |
+| Load testing strategy | §8.1 LT-001 through LT-003 |
+| Chaos engineering | §8.2 CHAOS-001 through CHAOS-003 |
+| Canary/blue-green deployment | §8.3 CANARY-001 through CANARY-004 |
+| Database migration strategy (expand-contract) | §8.4 MIG-001 through MIG-003 |
+| BIZ-044 (OWASP/PCI-DSS compliance) | §7.1 SECPIPE-001/002, §7.2 PENTEST-001/002, §7.4 PCI-001 through PCI-004 |
+| BIZ-048 (defense-in-depth security) | §7.1 SECPIPE-002 RLS tests, authorization tests, SSRF tests |
+| BIZ-049 (supply chain security) | §7.1 SECPIPE-001 SBOM, dependency scanning, container scanning |
+| BIZ-050 (privileged access management) | §7.3 REDTEAM-001, Part 8 §7.7 PAM |
+| OWASP A01-A10 compliance | §7.1 SECPIPE-001/002, §7.2 PENTEST-001/002, §7.3 REDTEAM-001 |
 
 ---
 
-## 12. Open Items Carried Forward
+## 13. Open Items Carried Forward
 
 - **OQ-026**: Run the PERF-001 benchmarking spike against provisioned staging infrastructure.
 - **OQ-027**: Set specific RPO/RTO numeric targets (§8 DR-001) jointly with Product/Compliance.
