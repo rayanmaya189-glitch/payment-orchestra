@@ -207,7 +207,7 @@ CREATE TABLE conversation_history (
 
 - **AITOOL-002**: Tool calls are bounded to read-only endpoints — the Assistant has no write-path tool access, preserving AI-P-003 (no autonomous money movement).
 - **AITOOL-003**: Tool call results are included in the RAG context and cited like any other retrieved source.
-- **AITOOL-004**: Tool calls are gated by the same RBAC/ABAC rules as direct API calls.
+- **AITOOL-004**: Tool calls are gated by the same RBAC rules as direct API calls.
 
 ### 9.5 Multi-Step Reasoning Chains (H2 Enhancement)
 

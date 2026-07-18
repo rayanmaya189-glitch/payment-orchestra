@@ -23,7 +23,7 @@ This platform is modeled using **strategic DDD** (context mapping, ubiquitous la
 
 **ORM Layer**: All database access is through ORMs — no raw SQL in application code:
 - **Rust services** (orchestration, connector-gateway, AI assistant, risk): SeaORM entities with derive macros
-- **Go services** (tenant, IAM, compliance, notifications, analytics, document): Ent ORM schemas with generated code
+- **Go services** (operator, IAM, compliance, notifications, analytics, document): Ent ORM schemas with generated code
 
 This distinction is deliberate — not every context needs the cost of full event sourcing, and applying it uniformly would be over-engineering exactly the contexts (e.g., Notification templates) where it adds no auditability value.
 
@@ -132,7 +132,7 @@ For each core-domain bounded context, this section defines: purpose, aggregates 
   - `RoutingAttempt` (entity, child of `PaymentIntent`) — one per acquirer hop attempted (supports failover history, EX-020b idempotency safeguard from Part 2).
 - **Value Objects**:
   - `Money` (amount: integer minor units, currency: ISO 4217 code) — always integer minor units internally to avoid floating-point rounding defects (a hard engineering rule, not a suggestion).
-  - `IdempotencyKey` (tenant-scoped, caller-supplied, required on every mutating command per BR-020-1, Part 2).
+  - `IdempotencyKey` (caller-supplied, required on every mutating command per BR-020-1, Part 2).
   - `AcquirerReference` (acquirer-specific transaction reference string, opaque to the domain model — this is the ACL boundary artifact from BC-04).
   - `DeclineReason` (normalized enum, mapped from acquirer-specific codes by BC-04's ACL — never the raw acquirer code, so routing rules in BC-05 stay acquirer-agnostic per BIZ-010).
 - **State Machine** (simplified): `Created → Authorizing → Authorized → Capturing → Captured → [Refunding → Refunded/PartiallyRefunded]`, with `Authorizing`/`Capturing` able to transition to `Failed` (with terminal `FailedAllRoutes` if every routing hop exhausted) and any authorized-but-uncaptured state able to transition to `Voided` or `AuthorizationExpired`.
@@ -182,7 +182,7 @@ For each core-domain bounded context, this section defines: purpose, aggregates 
 
 ## 4. Domain Event Catalog (Consolidated)
 
-All domain events are versioned, immutable, tenant-scoped, and published to NATS JetStream subjects following the naming convention `events.<bounded_context>.<aggregate>.<event_name>.v<version>` (full subject taxonomy in Part 4). Every event carries a common envelope:
+All domain events are versioned, immutable, and published to NATS JetStream subjects following the naming convention `events.<bounded_context>.<aggregate>.<event_name>.v<version>` (full subject taxonomy in Part 4). Every event carries a common envelope:
 
 ```
 EventEnvelope {
@@ -221,7 +221,7 @@ EventEnvelope {
 | EVT-18 | RepresentmentSubmitted | BC-10 | BC-15 |
 | EVT-19 | ChargebackResolved | BC-10 | BC-06 (funds impact note), BC-15 |
 
-*(Supporting-context events — Tenant lifecycle, IAM role changes, KYB status changes, notification delivery, document upload/OCR completion — are cataloged in §5 alongside their owning contexts, to keep this table focused on money-movement-relevant events per BIZ-040's audit priority.)*
+*(Supporting-context events — Operator lifecycle, IAM role changes, KYB status changes, notification delivery, document upload/OCR completion — are cataloged in §5 alongside their owning contexts, to keep this table focused on money-movement-relevant events per BIZ-040's audit priority.)*
 
 ---
 
@@ -232,7 +232,7 @@ EventEnvelope {
 - Owns operator identity used across all contexts (single-tenant, so operator context is implicit but still modeled for lifecycle management).
 
 ### 5.2 BC-02 — Identity & Access (IAM)
-- **Aggregate**: `Principal` (root — represents a human user or a service account), entities: `RoleAssignment`. Value objects: `Permission`, `Role` (RBAC), `AttributeCondition` (ABAC, e.g., "can approve reconciliation exceptions only up to X amount" — ties to OQ-006, Part 2).
+- **Aggregate**: `Principal` (root — represents a human user or a service account), entities: `RoleAssignment`. Value objects: `Permission`, `Role` (RBAC), `AmountThreshold` (role-based amount limits, e.g., "Finance Operator can approve refunds up to X amount" — ties to OQ-006, Part 2, resolved in Part 8 RBAC-001).
 - Events: `PrincipalCreated`, `RoleAssigned`, `PermissionDenied` (yes, denials are also events — required for security audit per Part 8).
 
 ### 5.3 BC-03 — Merchant Compliance (KYB)
@@ -377,7 +377,7 @@ func (SagaInstance) Fields() []ent.Field {
 
 **Design Principle (SAGA-005)**: Concurrent sagas operating on the same aggregate are detected via optimistic concurrency control (Part 5 CONC-001) — if two sagas attempt to mutate the same PaymentIntent, one will fail the concurrency check and must retry after reloading the aggregate state.
 
-### 9.9 Maker/Checker Pattern (Dual-Control Approval)
+### 9.2 Maker/Checker Pattern (Dual-Control Approval)
 
 For bank-grade operational safety, the following operations require a Maker/Checker workflow — a two-person approval process where the Maker initiates a change and a Checker (a different authorized principal) reviews and approves it before the change takes effect.
 
@@ -466,7 +466,7 @@ pub struct Model {
 
 **Design Principle (MKCK-005)**: The Maker/Checker pattern applies to the *configuration/command* layer only, not to runtime event-driven state transitions. For example, a routing policy change goes through Maker/Checker, but the PaymentIntent state transitions (authorize → capture → settle) follow the normal event-sourced state machine without approval gates — those are automated business processes, not human-initiated configuration changes.
 
-### 9.2 Outbox Pattern (Transactional Outbox)
+### 9.3 Outbox Pattern (Transactional Outbox)
 
 Event publishing reliability requires the Transactional Outbox pattern to guarantee that domain events are published to NATS JetStream if and only if the corresponding aggregate state change commits to Postgres.
 
@@ -499,7 +499,7 @@ impl ActiveModelBehavior for ActiveModel {}
 
 **Why this matters for BIZ-040/PRIN-05**: Without the outbox pattern, a crash between Postgres commit and NATS publish would silently lose domain events, breaking the "event stream IS the audit log" claim. The outbox table is the durable bridge.
 
-### 9.3 Circuit Breaker Pattern
+### 9.4 Circuit Breaker Pattern
 
 **CB-001 (Acquirer Circuit Breaker)**: `connector-gateway` maintains per-connector circuit breakers. When a connector's error rate exceeds a configurable threshold (e.g., >50% error rate over a 30-second window), the circuit opens and `orchestration-service` routing logic automatically skips that connector for the duration of the open window, avoiding cascading latency degradation on the checkout path.
 
@@ -507,7 +507,7 @@ impl ActiveModelBehavior for ActiveModel {}
 
 **CB-003 (Bulkhead per Connector)**: Each acquirer adapter within `connector-gateway` has its own connection pool and timeout budget, isolated from other adapters. A hanging TCP connection to one acquirer cannot starve connection pool resources for other acquirers.
 
-### 9.4 Retry with Exponential Backoff + Jitter
+### 9.5 Retry with Exponential Backoff + Jitter
 
 **RETRY-001**: All external-system calls (acquirer APIs, webhook delivery to merchants, settlement file polling) use exponential backoff with jitter:
 - Initial delay: configurable per integration (acquirer: 100ms, webhook delivery: 1s, settlement poll: 5min)
@@ -518,7 +518,7 @@ impl ActiveModelBehavior for ActiveModel {}
 
 **RETRY-002**: Internal service-to-service gRPC calls use a lighter retry policy (1 retry, fixed 100ms delay, only on UNAVAILABLE/DEADLINE_EXCEEDED — never on INVALID_ARGUMENT or PERMISSION_DENIED).
 
-### 9.5 Soft-Delete and Archival Strategy
+### 9.6 Soft-Delete and Archival Strategy
 
 **ARCH-001**: Aggregates in terminal states (`PaymentIntent` in `Captured`/`Refunded`/`Voided`/`Failed`/`AuthorizationExpired`, `Invoice` in `Paid`/`Cancelled`, `Subscription` in `Cancelled`) are candidates for archival after a configurable retention period (default: 90 days in hot store). Archival moves the aggregate's event stream from `event_store` to a cold-storage table (`event_store_archive`) with the same schema but on a separate tablespace.
 
@@ -526,21 +526,21 @@ impl ActiveModelBehavior for ActiveModel {}
 
 **ARCH-003**: Read-model projections for archived aggregates are maintained indefinitely, but the underlying event streams are only rehydrated on demand for compliance/audit purposes.
 
-### 9.6 Tenant Provisioning Orchestration
+### 9.7 Provisioning Orchestration
 
-**PROV-001**: Tenant onboarding (UC-001) triggers a provisioning saga that creates all required per-tenant infrastructure: Postgres schema/role, MinIO bucket, OpenSearch index, Redis key prefix namespace, NATS stream consumer configuration.
+**PROV-001**: Operator onboarding (UC-001) triggers a provisioning saga that creates all required infrastructure: Postgres schema/role, MinIO bucket, OpenSearch index, Redis key prefix namespace, NATS stream consumer configuration.
 
-**PROV-002**: Provisioning is idempotent — re-running the provisioning saga for an already-provisioned tenant is a no-op (checked via `tenant.provisioned_at` timestamp).
+**PROV-002**: Provisioning is idempotent — re-running the provisioning saga for an already-provisioned operator is a no-op (checked via `operator.provisioned_at` timestamp).
 
 **PROV-003**: Tenant suspension disables live processing but retains all data for audit compliance (AUD-001). Deprovisioning (data deletion) is deferred pending OQ-019 legal confirmation.
 
-### 9.7 API Key Scoping to Acquirer Links
+### 9.8 API Key Scoping to Acquirer Links
 
 **APIKEY-001**: In addition to role-based permission scoping (Part 8 §2.1), API keys can optionally be scoped to specific `MerchantAcquirerLink` IDs, so that a merchant integration for a specific acquirer can only interact with that acquirer's data, following the principle of least privilege.
 
-### 9.8 Global Tenant Event Ordering
+### 9.9 Global Event Ordering
 
-**EVT-ORDER-001**: For use cases requiring cross-aggregate chronological ordering (AI Assistant summary documents, analytics dashboards), a per-tenant global event sequence is assigned by a lightweight `tenant_event_counter` table incremented atomically alongside event store appends:
+**EVT-ORDER-001**: For use cases requiring cross-aggregate chronological ordering (AI Assistant summary documents, analytics dashboards), a global event sequence is assigned by a lightweight `event_counter` table incremented atomically alongside event store appends:
 
 **Event Counter Entity (SeaORM — Rust):**
 

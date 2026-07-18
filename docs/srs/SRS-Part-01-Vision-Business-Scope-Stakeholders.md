@@ -78,7 +78,7 @@ Merchants and platforms operating in the UAE and the region today face a fragmen
 
 To keep scope honest, the following are explicitly **out of vision** (see also §7, Out of Scope):
 
-- The platform is **not** a licensed payment institution, e-money issuer, or acquiring bank. It does not hold a UAE Central Bank retail payment services license itself in the base architecture; where a tenant requires the platform operator to hold such a license (e.g., to operate as a payment aggregator), that is a distinct legal/business track outside this SRS's engineering scope, though the architecture must not preclude it (see §6.4).
+- The platform is **not** a licensed payment institution, e-money issuer, or acquiring bank. It does not hold a UAE Central Bank retail payment services license itself in the base architecture; where the operator requires the platform operator to hold such a license (e.g., to operate as a payment aggregator), that is a distinct legal/business track outside this SRS's engineering scope, though the architecture must not preclude it (see §6.4).
 - The platform is **not** a card scheme, is **not** a domestic switch, and does **not** replace UAEFTS/AANI — it integrates with and routes through them via licensed partners.
 - The platform is **not** a general-purpose LLM chat product; the AI Assistant is scoped to payment operations, reconciliation, merchant support, and reporting tasks grounded in the tenant's own data.
 
@@ -153,7 +153,7 @@ Business requirements are the "why" that drives functional requirements in later
 |---|---|---|---|
 | BIZ-040 | The platform must maintain immutable audit logs of all configuration changes, routing decisions, and money-movement-relevant events, retained per UAE regulatory retention expectations (see Part 8 for specifics). | Must | H1 |
 | BIZ-041 | The platform must support data residency controls appropriate to UAE data protection expectations (PDPL) and, where applicable, sector-specific guidance for payment data. | Must | H1 |
-| BIZ-042 | The platform must support role-based and attribute-based access control so that sensitive operations (e.g., changing settlement bank details) require elevated permissions and produce audit trail entries. | Must | H1 |
+| BIZ-042 | The platform must support role-based access control so that sensitive operations (e.g., changing settlement bank details) require elevated permissions and produce audit trail entries. | Must | H1 |
 | BIZ-043 | The platform must support KYC/KYB evidence storage and status tracking for merchants (evidence storage and workflow only; the platform does not perform its own regulated KYC/KYB decisioning — this is delegated to a licensed partner or the tenant's own compliance process, unless/until the platform itself is licensed). | Must | H1 |
 | BIZ-044 | The platform must comply with OWASP Top 10 (2021) security controls and be assessed against PCI-DSS 4.0 requirements appropriate to its scope (SAQ-A or SAQ-A-EP). | Must | H1 |
 | BIZ-045 | The platform must implement AML/CFT transaction monitoring with rule-based suspicious activity detection and SAR generation capability. | Must | H1 |
@@ -169,7 +169,7 @@ Business requirements are the "why" that drives functional requirements in later
 |---|---|---|---|
 | BIZ-040 | The platform must maintain immutable audit logs of all configuration changes, routing decisions, and money-movement-relevant events, retained per UAE regulatory retention expectations (see Part 8 for specifics). | Must | H1 |
 | BIZ-041 | The platform must support data residency controls appropriate to UAE data protection expectations (PDPL) and, where applicable, sector-specific guidance for payment data. | Must | H1 |
-| BIZ-042 | The platform must support role-based and attribute-based access control so that sensitive operations (e.g., changing settlement bank details) require elevated permissions and produce audit trail entries. | Must | H1 |
+| BIZ-042 | The platform must support role-based access control so that sensitive operations (e.g., changing settlement bank details) require elevated permissions and produce audit trail entries. | Must | H1 |
 | BIZ-043 | The platform must support KYC/KYB evidence storage and status tracking for merchants (evidence storage and workflow only; the platform does not perform its own regulated KYC/KYB decisioning — this is delegated to a licensed partner or the tenant's own compliance process, unless/until the platform itself is licensed). | Must | H1 |
 
 ### 4.5 Business Requirements Traceability Note
@@ -233,7 +233,7 @@ Because of BIZ-011/CUST-001–003:
 - **SCOPE-007**: Unified transaction/analytics dashboard (backed by ClickHouse) — authorization rates, decline reasons, settlement status.
 - **SCOPE-008**: AI Payment Assistant (RAG over tenant's own operational data; Ollama-hosted Qwen3 32B + Qwen3-VL 8B for document/vision tasks; BGE-M3 + reranker for retrieval) — see Part 6.
 - **SCOPE-009**: Document management for compliance evidence, settlement advices, and merchant-uploaded files (MinIO-backed object storage) with OCR pipeline.
-- **SCOPE-010**: Identity & Access Management: authentication, RBAC + ABAC, audit logging — see Part 8.
+- **SCOPE-010**: Identity & Access Management: authentication, RBAC, audit logging — see Part 8.
 - **SCOPE-011**: Webhooks and SDKs for merchant/platform integration — see Part 10.
 - **SCOPE-012**: Fraud/risk scoring signals surfaced to merchants (initially rule-based/heuristic; ML-based risk scoring is H2/H3) — see Part 5/6.
 - **SCOPE-013 (H2)**: Multi-currency reconciliation, GCC expansion adapters (Saudi Arabia first).
@@ -284,7 +284,7 @@ Because of BIZ-011/CUST-001–003:
 | STK-003 (Business Owner) | Failover/revenue recovery, transparent fees | BIZ-012 |
 | STK-006 (Regulator) | Audit trail, data residency, KYC/KYB evidence | BIZ-040, BIZ-041, BIZ-043 |
 | STK-009 (AI/ML Team) | Grounded, citable AI answers on self-hosted infra | BIZ-020, BIZ-021, BIZ-023 |
-| STK-010 (Security/Compliance) | RBAC/ABAC, immutable logs | BIZ-042, BIZ-040 |
+| STK-010 (Security/Compliance) | RBAC, immutable logs | BIZ-042, BIZ-040 |
 | STK-014 (Legal) | Custody/licensing clarity | ASSUMP-001 (§6.4) |
 
 ### 8.3 RACI Summary for This Document Series

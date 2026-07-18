@@ -87,7 +87,7 @@ Then the PaymentIntent transitions through Authorizing (Acquirer A) -> Failed(si
 |---|---|---|
 | Local/dev | Individual developer work | Synthetic/local fixtures |
 | CI (ephemeral) | Automated pipeline runs | Ephemeral test containers, destroyed after run |
-| Staging | Pre-production validation, connector sandbox integration | Synthetic tenants + real acquirer *sandbox* credentials only |
+| Staging | Pre-production validation, connector sandbox integration | Synthetic operators + real acquirer *sandbox* credentials only |
 | Sandbox (tenant-facing) | Merchant developer (ACT-03) integration testing (Part 1 §9 Persona "Rashid") | Tenant's own sandbox-mode data, isolated from their live data within the same tenant record (a `mode` flag, not a separate tenant, to preserve a single onboarding/config experience — Part 9 schema note for Part 12 appendix) |
 | Production | Live traffic | Real tenant data, full Part 8 controls active |
 
@@ -221,7 +221,7 @@ Total checkout latency budget (target, tenant-perceived)
 
 ## 8. Load Testing & Chaos Engineering
 
-### 7.1 Load Testing Strategy
+### 8.1 Load Testing Strategy
 
 - **LT-001**: A load testing suite is maintained alongside the application code, using a framework such as `k6` or `Locust`, targeting the following scenarios:
   - **Checkout hot path**: `CreatePaymentIntent` + `AuthorizePaymentIntent` at target TPS (transactions per second), measuring p50/p95/p99 latency.
@@ -233,7 +233,7 @@ Total checkout latency budget (target, tenant-perceived)
 
 - **LT-003**: Performance regression detection: load test results are stored historically; a CI step compares current-run latency metrics against the baseline and fails the build if p99 latency regresses by more than a configurable threshold (default: 15%).
 
-### 7.2 Chaos Engineering
+### 8.2 Chaos Engineering
 
 - **CHAOS-001**: A chaos engineering test suite injects controlled failures in staging:
   - **Acquirer timeout/failure**: Simulate one acquirer returning 500s or timing out; validate failover routing (CB-CONN-001, Part 7).
@@ -247,7 +247,7 @@ Total checkout latency budget (target, tenant-perceived)
 
 - **CHAOS-003**: Chaos engineering findings feed back into circuit breaker thresholds (Part 3 §9.3), retry configurations (Part 3 §9.4), and graceful degradation modes (Part 4 §9.6) — the chaos suite validates the *configured* resilience, not just the *coded* resilience.
 
-### 7.3 Canary Deployment Specification
+### 8.3 Canary Deployment Specification
 
 - **CANARY-001**: Production deployments use canary rollout: a small percentage of traffic (default: 5%) is routed to the new version while the rest remains on the old version. The canary is monitored for:
   - Error rate increase (threshold: >0.5% increase over baseline)
@@ -260,7 +260,7 @@ Total checkout latency budget (target, tenant-perceived)
 
 - **CANARY-004**: Blue-green deployment is available as an alternative for non-event-sourced services (e.g., `notification-service`, `analytics-service`) where the database schema doesn't require gradual migration.
 
-### 7.4 Database Migration Strategy
+### 8.4 Database Migration Strategy
 
 - **MIG-001**: All Postgres schema changes use expand-contract migration pattern:
   1. **Expand**: Add new columns/tables (backward-compatible with old application code)
@@ -335,8 +335,8 @@ All production-affecting changes follow the Maker/Checker pattern (Part 3 MKCK-0
 | SUCC-003 (Part 1, AI top-50 validated pre-GA) | §1.2 AI evaluation suite row, §3.1 stage 6 |
 | SUCC-004 (Part 1, zero data leakage pre-GA) | §3.1 stage 3/5 (security scanning), §7.1 SECPIPE-001/002 |
 | SUCC-005 (Part 1, 100% audit completeness) | §1.4 COV-001 applied to event-sourced invariants, §9 DR-001 RPO discipline |
-| BR-020-2 (Part 2, bounded failover latency) | §7.2 methodology |
-| Part 5 OQ-011 | §7.2 PERF-002 (resolution mechanism defined, number pending benchmark) |
+| BR-020-2 (Part 2, bounded failover latency) | §6.2 methodology |
+| Part 5 OQ-011 | §6.2 PERF-002 (resolution mechanism defined, number pending benchmark) |
 | Part 6 OQ-014 | §7 methodology applies equally to GPU capacity planning |
 | Part 3 OQ-008 / Part 9 OQ-021 | §9 DR-002 (explicitly blocked on their resolution) |
 | Load testing strategy | §8.1 LT-001 through LT-003 |
@@ -357,7 +357,7 @@ All production-affecting changes follow the Maker/Checker pattern (Part 3 MKCK-0
 - **OQ-027**: Set specific RPO/RTO numeric targets (§8 DR-001) jointly with Product/Compliance.
 - **OQ-028**: Finalize CI/CD blocking-gate stringency for production deploy manual approval.
 - **OQ-050**: Finalize canary deployment thresholds (§7.3 CANARY-001) — error-rate and latency thresholds need to be tuned against real production baseline metrics after pilot launch.
-- **OQ-051**: Confirm chaos engineering tooling choice (§7.2 CHAOS-001) — Litmus Chaos vs. custom scripts vs. a managed chaos platform — against operational maturity and budget.
+- **OQ-051**: Confirm chaos engineering tooling choice (§8.2 CHAOS-001) — Litmus Chaos vs. custom scripts vs. a managed chaos platform — against operational maturity and budget.
 - **OQ-052**: Finalize expand-contract migration tooling (§7.4 MIG-002) — `refinery` vs. `sqlx migrate` vs. another migration framework — compatible with the async Rust stack.
 
 ---

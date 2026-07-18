@@ -137,7 +137,7 @@ events.document.document.document_ocr_completed.v1
 - **Consumer groups**: Each downstream service creates a durable consumer per stream it subscribes to, with explicit ack after successful projection/side-effect processing, and dead-letter handling (redeliver with backoff, then park in a `*_DLQ` subject after N failed attempts) surfaced to SVC-07... correction: surfaced to an operational alert channel monitored by ACT-07 (Support/Ops Engineer, Part 2).
 - **Exactly-once processing semantics**: NATS JetStream provides at-least-once delivery; **exactly-once effect** is achieved at the consumer level via idempotent projections keyed on `event_id` (dedup table per consumer), not assumed from the transport layer.
 
-### 4.3 gRPC Contract Ownership
+### 4.4 gRPC Contract Ownership
 
 Each domain service publishes its own `.proto` service definition (full contracts in Part 10); `connector-gateway` additionally defines the internal `AcquirerConnector` gRPC-equivalent trait contract (Rust trait, Part 7) that concrete acquirer adapters implement in-process (not a network call per adapter — adapters are compiled into `connector-gateway` as plugins/modules, not separate microservices per acquirer, to avoid N-times deployment overhead for what are essentially stateless protocol translators).
 
@@ -147,13 +147,13 @@ Each domain service publishes its own `.proto` service definition (full contract
 
 *(Deep internals for SVC-05, SVC-04, SVC-12 are deferred to their dedicated Parts 5, 7, 6 respectively; this section covers the remaining services not given a dedicated part.)*
 
-### 5.1 SVC-01 `tenant-service`
-- Owns tenant registration (UC-001), tenant status lifecycle, tenant member list (before fine-grained roles, which SVC-02 owns).
-- Exposes: `CreateTenant`, `GetTenant`, `UpdateTenantStatus` (internal-only, called by `compliance-service` on KYB approval), `ListTenantMembers`.
-- Publishes: `TenantRegistered`, `TenantVerified`, `TenantSuspended`.
+### 5.1 SVC-01 `operator-service`
+- Owns operator registration (UC-001), operator status lifecycle, operator member list (before fine-grained roles, which SVC-02 owns).
+- Exposes: `CreateOperator`, `GetOperator`, `UpdateOperatorStatus` (internal-only, called by `compliance-service` on KYB approval), `ListOperatorMembers`.
+- Publishes: `OperatorRegistered`, `OperatorVerified`, `OperatorSuspended`.
 
 ### 5.2 SVC-02 `iam-service`
-- Owns authentication (issuing/validating JWTs), RBAC role definitions, ABAC attribute conditions (OQ-006 threshold-based approval rules).
+- Owns authentication (issuing/validating JWTs), RBAC role definitions, threshold-based approval rules (OQ-006 resolved in Part 8 RBAC-001).
 - Exposes: `Authenticate`, `IssueToken`, `ValidatePermission` (called synchronously by API Gateway on every request — must be extremely low latency, hence Redis-backed permission cache alongside Postgres source of truth).
 - Publishes: `PrincipalCreated`, `RoleAssigned`, `PermissionDenied`.
 - **NFR note (forward reference to Part 11)**: `ValidatePermission` sits on the critical path of every single API call platform-wide; its p99 latency budget is the tightest of any service in the system.
@@ -194,7 +194,7 @@ Each domain service publishes its own `.proto` service definition (full contract
 
 ## 6. Scheduling & Background Jobs
 
-- **JOB-001**: Subscription renewal triggers (SVC-08, internal cron per tenant billing cycle).
+- **JOB-001**: Subscription renewal triggers (SVC-08, internal cron per billing cycle).
 - **JOB-002**: Dunning retry execution (SVC-08).
 - **JOB-003**: Settlement file polling for acquirers that don't support webhook push (SVC-09, via `connector-gateway` polling adapters).
 - **JOB-004**: Invoice overdue transition + reminder trigger (SVC-06).
@@ -235,7 +235,7 @@ For MVP, scheduling is implemented as in-process cron-style schedulers within th
 
 ## 10. Open Items Carried Forward
 
-- **OQ-009**: Confirm whether `risk-service` (SVC-11) synchronous scoring call adds unacceptable latency to the checkout path at MVP — needs a benchmark once Part 11 performance targets are set; if too slow, MVP may ship with routing-time risk scoring disabled by default and enabled per-tenant opt-in.
+- **OQ-009**: Confirm whether `risk-service` (SVC-11) synchronous scoring call adds unacceptable latency to the checkout path at MVP — needs a benchmark once Part 11 performance targets are set; if too slow, MVP may ship with routing-time risk scoring disabled by default and enabled per-operator opt-in.
 - **OQ-010**: Decide whether `invoice-service` and `payment-link-service` (SVC-06/07) should share a single Postgres instance (different schemas) or fully separate instances at MVP scale — cost vs. isolation trade-off to be resolved in Part 9.
 
 ---

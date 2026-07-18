@@ -29,7 +29,7 @@
 | 5 | Payment Orchestration Engine | State machine, routing algorithm, idempotency, partial auth handling, currency precision, subscription pause/resume (all SeaORM entities) |
 | 6 | AI Payment Assistant & RAG | Model routing, RAG pipeline, guardrails, evaluation harness, production quality monitoring, tool use (H2), multi-step reasoning (H2), enhanced prompt injection defense |
 | 7 | Gateway Connector Framework | ACL trait design, capability flags, decline normalization, settlement formats, circuit breakers, bulkhead isolation, per-connector retry config |
-| 8 | Identity, Security & Compliance | RBAC/ABAC, secrets/encryption (HSM-backed, AES-256, TLS 1.3), audit framework, UAE regulatory mapping, threat model (STRIDE + abuse cases), OWASP Top 10 controls, PCI-DSS scope minimization, AML/CFT monitoring, fraud scoring, security headers, container hardening, SSRF prevention, PAM, data classification, supply chain security |
+| 8 | Identity, Security & Compliance | RBAC, secrets/encryption (HSM-backed, AES-256, TLS 1.3), audit framework, UAE regulatory mapping, threat model (STRIDE + abuse cases), OWASP Top 10 controls, PCI-DSS scope minimization, AML/CFT monitoring, fraud scoring, security headers, container hardening, SSRF prevention, PAM, data classification, supply chain security |
 | 9 | Database Design | Postgres (SeaORM entities for Rust, Ent schemas for Go), Redis, ClickHouse (Go driver), OpenSearch, MinIO; outbox table, event store archival, connection pooling, RLS policies |
 | 10 | APIs & gRPC Contracts | REST conventions, proto contracts (cross-language gRPC), webhook contract, SDK strategy, gRPC service versioning, webhook replay protection, SDK deprecation/migration, API security, NATS subject versioning |
 | 11 | Testing, DevOps & Deployment | TDD standards, CI/CD, K8s topology, observability, DR, load testing, chaos engineering, canary deployment, expand-contract migrations, security testing pipeline, penetration testing, PCI-DSS compliance gates |
@@ -94,7 +94,7 @@
 | OQ-003 (Part 1) / OQ-016 (Part 7) | Confirm final MVP acquirer/PSP shortlist | Product (STK-007) | Part 7 connector implementation start |
 | OQ-004 (Part 1) | Confirm GPU/inference infrastructure budget | Product/Eng leadership | Part 6 model variant selection, Part 11 §6 benchmarking |
 | OQ-005 (Part 2) | Finalize dunning retry schedule defaults | Product | UC-031 final configuration defaults |
-| OQ-006 (Part 2) | Secondary-approver threshold for AI-suggested reconciliation matches | Compliance (STK-010) | **Resolved in Part 8 §2.2 ABAC-001** — yes, threshold-based dual control |
+| OQ-006 (Part 2) | Secondary-approver threshold for AI-suggested reconciliation matches | Compliance (STK-010) | **Resolved in Part 8 §2.2 RBAC-001** — yes, threshold-based dual control |
 | OQ-007 (Part 3) | Whether `RiskAssessment` (BC-11) stays a separate context once ML scoring (H3) is designed | Architecture | H3 fraud/risk design spike |
 | OQ-008 (Part 3) / OQ-021 (Part 9) | Event retention/archival policy in NATS JetStream and Postgres | Engineering | Part 11 §7 DR-002 DR runbook finalization |
 | OQ-009 (Part 4) | Whether risk-service synchronous scoring adds unacceptable checkout latency | Engineering | Part 11 §6 benchmarking spike (OQ-026) |
@@ -127,7 +127,7 @@
 | OQ-039 (Part 6) | Finalize feedback-loop UX design (thumbs-up/down vs. structured) | Product/UX | Part 6 §9.1 AIMON-001 |
 | OQ-040 (Part 6) | Confirm tool-use API surface for H2 | Product/Engineering | Part 6 §9.4 AITOOL-001 |
 | OQ-041 (Part 6) | Finalize multi-step reasoning step limit (default 3) | Engineering/AI | Part 6 §9.5 AICHAIN-002 |
-| OQ-042 (Part 6) | Evaluate per-tenant vs. shared OpenSearch index trade-off | Architecture | Part 6 §9.4, Part 9 OS-001 |
+| OQ-042 (Part 6) | Evaluate OpenSearch index strategy for single-tenant deployment | Architecture | Part 6 §9.4, Part 9 OS-001 |
 | OQ-043 (Part 7) | Finalize circuit breaker thresholds for acquirer connectors | Engineering | Part 7 §5.1 CB-CONN-001 |
 | OQ-044 (Part 8) | Finalize KEK rotation schedule (default 90 days) | Security/Compliance | Part 8 §12 SEC-ROT-001 |
 | OQ-045 (Part 8) | Confirm API key acquirer scoping for MVP vs. H2 | Product | Part 8 §11 AUTHZ-002 |
@@ -162,7 +162,7 @@
 
 | Milestone | Key Deliverables | Primary Parts |
 |---|---|---|
-| M1 — Foundation | `tenant-service`, `iam-service`, `compliance-service` live; UC-001/002 functional | Parts 3, 4, 8, 9 |
+| M1 — Foundation | `operator-service`, `iam-service`, `compliance-service` live; UC-001/002 functional | Parts 3, 4, 8, 9 |
 | M2 — First Connector | One acquirer connector conformant (Part 7 §5); `connector-gateway` + `orchestration-service` authorize/capture/void/refund functional in sandbox | Parts 5, 7, 9, 10 |
 | M3 — Multi-Connector Routing | Two additional connectors; `RoutingPolicy` + failover (UC-011, UC-020 AF-020a) live | Part 5 |
 | M4 — Reconciliation | `reconciliation-service` ingesting at least one connector's settlement format; UC-040/041 functional | Parts 7, 9 |

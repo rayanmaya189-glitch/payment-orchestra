@@ -15,7 +15,7 @@
 | Part | 9 of 12 — Database Design |
 | Depends On | Part 3 (aggregates/events), Part 4 (per-service datastore ownership), Part 5 (event store needs), Part 6 (vector index needs), Part 7 (settlement staging), Part 8 (encryption/audit storage requirements) |
 | Feeds Into | Part 10 (API contracts reflect these schemas), Part 11 (backup/DR, capacity planning, migration/CI practices) |
-| Golden Rule | Every table/index is designed for single-tenant deployment — no tenant_id columns needed. Access control is enforced at the application layer via RBAC/ABAC (Part 8), not at the data layer. |
+| Golden Rule | Every table/index is designed for single-tenant deployment — no tenant_id columns needed. Access control is enforced at the application layer via RBAC (Part 8), not at the data layer. |
 
 ---
 
@@ -200,7 +200,7 @@ func (RoleAssignment) Fields() []ent.Field {
     return []ent.Field{
         field.UUID("principal_id", uuid.UUID{}),
         field.String("role"),
-        field.JSON("abac_conditions", map[string]interface{}).Default(map[string]interface{}{}),
+        field.JSON("rbac_conditions", map[string]interface{}).Default(map[string]interface{}{}),  // e.g., {"max_refund_amount_minor": 500000}
     }
 }
 
@@ -264,7 +264,7 @@ No column in this entity ever holds a plaintext secret, satisfying CRED-001/ENC-
 |---|---|---|---|
 | Idempotency dedup (fast path, Part 5 §4.2 CONC-002) | `idem:{idempotency_key}` → payment_intent_id | 24h | `orchestration-service` |
 | Hot routing policy cache | `routing_policy:active` → serialized policy | Invalidated on `RoutingPolicyActivated`, not purely TTL-based | `orchestration-service` |
-| Session/permission cache | `perm:{principal_id}` → resolved role/ABAC set | 5 min or invalidated on `RoleAssigned` | `iam-service` |
+| Session/permission cache | `perm:{principal_id}` → resolved role/RBAC set | 5 min or invalidated on `RoleAssigned` | `iam-service` |
 | API Gateway rate-limit counters | `ratelimit:{endpoint}:{window}` | Sliding window, short TTL | `api-gateway` |
 | Notification delivery dedup | `notif_sent:{notification_id}` | 7 days | `notification-service` |
 
@@ -454,7 +454,7 @@ pub struct Model {
   - Idle timeout: 300 seconds
   - Max lifetime: 1800 seconds (prevents stale connections)
 
-- **POOL-002**: The connection pool is shared across all application processes (authorization is enforced at the query level via RBAC/ABAC (Part 8), not at the connection level).
+- **POOL-002**: The connection pool is shared across all application processes (authorization is enforced at the query level via RBAC (Part 8), not at the connection level).
 
 - **POOL-003**: Read-heavy services (`analytics-service`, `ai-assistant-service`) use read-replica Postgres connections for query operations, with the primary reserved for writes. Read-replica lag is monitored as a first-class metric (Part 11 OBS-004).
 
@@ -481,7 +481,7 @@ pub struct Model {
 | Part 8 AUD-003 (immutability) | §1.3 DB-004 |
 | Transactional Outbox (event publish reliability) | §6.1 DB-005 through DB-007 |
 | Event Store Archival (lifecycle management) | §6.2 DB-008 through DB-010 |
-| ClickHouse tenant isolation (partition-level) | §8 CH-003, CH-004 |
+| ClickHouse analytics schema | §3 CH-001, CH-002 |
 | Connection pool management | §9 POOL-001 through POOL-003 |
 
 ---
