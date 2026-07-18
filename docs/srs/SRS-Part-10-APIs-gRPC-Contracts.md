@@ -176,7 +176,7 @@ message PaymentAuthorizedV1 {
 ## 4. SDK Strategy
 
 - **SDK-001**: Server-side SDKs generated substantially from the OpenAPI spec (derived from the same source-of-truth REST contract as API-001–008) for at least three languages at GA-plus (per Part 1 GOAL-011) — candidates: Node.js/TypeScript, Python, PHP, given regional e-commerce platform prevalence (WooCommerce/Magento-adjacent PHP shops are common among UAE SMB merchants) — final language priority to be confirmed with Product against actual pilot-merchant tech stacks.
-- **SDK-002**: SDKs wrap idempotency-key generation (API-004) by default (auto-generating a UUID per logical operation unless the caller supplies their own), so merchant developers get safe-by-default retry behavior without needing to understand the full idempotency mechanism up front — this directly serves Persona "Rashid" (Part 1 §9) who needs to integrate quickly without becoming a payments-idempotency expert on day one.
+- **SDK-002**: SDKs wrap idempotency-key generation (API-004) by default (auto-generating a UUIDv7 per logical operation unless the caller supplies their own), so merchant developers get safe-by-default retry behavior without needing to understand the full idempotency mechanism up front — this directly serves Persona "Rashid" (Part 1 §9) who needs to integrate quickly without becoming a payments-idempotency expert on day one.
 - **SDK-003**: A client-side (browser/mobile) SDK for hosted-checkout/payment-link embedding (PROC-04) is a separate, thinner SDK — it never handles raw card data (tokenization happens via the acquirer/PSP's own client-side tokenization library, wrapped behind a consistent platform-provided interface) to preserve PCI scope minimization (Part 8 §4.3).
 
 ---
@@ -210,7 +210,7 @@ message PaymentAuthorizedV1 {
 - **APISEC-003**: All API inputs validated against OpenAPI/gRPC schema at API Gateway before reaching domain services:
   - Type validation (string, integer, enum)
   - Length/range validation (min/max, string length)
-  - Format validation (email, UUID, ISO 4217, ISO 8601)
+  - Format validation (email, UUIDv7, ISO 4217, ISO 8601)
   - Required field validation
   - Pattern validation (regex for structured fields like trade license numbers)
 

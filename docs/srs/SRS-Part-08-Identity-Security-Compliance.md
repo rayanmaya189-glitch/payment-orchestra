@@ -341,14 +341,14 @@ This Part is the authoritative home for the *security/compliance framing* of con
 
 - **REQ-001**: Request size limits enforced at API Gateway: maximum 1MB for standard requests, maximum 10MB for document upload endpoints, maximum 100KB for payment creation. Limits enforced before body parsing to prevent memory exhaustion.
 - **REQ-002**: Request timeout: API Gateway enforces a 30-second timeout on all downstream service calls. Checkout-path endpoints (CreatePaymentIntent, AuthorizePaymentIntent) have a tighter 10-second timeout. Acquirer-facing calls have a configurable per-connector timeout (default: 15 seconds for authorize, 30 seconds for settlement polling).
-- **REQ-003**: Request correlation: every inbound request generates a ULID-based `request_id` that is propagated through all downstream calls, included in error responses, and correlated with distributed traces (OBS-005).
+- **REQ-003**: Request correlation: every inbound request generates a UUIDv7-based `request_id` that is propagated through all downstream calls, included in error responses, and correlated with distributed traces (OBS-005).
 
 ### 12.2 Input Validation
 
 - **INPUT-001**: All API inputs are validated against their OpenAPI/gRPC schema at the API Gateway before reaching domain services. Schema validation includes:
   - Type validation (string, integer, enum, etc.)
   - Length/range validation (min/max values, string length limits)
-  - Format validation (email, UUID, ISO 4217 currency code, ISO 8601 timestamp)
+  - Format validation (email, UUIDv7, ISO 4217 currency code, ISO 8601 timestamp)
   - Required field validation
 
 - **INPUT-002**: Domain-specific validation happens in the command handler (Part 3 PRIN-01) — the API Gateway handles syntactic validation; the domain layer handles semantic validation (e.g., "amount must be positive," "currency must be supported," "acquirer link must be Active").

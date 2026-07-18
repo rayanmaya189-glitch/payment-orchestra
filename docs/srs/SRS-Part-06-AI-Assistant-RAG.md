@@ -185,7 +185,7 @@ Each question in the final list is paired with a **ground-truth answer** (valida
 
 ```sql
 CREATE TABLE conversation_history (
-    session_id      UUID NOT NULL,
+    session_id      UUID NOT NULL,      -- UUIDv7
     message_seq     INT NOT NULL,
     role            TEXT NOT NULL,       -- 'user' | 'assistant'
     content         TEXT NOT NULL,

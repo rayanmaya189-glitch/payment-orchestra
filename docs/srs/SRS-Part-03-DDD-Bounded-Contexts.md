@@ -29,6 +29,8 @@ This distinction is deliberate — not every context needs the cost of full even
 
 **Why event sourcing for the core money-movement contexts specifically**: BIZ-040 (Part 1) requires immutable, complete audit trails of every money-movement-relevant event. Event sourcing makes "what happened and in what order" the source of truth by construction, rather than a derived/logged side effect of CRUD updates — which directly satisfies BIZ-040 and SUCC-005 without a separate audit subsystem bolted on afterward.
 
+**Why UUIDv7 over ULID or UUIDv4**: UUIDv7 (RFC 9562) was chosen over ULID because UUIDv7 is an IETF standard with broad ecosystem support across both Rust (`uuid` crate) and Go (`google/uuid`), whereas ULID is a community specification with less consistent library support. UUIDv7 was chosen over UUIDv4 because UUIDv4 is random and causes B-tree index fragmentation on high-throughput tables (event_store, outbox) — UUIDv7's timestamp prefix provides sequential insert order, dramatically improving write performance and reducing index bloat.
+
 ---
 
 ## 1. Strategic Design: Context Map
@@ -126,7 +128,7 @@ For each core-domain bounded context, this section defines: purpose, aggregates 
 #### AGG-01: `PaymentIntent` (Aggregate Root)
 
 - **Entities**:
-  - `PaymentIntent` (root) — identity: `payment_intent_id` (ULID, tenant-scoped).
+  - `PaymentIntent` (root) — identity: `payment_intent_id` (UUIDv7).
   - `RoutingAttempt` (entity, child of `PaymentIntent`) — one per acquirer hop attempted (supports failover history, EX-020b idempotency safeguard from Part 2).
 - **Value Objects**:
   - `Money` (amount: integer minor units, currency: ISO 4217 code) — always integer minor units internally to avoid floating-point rounding defects (a hard engineering rule, not a suggestion).
@@ -184,15 +186,15 @@ All domain events are versioned, immutable, tenant-scoped, and published to NATS
 
 ```
 EventEnvelope {
-  event_id: ULID
+  event_id: UUIDv7
   aggregate_type: string
-  aggregate_id: string
+  aggregate_id: UUIDv7
   event_type: string
   event_version: u16
   occurred_at: timestamp (UTC)
   actor: ActorReference (user_id | system_actor_id)
-  causation_id: ULID        // the command that caused this event
-  correlation_id: ULID      // ties together a full business transaction across contexts
+  causation_id: UUIDv7        // the command that caused this event
+  correlation_id: UUIDv7      // ties together a full business transaction across contexts
   payload: bytes (protobuf-encoded, schema per event type — Part 10)
 }
 ```
@@ -267,7 +269,7 @@ EventEnvelope {
 
 - **PRIN-01 (Consistency boundary = transaction boundary)**: Each aggregate is the sole authority for its own invariants; a single command can mutate exactly one aggregate instance transactionally. Cross-aggregate effects happen via domain events consumed asynchronously (never a distributed transaction spanning two aggregates).
 - **PRIN-02 (Small aggregates)**: Aggregates are kept as small as correctness allows (e.g., `PaymentIntent` does not embed `Invoice` — they reference each other by ID) to minimize contention and keep event streams focused.
-- **PRIN-03 (Identity-based aggregate access)**: Every aggregate is identified by a unique ID (ULID); no aggregate can be loaded without providing its specific ID (enforced at the Rust type-system level in Part 4).
+- **PRIN-03 (UUIDv7 for all identities)**: Every aggregate, entity, and domain event uses UUIDv7 (RFC 9562) as its primary identifier. UUIDv7 is time-ordered (timestamp-prefixed), providing sequential insert performance on B-tree indexes while retaining the distributed-generation benefits of UUIDs. No UUIDv4, ULID, or other ID formats are used. All ID generation uses the `uuid_v7()` function (Rust: `uuid::Uuid::now_v7()`, Go: `github.com/google/uuid.New()`). This is enforced at the type-system level — aggregate ID types are `Uuid` (Rust) / `uuid.UUID` (Go) with no ID generation in application code outside the designated factory functions.
 - **PRIN-04 (Money is never a float)**: All `Money` value objects use integer minor-unit representation; currency conversion, where it appears at all (BIZ-016), is always an explicit, recorded operation producing a new `Money` value with provenance (rate, source, timestamp), never an implicit cast.
 - **PRIN-05 (Events are the audit log; there is no separate bolt-on audit table for event-sourced contexts)**: For BC-05, BC-09, BC-10, BC-08, the event stream *is* the audit trail (BIZ-040). For non-event-sourced supporting contexts (BC-01, BC-02, BC-13, BC-14), a lighter-weight append-only audit log table captures command execution (actor, timestamp, before/after) without full event sourcing overhead, since replay/rebuild-from-events is not a requirement for those contexts.
 

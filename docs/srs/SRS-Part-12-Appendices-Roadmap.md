@@ -76,6 +76,7 @@
 | Routing Policy | The operator-configured, versioned rule set determining acquirer selection and failover order. |
 | SeaORM | Rust-native ORM for entity lifecycle management (schema generation, migrations, querying) used by Rust services. |
 | Settlement Batch | An ingested set of settlement records from an acquirer/bank, matched against internal payment records. |
+| UUIDv7 | Time-ordered UUID (RFC 9562) used as the primary identifier for all aggregates, entities, and domain events. Provides sequential insert performance on B-tree indexes while retaining distributed-generation benefits. |
 
 ---
 
