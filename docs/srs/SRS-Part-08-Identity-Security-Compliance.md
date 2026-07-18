@@ -15,7 +15,7 @@
 | Part | 8 of 12 — Identity, Security & Compliance |
 | Depends On | Part 1 §6 (no-custody posture), Part 3 (BC-02 IAM, BC-03 Compliance), Part 4 (SVC-02 `iam-service`, mesh mTLS) |
 | Feeds Into | Part 9 (encrypted schema fields, audit tables), Part 11 (security testing, DR/backup as part of operational NFRs) |
-| Scope | RBAC model, authentication, secrets management, encryption, audit framework, PCI-scope minimization, UAE regulatory compliance mapping, AI-specific security controls, incident response posture. |
+| Scope | ABAC model, authentication, secrets management, encryption, audit framework, PCI-scope minimization, UAE regulatory compliance mapping, AI-specific security controls, incident response posture. |
 
 ---
 
@@ -42,27 +42,30 @@
 
 ---
 
-## 2. Authorization — RBAC
+## 2. Authorization — ABAC (Attribute-Based Access Control)
 
-### 2.1 RBAC (Role-Based)
+### 2.1 Role Definitions
 
-Default roles (extensible per operator, Part 2 UC-001 step 5):
+Default roles (extensible per operator, Part 2 UC-001 step 5) serve as attribute groupings for ABAC policy assignment:
 
-| Role | Typical Permissions | Maker/Checker Eligibility |
+| Role | Default Attribute Set | Maker/Checker Eligibility |
 |---|---|---|
-| Admin | Full operator configuration, acquirer connection, routing policy, user management | Maker: all operations. Checker: all operations EXCEPT self-approved changes (MKCK-002) |
-| Finance Operator | Reconciliation, refunds/voids, invoice/subscription management, reporting — no acquirer credential management | Maker: refunds (below threshold), reconciliation. Checker: refunds (below threshold) |
+| Admin | Full operator configuration access, acquirer connection, routing policy, user management | Maker: all operations. Checker: all operations EXCEPT self-approved changes (MKCK-002) |
+| Finance Operator | Reconciliation, refunds/voids, invoice/subscription management, reporting — no acquirer credential management; refund amount threshold: configurable (default: 50,000 AED) | Maker: refunds (below threshold), reconciliation. Checker: refunds (below threshold) |
 | Developer | API key management, sandbox access, webhook configuration — no live refund/void authority by default | Maker: API key generation (limited). Checker: none (cannot approve changes) |
 | Read-Only | Dashboard/report viewing, AI Assistant Q&A — no mutating actions | Neither Maker nor Checker for any operation |
 | Compliance Reviewer (internal, platform-operator side) | KYB case review (ACT-06) — scoped to compliance-service only | Maker: KYB approvals, AML alert resolution. Checker: AML alert resolution |
 
-### 2.2 RBAC Enforcement
+### 2.2 ABAC Policy Rules
 
-- **RBAC-001**: Amount-threshold conditions — e.g., a Finance Operator role may be permitted to approve reconciliation-exception resolutions or refunds only up to a configured amount; above threshold requires a second approver (dual-control) — enforced at the command-validation layer in the relevant aggregate's command handler (Part 3/5), not merely a UI-level restriction.
-- **RBAC-002**: Time/context conditions — e.g., acquirer credential changes may require step-up re-authentication (fresh MFA challenge) regardless of existing session validity, given the sensitivity of that action (BR-010-2 adjacent).
-- **RBAC-003**: AI Assistant data-scope conditions — a Read-Only role can query the Assistant but the Assistant's retrieval (Part 6 §3.2) is itself still bounded by the same role data-access rules as any other read path.
-- **RBAC-004**: Maker/Checker segregation — no principal may serve as both Maker and Checker on the same pending change (MKCK-002, Part 3). The system enforces this at the command layer: `ApprovePendingChange` rejects if `checker_id == maker_id`.
-- **RBAC-005**: Checker eligibility is scoped by role — only Admin and Compliance Reviewer roles can serve as Checkers for financial/compliance operations. Developers cannot approve financial changes even if they have Maker access to initiate them.
+- **ABAC-001**: Amount-threshold conditions — e.g., a Finance Operator role may be permitted to approve reconciliation-exception resolutions or refunds only up to a configured amount; above threshold requires a second approver (dual-control) — enforced at the command-validation layer in the relevant aggregate's command handler (Part 3/5), not merely a UI-level restriction. This directly resolves OQ-006 (Part 2): yes, a secondary approver is required above a configurable threshold.
+- **ABAC-002**: Time/context conditions — e.g., acquirer credential changes may require step-up re-authentication (fresh MFA challenge) regardless of existing session validity, given the sensitivity of that action (BR-010-2 adjacent).
+- **ABAC-003**: AI Assistant data-scope conditions — a Read-Only role can query the Assistant but the Assistant's retrieval (Part 6 §3.2) is itself still bounded by the same attribute-based data-access rules as any other read path.
+- **ABAC-004**: Maker/Checker segregation — no principal may serve as both Maker and Checker on the same pending change (MKCK-002, Part 3). The system enforces this at the command layer: `ApprovePendingChange` rejects if `checker_id == maker_id`.
+- **ABAC-005**: Checker eligibility is scoped by role attribute — only Admin and Compliance Reviewer roles can serve as Checkers for financial/compliance operations. Developers cannot approve financial changes even if they have Maker access to initiate them.
+- **ABAC-006**: Scope conditions — API keys can be scoped to specific acquirer links (Part 8 §11 AUTHZ-002), restricting which acquirers a key can interact with. The scope is evaluated as an attribute condition at the API Gateway on every request.
+- **ABAC-007**: IP/context conditions — certain operations (e.g., bulk refund, routing policy export) may be restricted to requests originating from approved IP ranges (e.g., office network IPs for compliance-sensitive operations).
+- **ABAC-008**: Rate/quota conditions — AI Assistant usage is bounded by per-operator quotas (Part 4 AIGW-002), enforced as an attribute condition on the operator's usage counter.
 
 ### 2.3 Permission Denial Auditing
 
@@ -106,8 +109,8 @@ Default roles (extensible per operator, Part 2 UC-001 step 5):
 | Classification | Examples | Encryption | Access | Logging |
 |---|---|---|---|---|
 | **Restricted** | Acquirer API keys, KEK/DEK material, raw PAN (never stored) | AES-256 envelope encryption, HSM-backed KEK | Admin only, step-up MFA | Never log values, log access only |
-| **Confidential** | KYB evidence documents, payment method tokens, settlement details | AES-256 envelope encryption | RBAC-scoped, need-to-know | Log access with actor, no payload logging |
-| **Internal** | Routing policies, operator config, invoice details | Volume-level encryption | RBAC-scoped | Log mutations only |
+| **Confidential** | KYB evidence documents, payment method tokens, settlement details | AES-256 envelope encryption | ABAC-scoped, need-to-know | Log access with actor, no payload logging |
+| **Internal** | Routing policies, operator config, invoice details | Volume-level encryption | ABAC-scoped | Log mutations only |
 | **Public** | Payment link URLs, published API docs | TLS in transit | Unauthenticated for payment links | No logging required |
 
 ---
@@ -143,7 +146,7 @@ Default roles (extensible per operator, Part 2 UC-001 step 5):
 | AML/CFT suspicious activity reporting | §11.1 AML-002/003, SAR generation capability |
 | KYC/KYB evidence handling | Part 2 UC-002, Part 3 BC-03, this Part §3/§4 (evidence encryption) |
 | Data residency (UAE PDPL and sector expectations) | Part 1 ASSUMP-004; full stack deployed within UAE-region infrastructure |
-| Consumer data protection (PDPL) | RBAC scoping (§2), encryption (§4), §14 DEST-003 data subject request handling |
+| Consumer data protection (PDPL) | ABAC scoping (§2), encryption (§4), §14 DEST-003 data subject request handling |
 | Card scheme compliance (PCI-DSS) | §4.3 scope minimization, §7.5 SECTEST-005, §12.4 error handling |
 | Fraud monitoring requirements | §11.2 FRAUD-001 through FRAUD-003, risk scoring service |
 | Regulatory reporting | §11.3 REG-001/002, automated report generation |
@@ -162,7 +165,7 @@ Default roles (extensible per operator, Part 2 UC-001 step 5):
 
 | OWASP Category | Control | Implementation |
 |---|---|---|
-| A01 Broken Access Control | Method-level RBAC, RLS policies, CORS policy | §2 RBAC, SECTEST-004, §10 CORS |
+| A01 Broken Access Control | Method-level ABAC, RLS policies, CORS policy | §2 ABAC, SECTEST-004, §10 CORS |
 | A02 Cryptographic Failures | TLS 1.3 mandate, AES-256, HSM-backed KEK | §4 ENC-001/006/007 |
 | A03 Injection | Parameterized queries, input sanitization | Rust type system + sqlx, §10 input validation |
 | A04 Insecure Design | Abuse case modeling, abuse rate limits | §10 abuse prevention |
@@ -254,15 +257,15 @@ This Part is the authoritative home for the *security/compliance framing* of con
 | **Spoofing** | API Gateway endpoints, webhook ingress | TLS 1.3 + JWT/API-key auth (§1), webhook signature verification (Part 7), mTLS for internal traffic (§1.3 AUTH-006), MFA for human users (AUTH-001) |
 | **Tampering** | Payment intent amounts, routing policies, event streams | Event-sourcing immutability (PRIN-05), optimistic concurrency (Part 5 CONC-001), idempotency keys, outbox pattern (Part 3 §9.2) |
 | **Repudiation** | Configuration changes, money-movement events | Two-tier audit framework (§5), immutable event stream, `PermissionDenied` logging (§2.3 AUTHZ-001), log integrity hash chains (LOGSEC-001) |
-| **Information Disclosure** | Unauthorized data access, sensitive data in logs | RBAC enforcement (§2), RLS policies (SECTEST-004), encrypted fields (§4), log scrubbing (LOGSEC-002), data classification (ENC-009) |
+| **Information Disclosure** | Unauthorized data access, sensitive data in logs | ABAC enforcement (§2), RLS policies (SECTEST-004), encrypted fields (§4), log scrubbing (LOGSEC-002), data classification (ENC-009) |
 | **Denial of Service** | Checkout path, AI Assistant, database | Rate limiting (Part 4 GW-003, Part 10 RL-001), account lockout (AUTH-007), circuit breakers (Part 3 §9.3), GPU isolation (Part 4 K8S-002), request size limits (REQ-001) |
-| **Elevation of Privilege** | RBAC bypass, threshold bypass | Permission validation on every request (Part 4 GW-002), RBAC enforcement at aggregate command level (§2.2 RBAC-001), step-up re-auth for sensitive actions (RBAC-002), API key scope validation (AUTH-010) |
+| **Elevation of Privilege** | ABAC bypass, threshold bypass | Permission validation on every request (Part 4 GW-002), ABAC enforcement at aggregate command level (§2.2 ABAC-001), step-up re-auth for sensitive actions (ABAC-002), API key scope validation (AUTH-010) |
 
 ### 10.2 Insider Threat
 
 | Threat | Target | Mitigation |
 |---|---|---|
-| **Compromised admin account** | Operator data/config modification | MFA enforcement (§1.1 AUTH-001), step-up re-auth for acquirer credential changes (RBAC-002), audit trail of all changes (§5), account lockout (AUTH-007) |
+| **Compromised admin account** | Operator data/config modification | MFA enforcement (§1.1 AUTH-001), step-up re-auth for acquirer credential changes (ABAC-002), audit trail of all changes (§5), account lockout (AUTH-007) |
 | **Malicious operator** | Data exfiltration, configuration tampering | mTLS service identity + propagated actor context (§1.3 AUTH-006), no super-admin bypass, audit log of all admin actions, PAM (§7.7), session recording (PAM-002) |
 | **Compromised AI model/inference** | Data exfiltration via model output | AI Gateway guardrails (Part 6 §5), output monitoring (GRD-IN-003), no write-path tool access (AI-P-003), prompt injection defense (GRD-IN-003) |
 | **Compromised database credentials** | Direct database access bypassing application | RLS policies (SECTEST-004), encrypted credentials (SEC-001), JIT access (PAM-001), database activity monitoring (DBA-001) |
@@ -291,7 +294,7 @@ This Part is the authoritative home for the *security/compliance framing* of con
 | SQL injection via API | A03 | Critical | Parameterized queries (sqlx), RLS (SECTEST-004) |
 | SSRF via webhook URL | A10 | High | SSRF-001/002 (URL validation) |
 | Prompt injection via AI | A03 | High | GRD-IN-003 (multi-layer defense) |
-| Privilege escalation via API | A01 | Critical | Method-level RBAC, RLS (SECTEST-004) |
+| Privilege escalation via API | A01 | Critical | Method-level ABAC, RLS (SECTEST-004) |
 | Data exfiltration via logs | A09 | High | LOGSEC-002 (log scrubbing), LOGSEC-003 (SIEM) |
 | Supply chain compromise | A06 | Critical | SUPPLY-001/002/003/004 |
 | Replay attack on webhooks | A08 | Medium | WEBHOOK-REPLAY-001/002/003 (Part 10) |
@@ -405,9 +408,9 @@ This Part is the authoritative home for the *security/compliance framing* of con
 |---|---|
 | BIZ-040 (immutable audit) | §5 (both tiers), §5.3 AUD-003 |
 | BIZ-041 (data residency) | §6 table row 4 |
-| BIZ-042 (RBAC, elevated-permission audit) | §2, §2.3 |
+| BIZ-042 (ABAC, elevated-permission audit) | §2, §2.3 |
 | BIZ-043 (KYB evidence, not platform decisioning) | §6 table row 3, Part 3 BC-03 cross-reference |
-| OQ-006 (Part 2, secondary approver threshold) | §2.2 RBAC-001 — resolved: yes, threshold-based dual control |
+| OQ-006 (Part 2, secondary approver threshold) | §2.2 ABAC-001 — resolved: yes, threshold-based dual control |
 | BR-031-1 (Part 2, tokenization not raw PAN) | §4.3 ENC-005 |
 | Part 6 AI-P-002/AI-P-003 | §8 AISEC-001/002 |
 | Threat model (STRIDE) | §10.1 through §10.3 |

@@ -153,7 +153,7 @@ Each domain service publishes its own `.proto` service definition (full contract
 - Publishes: `OperatorRegistered`, `OperatorVerified`, `OperatorSuspended`.
 
 ### 5.2 SVC-02 `iam-service`
-- Owns authentication (issuing/validating JWTs), RBAC role definitions, threshold-based approval rules (OQ-006 resolved in Part 8 RBAC-001).
+- Owns authentication (issuing/validating JWTs), ABAC policy definitions, threshold-based approval rules (OQ-006 resolved in Part 8 §2.2 ABAC-001).
 - Exposes: `Authenticate`, `IssueToken`, `ValidatePermission` (called synchronously by API Gateway on every request — must be extremely low latency, hence Redis-backed permission cache alongside Postgres source of truth).
 - Publishes: `PrincipalCreated`, `RoleAssigned`, `PermissionDenied`.
 - **NFR note (forward reference to Part 11)**: `ValidatePermission` sits on the critical path of every single API call platform-wide; its p99 latency budget is the tightest of any service in the system.

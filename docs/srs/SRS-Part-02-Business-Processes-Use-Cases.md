@@ -92,7 +92,7 @@ A new operator (merchant or platform operator) signs up, provides business and K
   2. System creates a new Operator aggregate in `Pending` status (see Part 3 for aggregate definition) with a unique operator ID.
   3. System sends email verification to ACT-01.
   4. ACT-01 verifies email; Operator status moves to `Active-Unverified` (can configure sandbox, cannot process live transactions).
-  5. System provisions default RBAC roles (Admin, Finance Operator, Developer, Read-Only) with ACT-01 assigned as first Admin.
+  5. System provisions default ABAC roles (Admin, Finance Operator, Developer, Read-Only) with ACT-01 assigned as first Admin.
 - **Alternate Flows**:
   - **AF-001a**: Trade license number fails basic format validation → inline validation error, no aggregate created.
   - **AF-001b**: Tenant subdomain already taken → system suggests alternatives.
@@ -131,7 +131,7 @@ A new operator (merchant or platform operator) signs up, provides business and K
 ### UC-010: Connect an Acquirer/PSP
 
 - **Satisfies**: BIZ-010, SCOPE-002
-- **Primary Actor**: ACT-01 or ACT-03 (Admin or Developer role, per RBAC)
+- **Primary Actor**: ACT-01 or ACT-03 (Admin or Developer role, per ABAC)
 - **Preconditions**: Operator status `Active-Verified` (UC-002 complete) for live mode; sandbox mode available pre-verification.
 - **Main Flow**:
   1. Actor selects an acquirer/PSP from the supported connector catalog (Part 7 defines the Gateway Connector Framework and initial supported list).

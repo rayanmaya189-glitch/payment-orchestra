@@ -232,7 +232,7 @@ EventEnvelope {
 - Owns operator identity used across all contexts (single-tenant, so operator context is implicit but still modeled for lifecycle management).
 
 ### 5.2 BC-02 — Identity & Access (IAM)
-- **Aggregate**: `Principal` (root — represents a human user or a service account), entities: `RoleAssignment`. Value objects: `Permission`, `Role` (RBAC), `AmountThreshold` (role-based amount limits, e.g., "Finance Operator can approve refunds up to X amount" — ties to OQ-006, Part 2, resolved in Part 8 RBAC-001).
+- **Aggregate**: `Principal` (root — represents a human user or a service account), entities: `RoleAssignment`. Value objects: `Permission`, `Role` (role-based grouping), `AccessCondition` (attribute-based conditions, e.g., "can approve reconciliation exceptions only up to X amount" — ties to OQ-006, Part 2, resolved in Part 8 §2.2 ABAC-001).
 - Events: `PrincipalCreated`, `RoleAssigned`, `PermissionDenied` (yes, denials are also events — required for security audit per Part 8).
 
 ### 5.3 BC-03 — Merchant Compliance (KYB)
