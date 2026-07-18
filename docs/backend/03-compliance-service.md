@@ -173,6 +173,23 @@ pub struct SarTransaction {
 }
 ```
 
+### Concrete AML Rules (Production Defaults)
+
+| Rule ID | Type | Threshold | Window | Severity |
+|---|---|---|---|---|
+| AML-R001 | Structuring | 5+ txns between 45,000–49,999 AED (90% of 50K threshold) | 60 min | high |
+| AML-R002 | Structuring | 3+ txns between 90,000–99,999 AED (90% of 100K threshold) | 60 min | critical |
+| AML-R003 | Velocity | 20+ transactions from same operator | 60 min | medium |
+| AML-R004 | Velocity | 50+ transactions from same operator | 60 min | high |
+| AML-R005 | Amount Anomaly | Single tx > 10x operator's 30-day average | Per tx | high |
+| AML-R006 | Amount Anomaly | Single tx > 500,000 AED regardless of average | Per tx | critical |
+| AML-R007 | Rapid Succession | 5+ authorizations on same card BIN within 5 min | 5 min | medium |
+| AML-R008 | Rapid Succession | 10+ authorizations on same card BIN within 5 min | 5 min | high |
+| AML-R009 | Cross-Border | 3+ transactions to high-risk jurisdictions (FATF grey list) | 24 hr | high |
+| AML-R010 | Structuring | 10+ zero-amount authorizations (card testing indicator) | 60 min | critical |
+
+**Configurable per operator**: Thresholds, windows, and severity levels are operator-configurable via the compliance dashboard. Defaults above are platform-wide minimums.
+
 ### Compliance Monitor (Background Job)
 
 ```rust

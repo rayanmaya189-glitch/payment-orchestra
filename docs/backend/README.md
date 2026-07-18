@@ -45,6 +45,16 @@ Rust + SeaORM + NATS JetStream + PostgreSQL + Redis + ClickHouse + OpenSearch + 
 | `19-infrastructure-cross-cutting.md` | Cross-cutting | Infrastructure | Outbox, health checks, shutdown, leader election, feature flags, logging, pools, degraded modes, secrets, encryption, audit, SSRF, operational hardening |
 | `20-grpc-proto-definitions.md` | Cross-cutting | gRPC Contracts | All 15 service proto definitions, shared types, compilation config |
 
+## What Each File Contains
+
+Every service file follows this structure:
+1. **Domain Model** — Aggregates, entities, value objects, SeaORM entities
+2. **Commands** — Every mutating operation with preconditions/postconditions
+3. **Repository Interface** — Data access traits
+4. **Error Catalog** — All error codes (HTTP + gRPC status)
+5. **TDD Test Cases** — Failing test → implementation → passing test
+6. **gRPC Proto** — Service definition in `20-grpc-proto-definitions.md`
+
 ## Implementation Order (Milestone-Aligned)
 
 ### M1 — Foundation

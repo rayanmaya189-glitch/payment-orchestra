@@ -779,3 +779,250 @@ impl WebhookThrottler {
 | `GET /v1/analytics/*` | 100 | 60s | ApiKey |
 | `POST /v1/kyb-cases` | 10 | 60s | ApiKey |
 | `POST /v1/webhooks` | 10 | 60s | ApiKey |
+
+---
+
+## 31. Load Testing Specs (Part 11 §8.1)
+
+### Checkout Hot Path
+
+```rust
+pub struct LoadTestScenario {
+    pub name: String,
+    pub target_tps: u32,
+    pub duration_seconds: u32,
+    pub ramp_up_seconds: u32,
+    pub assertions: Vec<LoadTestAssertion>,
+}
+
+pub struct LoadTestAssertion {
+    pub metric: String,        // "p99_latency_ms" | "error_rate" | "throughput"
+    pub threshold: f64,
+    pub operator: ComparisonOp, // LessThan | GreaterThan
+}
+
+// Scenario 1: Single-hop authorization
+LoadTestScenario {
+    name: "single_hop_authorize".into(),
+    target_tps: 500,
+    duration_seconds: 300,
+    ramp_up_seconds: 30,
+    assertions: vec![
+        LoadTestAssertion { metric: "p99_latency_ms".into(), threshold: 2000.0, operator: ComparisonOp::LessThan },
+        LoadTestAssertion { metric: "error_rate".into(), threshold: 0.01, operator: ComparisonOp::LessThan },
+    ],
+}
+
+// Scenario 2: Failover under load
+LoadTestScenario {
+    name: "failover_under_load".into(),
+    target_tps: 200,
+    duration_seconds: 300,
+    ramp_up_seconds: 30,
+    assertions: vec![
+        LoadTestAssertion { metric: "p99_latency_ms".into(), threshold: 5000.0, operator: ComparisonOp::LessThan },
+        LoadTestAssertion { metric: "failover_success_rate".into(), threshold: 0.95, operator: ComparisonOp::GreaterThan },
+    ],
+}
+
+// Scenario 3: Concurrent payments same card
+LoadTestScenario {
+    name: "concurrent_same_card".into(),
+    target_tps: 100,
+    duration_seconds: 60,
+    assertions: vec![
+        LoadTestAssertion { metric: "double_authorization_count".into(), threshold: 0.0, operator: ComparisonOp::LessThan },
+    ],
+}
+
+// Scenario 4: Settlement ingestion burst
+LoadTestScenario {
+    name: "settlement_burst".into(),
+    target_tps: 50,
+    duration_seconds: 600,
+    assertions: vec![
+        LoadTestAssertion { metric: "settlement_match_rate".into(), threshold: 0.99, operator: ComparisonOp::GreaterThan },
+    ],
+}
+```
+
+### Performance Regression Detection
+
+```rust
+pub struct PerformanceBaseline {
+    pub metric_name: String,
+    pub baseline_value: f64,
+    pub regression_threshold_percent: f64, // default: 15%
+}
+
+// If current p99 > baseline * (1 + threshold) → build fails
+pub fn check_regression(current: f64, baseline: &PerformanceBaseline) -> bool {
+    current <= baseline.baseline_value * (1.0 + baseline.regression_threshold_percent / 100.0)
+}
+```
+
+---
+
+## 32. Chaos Testing Specs (Part 11 §8.2 + §14.3)
+
+### Infrastructure Chaos
+
+| Scenario | Inject | Validate | Alert |
+|---|---|---|---|
+| Postgres failover | Kill primary Postgres | Read-path serves from replica; write-path fails fast | Write errors < 5s |
+| Redis eviction | Fill Redis memory | Cache misses fall through to Postgres (REDIS-001) | No correctness loss |
+| NATS partition | Block NATS connectivity | Outbox relay retries; no events lost | Relay lag monitored |
+| MinIO unavailability | Block MinIO access | Document uploads queue locally | Queue size < 1GB |
+| OpenSearch down | Stop OpenSearch | AI Assistant degrades to structured-only mode | Graceful degradation |
+| GPU pool saturation | Overload Ollama | AI Gateway circuit-breaks (AIGW-005) | Graceful degradation |
+
+### Payment-Flow Chaos
+
+| Scenario | Inject | Validate |
+|---|---|---|
+| Event loss | Kill outbox relay mid-transaction | Events eventually published (outbox retains) |
+| Response loss | Mock acquirer returns success but drops response | Status-check detects actual state |
+| Concurrent mutation | Send simultaneous capture + void | Optimistic concurrency rejects one |
+| Double authorization | Send concurrent authorize for same intent | Only one succeeds |
+| Stuck authorizing | Mock acquirer never responds | JOB-008 detects and status-checks |
+
+---
+
+## 33. Data Masking Service (Part 9 §12.5)
+
+```rust
+pub struct DataMaskingService {
+    minio_client: MinIOClient,
+    db_client: DatabaseConnection,
+}
+
+impl DataMaskingService {
+    pub async fn mask_for_staging(&self, snapshot: &DatabaseSnapshot) -> Result<MaskedSnapshot, PlatformError> {
+        let mut masked = snapshot.clone();
+
+        // 1. Replace real acquirer credentials with sandbox equivalents
+        for link in &mut masked.merchant_acquirer_links {
+            link.encrypted_config = self.generate_sandbox_credentials(&link.connector_id).await?;
+        }
+
+        // 2. Replace real KYB document references with synthetic ones
+        for doc in &mut masked.kyb_documents {
+            doc.minio_key = format!("synthetic/kyb/{}.pdf", doc.id);
+        }
+
+        // 3. Replace real card tokens with synthetic tokens
+        for token in &mut masked.payment_method_tokens {
+            token.acquirer_token_reference = format!("tok_synthetic_{}", token.id);
+        }
+
+        // 4. Replace real email addresses with synthetic addresses
+        for principal in &mut masked.principals {
+            if let Some(ref email) = principal.email {
+                principal.email = Some(format!("user_{}@synthetic.test", principal.id));
+            }
+        }
+
+        Ok(masked)
+    }
+}
+```
+
+**MASK-002**: Staging/test environments use separate MinIO buckets and database instances — never shared with production.
+
+**MASK-003**: CI gate scans database fixtures for PII patterns (email regex, card number patterns, API key patterns) and fails the build if real data is detected.
+
+---
+
+## 34. Runbook Implementations (Part 11 §14.13)
+
+### Runbook: Database Complete Cluster Loss
+
+```
+Detection: PostgreSQL primary + all replicas unreachable
+Severity: SEV-1 (Critical)
+RTO: < 5 minutes
+
+Steps:
+1. Verify: kubectl get pods -n production | grep postgres → all CrashLoopBackOff
+2. Alert: PagerDuty SEV-1 → on-call SRE + engineering lead
+3. Restore: Restore from WAL archival + base backup to new primary
+4. Validate: Run consistency check (LEDGER-VERIFY-001, CONSIST-001)
+5. Replay: Replay outbox entries between backup and failure time
+6. Rebuild: Trigger projection rebuild for affected services
+7. Verify: Health checks pass for all dependent services
+8. Communicate: Status page update → "Database recovered, all services operational"
+9. Post-incident: Create incident report within 48 hours
+```
+
+### Runbook: NATS Complete Cluster Loss
+
+```
+Detection: NATS cluster unreachable, outbox relay lag increasing
+Severity: SEV-1 (Critical)
+RTO: < 10 minutes
+
+Steps:
+1. Verify: nats-cli server list → all nodes unreachable
+2. Alert: PagerDuty SEV-1
+3. Provision: Deploy new NATS cluster from infrastructure-as-code
+4. Recreate: Apply stream/consumer configuration from checked-in config files
+5. Replay: Run outbox relay against new cluster (outbox table retains unpublished events)
+6. Validate: Consumer lag returns to zero; all projections current
+7. Verify: Event-driven workflows (notifications, analytics) resume
+8. Communicate: Status page update
+9. Post-incident: Root cause analysis
+```
+
+### Runbook: AI Model Degradation
+
+```
+Detection: ai_answer_accuracy < 80% of baseline for 1 hour
+Severity: SEV-2 (High)
+RTO: < 30 minutes
+
+Steps:
+1. Check: Ollama inference pool health (GPU utilization, memory)
+2. Check: Recent model version changes (MODEL-PIN-002)
+3. Check: Retrieval quality metrics (citation_hit_rate)
+4. If model changed: rollback to previous version (MODEL-ROLLBACK-001)
+5. If retrieval degraded: trigger re-embedding (JOB-005)
+6. If Ollama issue: restart inference pool
+7. If persistent: degrade to raw-data mode (AIGW-005)
+8. Validate: Quality metrics return to baseline within 1 hour
+9. Communicate: Notify affected operators
+```
+
+### Runbook: Secret Compromise
+
+```
+Detection: Unusual credential access patterns, SIEM alert
+Severity: SEV-1 (Critical)
+RTO: < 15 minutes
+
+Steps:
+1. Isolate: Revoke compromised credentials immediately (no Maker/Checker needed)
+2. Rotate: Rotate KEK (emergency rotation per KMP-004)
+3. Re-encrypt: Run KEKReEncryptionJob to re-wrap all DEKs
+4. Audit: Review credential access logs for scope of compromise
+5. Notify: Alert affected operators and compliance team
+6. Forensic: Preserve logs for investigation
+7. Post-incident: Full review within 48 hours; update access controls
+```
+
+### Runbook: Acquirer Outage
+
+```
+Detection: Circuit breaker open for > 5 minutes
+Severity: SEV-2 (High)
+RTO: < 5 minutes (automatic failover)
+
+Steps:
+1. Verify: Check acquirer status page (if available)
+2. Verify: Circuit breaker state in Redis
+3. Verify: Failover routing is working (PaymentAuthorizationAttempted events)
+4. If single acquirer: confirm automatic failover (no action needed)
+5. If multiple acquirers: activate emergency maintenance mode (feature flag)
+6. Communicate: Status page → "Payment processing via failover"
+7. Monitor: Authorization rate should recover with secondary acquirers
+8. Post-incident: Contact acquirer support; document outage timeline
+```
