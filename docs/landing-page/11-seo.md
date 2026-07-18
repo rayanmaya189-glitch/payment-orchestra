@@ -1,78 +1,73 @@
 # 11 — SEO & Structured Data
 
-## 1. Meta Tags
+## 1. Meta Tags (react-helmet-async)
 
-```typescript
-// app/[locale]/page.tsx
-import { Metadata } from 'next';
+```tsx
+// src/components/seo/SEOHead.tsx
+import { Helmet } from 'react-helmet-async';
 
-export const metadata: Metadata = {
-  title: {
-    default: 'Payment Orchestration Platform — UAE | Connect Once, Route Everywhere',
-    template: '%s | Payment Orchestra',
-  },
-  description: 'AI-native payment orchestration for UAE merchants. Connect multiple acquirers, intelligent failover, automated reconciliation. PCI-DSS compliant. No custody.',
-  keywords: [
-    'payment orchestration UAE',
-    'payment gateway UAE',
-    'acquirer routing',
-    'payment reconciliation',
-    'AI payment assistant',
-    'UAE payment platform',
-    'merchant payment solutions',
-    'payment failover',
-    'PCI-DSS compliant payment',
-    'UAE Central Bank regulated',
-  ],
-  openGraph: {
-    title: 'Payment Orchestration Platform — UAE',
-    description: 'Connect once, route everywhere. AI-powered payment operations for UAE merchants.',
-    url: 'https://platform.ae',
-    siteName: 'Payment Orchestra',
-    images: [
-      {
-        url: '/og-image.png',
-        width: 1200,
-        height: 630,
-        alt: 'Payment Orchestra Platform',
-      },
-    ],
-    locale: 'en_AE',
-    type: 'website',
-  },
-  twitter: {
-    card: 'summary_large_image',
-    title: 'Payment Orchestration Platform — UAE',
-    description: 'Connect once, route everywhere. AI-powered payment operations.',
-    images: ['/og-image.png'],
-  },
-  alternates: {
-    canonical: 'https://platform.ae',
-    languages: {
-      'en': '/en',
-      'ar': '/ar',
-    },
-  },
-  robots: {
-    index: true,
-    follow: true,
-    googleBot: {
-      index: true,
-      follow: true,
-      'max-video-preview': -1,
-      'max-image-preview': 'large',
-      'max-snippet': -1,
-    },
-  },
-};
+interface SEOProps {
+  title?: string;
+  description?: string;
+  image?: string;
+  url?: string;
+}
+
+export function SEOHead({
+  title = 'Payment Orchestration Platform — UAE',
+  description = 'AI-native payment orchestration for UAE merchants. Connect multiple acquirers, intelligent failover, automated reconciliation. PCI-DSS compliant. No custody.',
+  image = '/og-image.png',
+  url = 'https://platform.ae',
+}: SEOProps) {
+  return (
+    <Helmet>
+      {/* Basic */}
+      <title>{title} | Payment Orchestra</title>
+      <meta name="description" content={description} />
+      <meta name="keywords" content={[
+        'payment orchestration UAE',
+        'payment gateway UAE',
+        'acquirer routing',
+        'payment reconciliation',
+        'AI payment assistant',
+        'UAE payment platform',
+        'merchant payment solutions',
+        'payment failover',
+        'PCI-DSS compliant payment',
+        'UAE Central Bank regulated',
+      ].join(', ')} />
+      <link rel="canonical" href={url} />
+
+      {/* Open Graph */}
+      <meta property="og:type" content="website" />
+      <meta property="og:title" content={title} />
+      <meta property="og:description" content={description} />
+      <meta property="og:url" content={url} />
+      <meta property="og:site_name" content="Payment Orchestra" />
+      <meta property="og:image" content={image} />
+      <meta property="og:locale" content="en_AE" />
+
+      {/* Twitter */}
+      <meta name="twitter:card" content="summary_large_image" />
+      <meta name="twitter:title" content={title} />
+      <meta name="twitter:description" content={description} />
+      <meta name="twitter:image" content={image} />
+
+      {/* i18n */}
+      <link rel="alternate" href="https://platform.ae/en" hrefLang="en" />
+      <link rel="alternate" href="https://platform.ae/ar" hrefLang="ar" />
+      <link rel="alternate" href="https://platform.ae" hrefLang="x-default" />
+    </Helmet>
+  );
+}
 ```
 
 ---
 
 ## 2. Structured Data (JSON-LD)
 
-```typescript
-// components/landing/StructuredData.tsx
+```tsx
+// src/components/seo/StructuredData.tsx
 export function StructuredData() {
   const organization = {
     '@context': 'https://schema.org',
@@ -116,14 +111,17 @@ export function StructuredData() {
   const faq = {
     '@context': 'https://schema.org',
     '@type': 'FAQPage',
-    mainEntity: faqs.map(faq => ({
-      '@type': 'Question',
-      name: faq.question,
-      acceptedAnswer: {
-        '@type': 'Answer',
-        text: faq.answer,
+    mainEntity: [
+      {
+        '@type': 'Question',
+        name: 'What payment acquirers do you support?',
+        acceptedAnswer: {
+          '@type': 'Answer',
+          text: 'We support Network International, Checkout.com, Telr, PayTabs, Magnati, and more.',
+        },
       },
-    })),
+      // ... other FAQs
+    ],
   };
 
   return (
@@ -147,62 +145,51 @@ export function StructuredData() {
 
 ---
 
-## 3. Sitemap
+## 3. Sitemap (Static)
 
 ```typescript
-// app/sitemap.ts
-import { MetadataRoute } from 'next';
+// public/sitemap.xml (static file for Vite SPA)
+// or generated via build script
+```
 
-export default function sitemap(): MetadataRoute.Sitemap {
-  const baseUrl = 'https://platform.ae';
-  
-  return [
-    {
-      url: baseUrl,
-      lastModified: new Date(),
-      changeFrequency: 'weekly',
-      priority: 1,
-    },
-    {
-      url: `${baseUrl}/pricing`,
-      lastModified: new Date(),
-      changeFrequency: 'monthly',
-      priority: 0.8,
-    },
-    {
-      url: `${baseUrl}/features`,
-      lastModified: new Date(),
-      changeFrequency: 'monthly',
-      priority: 0.8,
-    },
-    {
-      url: `${baseUrl}/docs`,
-      lastModified: new Date(),
-      changeFrequency: 'weekly',
-      priority: 0.6,
-    },
-  ];
-}
+### Build Script for Sitemap
+
+```typescript
+// scripts/generate-sitemap.ts
+import fs from 'fs';
+
+const baseUrl = 'https://platform.ae';
+const pages = [
+  { url: '/', priority: 1.0, changefreq: 'weekly' },
+  { url: '/pricing', priority: 0.8, changefreq: 'monthly' },
+  { url: '/features', priority: 0.8, changefreq: 'monthly' },
+];
+
+const sitemap = `<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+${pages.map(p => `  <url>
+    <loc>${baseUrl}${p.url}</loc>
+    <lastmod>${new Date().toISOString().split('T')[0]}</lastmod>
+    <changefreq>${p.changefreq}</changefreq>
+    <priority>${p.priority}</priority>
+  </url>`).join('\n')}
+</urlset>`;
+
+fs.writeFileSync('public/sitemap.xml', sitemap);
 ```
 
 ---
 
-## 4. Robots.txt
+## 4. robots.txt
 
-```typescript
-// app/robots.ts
-import { MetadataRoute } from 'next';
+```txt
+# public/robots.txt
+User-agent: *
+Allow: /
+Disallow: /api/
+Disallow: /admin/
 
-export default function robots(): MetadataRoute.Robots {
-  return {
-    rules: {
-      userAgent: '*',
-      allow: '/',
-      disallow: ['/api/', '/admin/'],
-    },
-    sitemap: 'https://platform.ae/sitemap.xml',
-  };
-}
+Sitemap: https://platform.ae/sitemap.xml
 ```
 
 ---
@@ -211,11 +198,11 @@ export default function robots(): MetadataRoute.Robots {
 
 | Optimization | Implementation |
 |--------------|---------------|
-| Image optimization | Next.js `<Image>` with `priority` for above-fold |
-| Font optimization | `next/font` for Inter + Noto Sans Arabic |
-| Script optimization | `next/script strategy="lazy"` for analytics |
-| CSS optimization | Tailwind CSS purging unused styles |
-| Static generation | `generateStaticParams()` for locale pages |
-| ISR | `revalidate: 3600` for content pages |
-| Prefetching | `<Link prefetch>` for critical navigation |
+| Image optimization | Framer Motion lazy loading, WebP format, responsive srcset |
+| Font optimization | Variable fonts, font-display: swap |
+| Script optimization | Vite code splitting, lazy loading non-critical chunks |
+| CSS optimization | Tailwind CSS purging unused styles via Vite |
+| Static generation | Pre-render critical pages at build time |
 | Compression | Brotli/Gzip via Vercel or nginx |
+| Prefetching | React Router prefetch for critical navigation |
+| Bundle analysis | Vite bundle analyzer for size optimization |

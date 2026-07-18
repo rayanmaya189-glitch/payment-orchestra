@@ -7,14 +7,16 @@ Marketing landing page for the AI-Native Payment Orchestration Platform. The lan
 ## Tech Stack
 
 ```
-Framework:      Next.js 14+ (App Router) — or Astro for static
-Styling:        Tailwind CSS 4 + shadcn/ui
+Framework:      React 19 + React Router DOM 7
+Build:          Vite 8
+Styling:        Tailwind CSS 4
 Animations:     Framer Motion
-Analytics:      PostHog / Mixpanel
-A/B Testing:    PostHog feature flags
-Forms:          React Hook Form + Zod
-i18n:           next-intl (Arabic + English, RTL support)
-SEO:            Next.js metadata + structured data (JSON-LD)
+State:          TanStack React Query v5 + Zustand v5
+HTTP:           Axios v1.x
+Storage:        Session Storage (encrypted)
+Forms:          Zod validation
+i18n:           react-i18next (Arabic + English, RTL support)
+Icons:          Lucide React
 ```
 
 ## File Index

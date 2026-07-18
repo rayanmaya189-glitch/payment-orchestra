@@ -4,15 +4,19 @@
 
 ```json
 {
-  "framework": "Next.js 14+ (App Router)",
-  "styling": "Tailwind CSS 4 + shadcn/ui",
+  "framework": "React 19 + React Router DOM 7",
+  "build": "Vite 8",
+  "styling": "Tailwind CSS 4",
   "animations": "Framer Motion",
-  "analytics": "PostHog",
-  "forms": "React Hook Form + Zod",
-  "i18n": "next-intl (Arabic + English)",
-  "seo": "Next.js metadata + JSON-LD structured data",
-  "icons": "Lucide React",
-  "images": "Next.js Image (optimized)"
+  "state": {
+    "server": "TanStack React Query v5",
+    "client": "Zustand v5"
+  },
+  "http": "Axios v1.x",
+  "storage": "Session Storage (encrypted)",
+  "forms": "Zod validation",
+  "i18n": "react-i18next (Arabic + English)",
+  "icons": "Lucide React"
 }
 ```
 
@@ -20,11 +24,14 @@
 
 | Choice | Rationale |
 |--------|-----------|
-| **Next.js** | SSR for SEO, static generation for performance, image optimization |
-| **Tailwind 4** | Rapid prototyping, consistent design system |
+| **React 19** | Server components not needed for landing page; React 19 perf improvements |
+| **Vite 8** | Fast HMR, native ESM, optimized builds |
+| **Tailwind 4** | CSS-first config, rapid prototyping, consistent design system |
 | **Framer Motion** | Smooth animations for feature showcases and scroll reveals |
-| **next-intl** | Mature Arabic RTL support, lazy loading, SEO-friendly |
-| **PostHog** | Product analytics, A/B testing, session recording |
+| **Axios** | Request/response interceptors for analytics, error handling |
+| **Session Storage** | Encrypted tokens for analytics tracking |
+| **Zod** | Runtime type validation for contact form inputs |
+| **react-i18next** | Mature Arabic RTL support, lazy loading of translation bundles |
 
 ---
 
@@ -32,107 +39,126 @@
 
 ```
 landing-page/
-├── app/
-│   ├── [locale]/                    # i18n routes
-│   │   ├── layout.tsx               # Root layout with metadata
-│   │   ├── page.tsx                 # Main landing page
-│   │   ├── pricing/page.tsx         # Pricing page
-│   │   └── features/page.tsx        # Features detail page
-│   └── api/
-│       └── contact/route.ts         # Contact form API
-├── components/
-│   ├── landing/
-│   │   ├── Hero.tsx
-│   │   ├── Features.tsx
-│   │   ├── HowItWorks.tsx
-│   │   ├── Integrations.tsx
-│   │   ├── Pricing.tsx
-│   │   ├── Testimonials.tsx
-│   │   ├── Security.tsx
-│   │   ├── FAQ.tsx
-│   │   ├── CTASection.tsx
-│   │   └── Footer.tsx
-│   ├── ui/                          # shadcn/ui components
-│   └── shared/                      # Shared components
-├── lib/
-│   ├── i18n/
-│   └── analytics.ts
-├── public/
-│   ├── images/
-│   └── icons/
+├── src/
+│   ├── main.tsx                        # Vite entry point
+│   ├── App.tsx                         # Root component with providers
+│   ├── routes/                         # React Router routes
+│   │   ├── __root.tsx                  # Root layout (theme, i18n)
+│   │   ├── index.tsx                   # Main landing page
+│   │   ├── pricing.tsx                 # Pricing page
+│   │   ├── features.tsx                # Features detail page
+│   │   └── contact.tsx                 # Contact page
+│   ├── components/
+│   │   ├── landing/
+│   │   │   ├── Hero.tsx
+│   │   │   ├── Features.tsx
+│   │   │   ├── HowItWorks.tsx
+│   │   │   ├── Integrations.tsx
+│   │   │   ├── Pricing.tsx
+│   │   │   ├── Testimonials.tsx
+│   │   │   ├── Security.tsx
+│   │   │   ├── FAQ.tsx
+│   │   │   ├── CTASection.tsx
+│   │   │   └── Footer.tsx
+│   │   └── shared/                      # Shared components
+│   ├── hooks/                           # Custom React hooks
+│   ├── lib/
+│   │   ├── axios.ts                     # Axios instance
+│   │   ├── validators/                  # Zod schemas
+│   │   └── i18n/                        # i18n config
+│   ├── stores/                          # Zustand stores
+│   └── locales/                         # Translation files
+│       ├── en/
+│       └── ar/
 └── styles/
-    └── globals.css
+    └── index.css                        # Tailwind v4 imports
 ```
 
 ---
 
-## 3. SEO Strategy
+## 3. Routing (React Router 7)
 
-```typescript
-// app/[locale]/layout.tsx
-export const metadata: Metadata = {
-  title: 'Payment Orchestration Platform — UAE',
-  description: 'AI-native payment orchestration for UAE merchants. Connect multiple acquirers, intelligent failover, automated reconciliation.',
-  openGraph: {
-    title: 'Payment Orchestration Platform',
-    description: 'Connect once, route everywhere. AI-powered payment operations.',
-    images: ['/og-image.png'],
-    locale: 'en_AE',
-    type: 'website',
-  },
-  alternates: {
-    canonical: 'https://platform.ae',
-    languages: {
-      'en': '/en',
-      'ar': '/ar',
-    },
-  },
-};
+```tsx
+// src/routes/__root.tsx
+import { createRootRoute, Outlet } from '@tanstack/react-router';
+
+export const Route = createRootRoute({
+  component: () => (
+    <QueryClientProvider client={queryClient}>
+      <I18nextProvider i18n={i18n}>
+        <Outlet />
+      </I18nextProvider>
+    </QueryClientProvider>
+  ),
+});
 ```
 
-### Structured Data (JSON-LD)
+---
 
-```json
-{
-  "@context": "https://schema.org",
-  "@type": "SoftwareApplication",
-  "name": "Payment Orchestration Platform",
-  "applicationCategory": "BusinessApplication",
-  "operatingSystem": "Web",
-  "offers": {
-    "@type": "Offer",
-    "priceCurrency": "AED",
-    "price": "0",
-    "description": "Free tier available"
-  },
-  "aggregateRating": {
-    "@type": "AggregateRating",
-    "ratingValue": "4.8",
-    "reviewCount": "150"
-  }
+## 4. SEO (Static Meta Tags)
+
+```tsx
+// src/routes/index.tsx
+import { Helmet } from 'react-helmet-async';
+
+export function LandingPage() {
+  return (
+    <>
+      <Helmet>
+        <title>Payment Orchestration Platform — UAE</title>
+        <meta name="description" content="AI-native payment orchestration for UAE merchants. Connect multiple acquirers, intelligent failover, automated reconciliation." />
+        <meta property="og:title" content="Payment Orchestration Platform — UAE" />
+        <meta property="og:description" content="Connect once, route everywhere." />
+        <meta property="og:image" content="/og-image.png" />
+        <link rel="canonical" href="https://platform.ae" />
+      </Helmet>
+      {/* Page content */}
+    </>
+  );
 }
 ```
 
 ---
 
-## 4. i18n Configuration
+## 5. i18n Configuration
 
-```typescript
-// lib/i18n/index.ts
-import { getRequestConfig } from 'next-intl/server';
+```tsx
+// src/lib/i18n/index.ts
+import i18n from 'i18next';
+import { initReactI18next } from 'react-i18next';
+import en from '../../locales/en/common.json';
+import ar from '../../locales/ar/common.json';
 
-export default getRequestConfig(async ({ locale }) => ({
-  messages: (await import(`../../messages/${locale}.json`)).default,
-}));
+i18n.use(initReactI18next).init({
+  resources: {
+    en: { translation: en },
+    ar: { translation: ar },
+  },
+  lng: localStorage.getItem('language') || 'en',
+  fallbackLng: 'en',
+  interpolation: { escapeValue: false },
+});
+```
 
-// RTL support
-// app/[locale]/layout.tsx
-<html lang={locale} dir={locale === 'ar' ? 'rtl' : 'ltr'}>
+### RTL Support
+
+```tsx
+// src/App.tsx
+function App() {
+  const { i18n } = useTranslation();
+  const isRtl = i18n.language === 'ar';
+
+  return (
+    <div dir={isRtl ? 'rtl' : 'ltr'} className={isRtl ? 'font-arabic' : ''}>
+      <RouterProvider router={router} />
+    </div>
+  );
+}
 ```
 
 ---
 
-## 5. Performance Targets
+## 6. Performance Targets
 
 | Metric | Target |
 |--------|--------|
