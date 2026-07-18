@@ -346,7 +346,140 @@ pub struct DlqEventModel {
 
 ---
 
-## 10. Open Items Carried Forward
+## 10. Gap Analysis Additions — Infrastructure & Operational Patterns
+
+### 10.1 Messaging & Cache Encryption (Part 8 §4 Extension)
+
+The SRS specifies TLS 1.3 for external traffic (Part 8 ENC-001) and mTLS for service-to-service (AUTH-006) but does not specify encryption for NATS JetStream or Redis — the two most sensitive internal data paths after the database.
+
+**NATS-ENC-001**: All NATS client-server connections use TLS 1.3 with mTLS (service mesh certificates). No plaintext NATS connections are permitted in any environment (dev/staging/prod).
+
+**NATS-ENC-002**: NATS JetStream message stores are encrypted at rest using AES-256-GCM via JetStream's native encryption configuration. Encryption keys are managed through the platform KMS (Part 8 SEC-001).
+
+**NATS-ENC-003**: NATS connection configuration must specify `tls_client_cert_file` and `tls_client_key_file` for every service, with `tls_ca_file` pointing to the service mesh CA. Connection fails if TLS negotiation fails — no plaintext fallback.
+
+**REDIS-ENC-001**: All Redis client-server connections use TLS with mutual authentication (mTLS or AUTH with TLS).
+
+**REDIS-ENC-002**: Redis persistence files (AOF, RDB) are encrypted at rest via volume-level encryption at minimum. Application-layer encryption for sensitive cache entries (session/permission data) as defense-in depth.
+
+**REDIS-ENC-003**: Redis `requirepass` or ACL-based authentication is mandatory. Default `redis.conf` with no authentication is not permitted in any environment.
+
+**Implementation Note**: These controls are additions to Part 8 §4 (Encryption) and Part 9 §2 (Redis) / Part 9 §4 (NATS). The Part 8 §4.1 "In Transit" section should be extended to include "NATS JetStream" and "Redis" in the TLS scope.
+
+### 10.2 Feature Flag Management Pattern
+
+**FF-001**: A Redis-backed feature flag store provides per-tenant progressive rollout and kill-switch capabilities.
+
+**FF-002**: Feature flag evaluation happens at two levels:
+- **API Gateway level**: For cross-cutting flags (e.g., new checkout flow, rate-limit configuration)
+- **Service command-handler level**: For domain-specific flags (e.g., new routing algorithm, AI model version)
+
+**FF-003**: Flag changes are domain events (`FeatureFlagChanged`) consumed by all services for eventual consistency. Kill-switch flags propagate via Redis pub/sub for sub-second effect.
+
+**FF-004**: All flag state changes follow the Maker/Checker pattern (Part 3 MKCK-001) and are audit-logged.
+
+**FF-005**: Flag configuration schema:
+
+```rust
+pub struct FeatureFlag {
+    pub flag_key: String,           // e.g., "routing.dynamic_weighted"
+    pub enabled: bool,
+    pub targeting: FlagTargeting,   // percentage rollout, user segment, tenant list
+    pub kill_switch: bool,          // if true, overrides all targeting — immediate effect
+    pub created_at: DateTimeWithTimeZone,
+    pub updated_at: DateTimeWithTimeZone,
+}
+
+pub enum FlagTargeting {
+    Global(bool),
+    Percentage(f64),                // 0.0-1.0, deterministic hash of entity_id
+    TenantList(Vec<Uuid>),
+    Segment(String),                // e.g., "enterprise", "sandbox"
+}
+```
+
+### 10.3 Structured Log Schema Standard
+
+**LOG-SCHEMA-001**: Every service emits structured JSON logs conforming to this schema:
+
+```json
+{
+  "timestamp": "2026-07-18T10:15:00.123Z",
+  "level": "INFO|WARN|ERROR|DEBUG",
+  "service": "orchestration-service",
+  "correlation_id": "01HZ...",
+  "causation_id": "01HZ...",
+  "actor_id": "01HZ...",
+  "actor_type": "user|api_key|system",
+  "event_type": "PaymentAuthorized",
+  "message": "Payment authorized on Acquirer B",
+  "metadata": {
+    "payment_intent_id": "01HZ...",
+    "acquirer": "acquirer_b",
+    "latency_ms": 1250
+  }
+}
+```
+
+**LOG-SCHEMA-002**: The schema is enforced via a shared Rust crate (`platform-logging`) that all services import. Log output that doesn't conform to the schema is rejected at the serialization layer (compile-time enforcement via typed fields, not runtime regex).
+
+**LOG-SCHEMA-003**: Sensitive fields (credentials, PAN, tokens, API keys) are explicitly excluded from the schema. A log-scrubbing layer applied before serialization strips any sensitive data that accidentally appears in `metadata` values.
+
+### 10.4 Unified Error Taxonomy
+
+**ERR-TAX-001**: A shared `InternalErrorCode` enum in the `common.v1` proto package standardizes error classification across all services:
+
+```protobuf
+enum InternalErrorCode {
+  INTERNAL_ERROR_CODE_UNSPECIFIED = 0;
+  TRANSIENT_FAILURE = 1;        // retryable (UNAVAILABLE, DEADLINE_EXCEEDED)
+  PERMANENT_FAILURE = 2;        // do not retry (INVALID_ARGUMENT, NOT_FOUND)
+  DEGRADED_MODE = 3;            // continue with degraded behavior
+  RATE_LIMITED = 4;             // too many requests
+  AUTHORIZATION_DENIED = 5;     // permission check failed
+  VALIDATION_ERROR = 6;         // input validation failed
+  UNAVAILABLE = 7;              // service dependency unavailable
+}
+```
+
+**ERR-TAX-002**: Every gRPC response includes this code. Callers use the code to decide retry/degrade/fail behavior — not gRPC status codes alone (which are too coarse-grained for payment-system error handling).
+
+### 10.5 NATS JetStream Trace Context Propagation
+
+**NATS-TRACE-001**: The `EventEnvelope` (Part 3 §4) is extended with an optional `trace_context` field:
+
+```protobuf
+message EventEnvelope {
+  // ... existing fields ...
+  string trace_context = 12;  // W3C Trace Context format: "00-{trace_id}-{span_id}-{flags}"
+}
+```
+
+**NATS-TRACE-002**: The outbox relay extracts the current OpenTelemetry trace context when publishing to NATS and stores it in the envelope.
+
+**NATS-TRACE-003**: NATS consumers extract the trace context and create a **linked span** (not a child span — the temporal gap is unbounded) connecting the consumer's processing to the original command that produced the event.
+
+**NATS-TRACE-004**: This provides causation linkage from consumer back to producer, enabling end-to-end incident investigation across the event-driven boundary.
+
+### 10.6 Concurrent Request Rate Limiting
+
+**RL-CONC-001**: In addition to time-window rate limiting (Part 10 RL-001), the API Gateway enforces concurrent request limits per API key (or per tenant for unauthenticated endpoints).
+
+**RL-CONC-002**: Redis-backed concurrent request counter: on request entry, `INCR`; on completion, `DECR`. If counter exceeds configured max concurrent (default: 100 per API key for checkout endpoints), return HTTP 429 with `Retry-After`.
+
+**RL-CONC-003**: A TTL safety net (30 seconds) auto-decrements leaked counters from crashed connections, preventing permanent lockout.
+
+### 10.7 Egress Network Policies
+
+**NET-EGRESS-001**: In addition to ingress NetworkPolicies (HARD-002), egress restrictions are specified:
+- `connector-gateway`: egress restricted to known acquirer IP ranges (maintained in a ConfigMap, updated per connector)
+- `notification-service`: egress restricted to known email/SMS provider IPs
+- All other services: egress restricted to internal service mesh only (no direct external egress)
+- DNS egress restricted to platform DNS resolver
+
+---
+
+## 11. Open Items Carried Forward
 
 - **OQ-009**: Confirm whether `risk-service` (SVC-11) synchronous scoring call adds unacceptable latency to the checkout path at MVP — needs a benchmark once Part 11 performance targets are set; if too slow, MVP may ship with routing-time risk scoring disabled by default and enabled per-operator opt-in.
 - **OQ-010**: Decide whether `invoice-service` and `payment-link-service` (SVC-06/07) should share a single Postgres instance (different schemas) or fully separate instances at MVP scale — cost vs. isolation trade-off to be resolved in Part 9.

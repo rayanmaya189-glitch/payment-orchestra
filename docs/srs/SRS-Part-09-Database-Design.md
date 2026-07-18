@@ -535,7 +535,158 @@ pub struct Model {
 
 ---
 
-## 12. Open Items Carried Forward
+## 12. Gap Analysis Additions — Database Security & Data Lifecycle
+
+### 12.1 Row-Level Security (RLS) Policy Examples
+
+**DB-011-EX1**: Representative RLS policy for `event_store` (orchestration-service):
+
+```sql
+-- Enable RLS on the event_store table
+ALTER TABLE event_store ENABLE ROW LEVEL SECURITY;
+
+-- Policy: principal can only read events for their operator's aggregates
+CREATE POLICY event_store_isolation ON event_store
+  FOR SELECT
+  USING (
+    aggregate_id IN (
+      SELECT pi.payment_intent_id
+      FROM payment_intent pi
+      WHERE pi.operator_id = current_setting('app.current_operator_id')::uuid
+    )
+  );
+
+-- Policy: only the orchestration-service can insert events
+CREATE POLICY event_store_insert ON event_store
+  FOR INSERT
+  WITH CHECK (current_setting('app.service_role') = 'orchestration-service');
+```
+
+**DB-011-EX2**: Representative RLS policy for `reconciliation_exception_projection`:
+
+```sql
+ALTER TABLE reconciliation_exception_projection ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY reconciliation_exception_isolation ON reconciliation_exception_projection
+  FOR ALL
+  USING (
+    operator_id = current_setting('app.current_operator_id')::uuid
+  );
+```
+
+**DB-011-EX3**: Postgres role setup:
+
+```sql
+-- Service-specific roles (no superuser for application connections)
+CREATE ROLE orchestration_service_role;
+CREATE ROLE reconciliation_service_role;
+CREATE ROLE iam_service_role;
+
+-- Grant minimal privileges
+GRANT USAGE ON SCHEMA orchestration TO orchestration_service_role;
+GRANT SELECT, INSERT ON event_store TO orchestration_service_role;
+GRANT SELECT, INSERT ON outbox TO orchestration_service_role;
+-- No UPDATE/DELETE on event_store (append-only)
+
+-- Set session variables for RLS
+SET app.service_role = 'orchestration-service';
+SET app.current_operator_id = '<uuid>';
+```
+
+### 12.2 ClickHouse Security Configuration
+
+**CH-SEC-001**: ClickHouse user per service with read-only access to required tables:
+
+```sql
+-- Create analytics-service user (read-only)
+CREATE USER analytics_service IDENTIFIED BY '<password>';
+GRANT SELECT ON payment_events TO analytics_service;
+GRANT SELECT ON auth_rate_hourly_mv TO analytics_service;
+
+-- Create ai-assistant-service user (read-only, specific tables)
+CREATE USER ai_assistant_service IDENTIFIED BY '<password>';
+GRANT SELECT ON payment_events TO ai_assistant_service;
+```
+
+**CH-SEC-002**: ClickHouse TLS for client connections enabled via `<openSSL>` server configuration.
+
+**CH-SEC-003**: Network policy restricting ClickHouse access to only `analytics-service` and `ai-assistant-service`.
+
+**CH-SEC-004**: ClickHouse query logging enabled for audit trail (`system.query_log`).
+
+### 12.3 OpenSearch Security Configuration
+
+**OS-SEC-001**: OpenSearch security plugin enabled with: TLS for all inter-node and client connections, basic auth for application connections, index-level security policies.
+
+**OS-SEC-002**: Network policy restricting OpenSearch access to `ai-assistant-service` only.
+
+**OS-SEC-003**: OpenSearch audit logging enabled for all search and index operations.
+
+**OS-SEC-004**: Resolve OQ-042 (per-tenant indices vs. shared index) with security as the primary decision criterion. Recommended: per-tenant index routing for single-tenant deployment (simpler isolation), migrating to shared index with document-level security if multi-tenant is needed.
+
+### 12.4 MinIO Security Configuration
+
+**MINIO-SEC-001**: MinIO deployed with TLS and access key/secret authentication. Default `minioadmin:minioadmin` credentials rotated on first deployment.
+
+**MINIO-SEC-002**: Per-service IAM policies:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": { "AWS": ["arn:aws:iam::document-service"] },
+      "Action": ["s3:PutObject", "s3:GetObject", "s3:DeleteObject"],
+      "Resource": ["arn:aws:s3:::document-uploads/*"]
+    },
+    {
+      "Effect": "Allow",
+      "Principal": { "AWS": ["arn:aws:iam::compliance-service"] },
+      "Action": ["s3:GetObject"],
+      "Resource": ["arn:aws:s3:::kyb-evidence/*"]
+    }
+  ]
+}
+```
+
+**MINIO-SEC-003**: Network policy restricting MinIO access to only `document-service`, `compliance-service`, `reconciliation-service`, and `analytics-service`.
+
+**MINIO-SEC-004**: MinIO audit logging to SIEM for all access operations.
+
+### 12.5 Data Masking for Non-Production Environments
+
+**MASK-001**: A `DataMaskingService` runs as part of the database snapshot/copy process used to create staging from production. It replaces:
+- Real acquirer credentials with sandbox equivalents
+- Real KYB document references with synthetic ones
+- Real card tokens with synthetic tokens
+- Real email addresses with synthetic addresses
+
+**MASK-002**: All staging/test environments use separate MinIO buckets and separate database instances — never shared with production.
+
+**MASK-003**: A CI gate scans database fixtures for PII patterns (email regex, card number patterns, API key patterns) and fails the build if real data is detected.
+
+### 12.6 Database Connection Security
+
+**DB-CONN-001**: All Postgres connections use `sslmode=verify-full` (not just `require`). The application rejects connections where TLS negotiation fails or certificate verification fails.
+
+**DB-CONN-002**: Connection-string validation in CI: no `sslmode=disable` or `sslmode=allow` permitted in any environment configuration.
+
+**DB-CONN-003**: Database IP allowlisting via `pg_hba.conf` or cloud security groups, restricting connections to service mesh IPs only.
+
+### 12.7 Automated Data Retention Enforcement
+
+**RETAIN-001**: A `DataRetentionEnforcer` background job per service:
+1. Queries for aggregates in terminal states older than the configured retention period
+2. For each: moves event stream from `event_store` to `event_store_archive`, deletes snapshot data beyond the retention floor, marks read-model projections as archived (but retains them)
+3. Logs each archival action in a `retention_audit_log` table: `aggregate_id`, `events_archived_count`, `retention_policy_applied`, `archived_at`, `legal_retention_floor_checked`
+4. Excludes aggregates with pending charges/disputes from archival regardless of age
+
+**RETAIN-002**: The `retention_audit_log` is append-only and retained for 7 years (compliance).
+
+---
+
+## 13. Open Items Carried Forward
 
 - **OQ-020**: Confirm exact BGE-M3 embedding dimension for the deployed model variant/quantization (§4.2 OS-002 placeholder of 1024).
 - **OQ-021**: Finalize event-store retention/archival policy — whether older event partitions are archived to MinIO (cold storage).

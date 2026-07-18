@@ -23,7 +23,7 @@
 | Core Language/Runtime | Rust (all backend services) |
 | ORM Layer | SeaORM (all services) — no raw SQL in application code |
 | AI Stack | Ollama-hosted Qwen3 32B (reasoning), Qwen3-VL 8B (vision/OCR), BGE-M3 (embeddings) + reranker (RAG) |
-| Related Documents | Part 2 (Use Cases), Part 3 (DDD), Part 4 (Microservices), Part 5 (Orchestration Engine), Part 6 (AI Assistant/RAG), Part 7 (Gateway Connectors), Part 8 (Security/Compliance), Part 9 (Database Design), Part 10 (APIs/gRPC), Part 11 (Testing/DevOps), Part 12 (Appendices/Roadmap) |
+| Related Documents | Part 2 (Use Cases), Part 3 (DDD + Gap Analysis: saga compensation, double-entry ledger, reconciliation matching), Part 4 (Microservices + Gap Analysis: NATS/Redis encryption, feature flags, structured logs, error taxonomy), Part 5 (Orchestration Engine + Gap Analysis: fee breakdown, settlement enhancements), Part 6 (AI Assistant/RAG + Gap Analysis: bias detection, hallucination detection, real-time monitoring), Part 7 (Gateway Connectors + Gap Analysis: SFTP security, scheme compliance), Part 8 (Security/Compliance + Gap Analysis: token vault, WebAuthn mandate, TDE, audit tamper-evidence, infrastructure security, CSRF, session binding, credential monitoring), Part 9 (Database Design + Gap Analysis: RLS examples, ClickHouse/OpenSearch/MinIO security, data masking), Part 10 (APIs/gRPC + Gap Analysis: cursor security, webhook versioning, delivery backpressure), Part 11 (Testing/DevOps + Gap Analysis: alert fatigue, runbook templates, SLSA, DR enhancements), Part 12 (Appendices/Roadmap + consolidated gap analysis OQ-064–085) |
 
 ### 0.1 Revision History
 

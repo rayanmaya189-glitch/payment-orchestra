@@ -202,7 +202,49 @@ Per Part 1 OQ-003, the final MVP acquirer/PSP shortlist requires business confir
 
 ---
 
-## 9. Open Items Carried Forward
+## 9. Gap Analysis Additions — Connector Security & Compliance
+
+### 9.1 SFTP Settlement File Security
+
+**SFTP-SEC-005**: SFTP credentials (SSH private keys or passwords) stored via envelope encryption (same mechanism as API keys per Part 8 SEC-001).
+
+**SFTP-SEC-006**: SSH host key pinning for SFTP connections. The platform stores the expected host key fingerprint for each acquirer's SFTP server and verifies on connection. MITM attacks are detected and rejected.
+
+**SFTP-SEC-007**: Settlement file integrity verification: SHA-256 hash computed on file receipt and stored in the `SettlementBatch` metadata. If the acquirer provides a checksum, it is verified before ingestion.
+
+**SFTP-SEC-008**: Network policy restricting outbound SFTP connections to known acquirer IP ranges only (maintained in a ConfigMap, updated per connector).
+
+**SFTP-SEC-009**: SFTP connection audit logging: every connection attempt (success/failure), file download, and disconnection is logged with source/destination IPs.
+
+### 9.2 Card Scheme Compliance Monitoring
+
+**SCHEME-001**: A `SchemeComplianceMonitor` background job tracks compliance against published card scheme thresholds:
+
+| Scheme | Metric | Warning Threshold | Critical Threshold | Window |
+|---|---|---|---|---|
+| Visa | Chargeback ratio | 0.9% | 1.0% | 30-day rolling |
+| Mastercard | Chargeback ratio | 1.35% | 1.5% | 30-day rolling |
+| Visa | Fraud ratio | 0.9% | 1.0% | 30-day rolling |
+| Mastercard | Fraud ratio | 1.35% | 1.5% | 30-day rolling |
+| mada | Per SAMA guidelines | Configurable | Configurable | 30-day rolling |
+
+**SCHEME-002**: The monitor computes rolling 30-day and 90-day metrics per acquirer/card scheme from ClickHouse analytics. Warning alerts at 80% of threshold; critical alerts at 95%.
+
+**SCHEME-003**: Alerts include recommended remediation actions (e.g., "reduce transaction volume through Acquirer B" or "increase fraud screening sensitivity") and are surfaced via notification-service and the AI Assistant.
+
+**SCHEME-004**: Scheme compliance metrics are exposed in the merchant dashboard (UC-070) as a first-class view.
+
+### 9.3 Outbound Webhook Data Minimization
+
+**WEBHOOK-MIN-001**: Webhook payloads are reviewed for sensitive data before delivery. Acquirer references (which could be used for replay attacks against the acquirer) are included but with the understanding that the merchant already has a legitimate business relationship with the platform.
+
+**WEBHOOK-MIN-002**: Webhook payload content is classified per data classification (Part 8 ENC-009). Payment lifecycle webhooks are classified as Confidential. Document/OCR webhooks are classified as Restricted (may contain KYB evidence data).
+
+**WEBHOOK-MIN-003**: Webhook delivery to merchant endpoints outside the UAE region requires explicit merchant opt-in and data transfer disclosure (ties to Part 16.12 Data Residency).
+
+---
+
+## 10. Open Items Carried Forward
 
 - **OQ-016 (= OQ-003 from Part 1, restated here for engineering visibility)**: Final MVP acquirer/PSP shortlist must be confirmed before connector implementation begins in earnest — §6's list is a planning placeholder only.
 - **OQ-017**: Confirm whether webhook endpoints (§4.1) should be per-connector-per-tenant unique URLs (simplifies signature/source attribution) or a shared per-connector URL disambiguated by payload content — a Part 9/Part 10 API design decision affecting the webhook contract.

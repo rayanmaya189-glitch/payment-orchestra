@@ -286,7 +286,62 @@ CREATE TABLE conversation_history (
 
 ---
 
-## 11. Open Items Carried Forward
+## 11. Gap Analysis Additions — AI Safety & Quality
+
+### 11.1 AI Bias Detection & Fairness Monitoring
+
+**AI-BIAS-003**: The evaluation harness (§6) is extended with a bias test set covering:
+- Merchant size segments (small, medium, enterprise)
+- Geographic segments (UAE, GCC, international)
+- Transaction amount ranges (micro, standard, large-ticket)
+- Card scheme segments (Visa, Mastercard, Amex, mada)
+
+**AI-BIAS-004**: Fairness metric: compute answer accuracy per segment. If accuracy for any segment drops below 80% of the overall average, an alert is raised. This catches retrieval-pattern bias (e.g., over-indexing on high-volume merchants' patterns).
+
+**AI-BIAS-005**: Quarterly bias audit: a random sample of 100 AI Assistant answers is reviewed by humans for fairness and consistency across merchant segments. Results are documented and available for compliance review.
+
+### 11.2 Enhanced Hallucination Detection
+
+**AI-HALL-002**: Secondary validation layer beyond citation existence (GRD-OUT-001):
+- **Numerical claim extraction**: Parse the answer for numerical claims (amounts, percentages, counts) and cross-check against source documents. If a claimed number doesn't appear in any cited source, flag as "unverified numerical claim."
+- **Source relevance scoring**: Use the cross-encoder reranker score as a "confidence" signal. Answers relying on low-relevance sources (reranker score < 0.5) trigger a disclaimer: "This answer may not be fully grounded in your data."
+- **Contradiction detection**: If two cited sources contain contradictory information, the Assistant must explicitly note the contradiction rather than silently picking one.
+
+**AI-HALL-003**: Periodic human audit of a random sample of answers (10% weekly sample, not just thumbs-up/down feedback). Audit checks: citation correctness (does the cited source actually support the claim?), numerical accuracy, and completeness.
+
+### 11.3 Real-Time Production Quality Monitoring
+
+**AIMON-004**: Hourly sampling of answer quality: automated checks on a rotating subset of the top-50 regression questions. If factual accuracy drops below the EVAL-001 threshold within any 1-hour window, an alert is raised (faster than the daily drift detection in AIMON-002).
+
+**AIMON-005**: Real-time latency monitoring: p99 time-to-first-token and time-to-complete-answer tracked per model pool (Qwen3 32B, Qwen3-VL 8B). Alert if p99 exceeds 2x baseline.
+
+**AIMON-006**: AI circuit breaker: if quality drops below threshold or latency exceeds 3x baseline within any 1-hour window, the AI Gateway degrades the Assistant to raw-data mode (AIGW-005 extended):
+- **Q&A**: Returns unsummarized structured data with a "AI Assistant temporarily unavailable" notice
+- **KYB OCR**: Routes to human review queue (ACT-06) with the uploaded document visible
+- **Settlement OCR**: Queues for manual processing, alerts ACT-07
+
+### 11.4 RAG Retrieval Quality Drift Detection
+
+**AIMON-007**: Retrieval-specific quality metrics logged per query:
+- `top_k_relevance_scores`: average similarity of top-K results from the cross-encoder reranker
+- `citation_hit_rate`: percentage of cited sources that appear in the top-K retrieval results
+- `no_results_rate`: percentage of queries returning zero retrieval results
+
+**AIMON-008**: Hourly rollups compared against 7-day rolling average baseline. Alert if `citation_hit_rate` drops below 80% of baseline or `no_results_rate` exceeds 2x baseline.
+
+**AIMON-009**: On drift detection, trigger JOB-005 (re-embedding) to refresh the index. If drift persists after re-embedding, escalate to AI/ML team for investigation.
+
+### 11.5 Fraud Model Feedback Loop (MVP Data Collection)
+
+**FRAUD-FB-001**: A `FraudModelFeedback` event is emitted when: (a) a chargeback is received (linking back to the original `RiskAssessment`), or (b) a flagged transaction is confirmed legitimate by the merchant.
+
+**FRAUD-FB-002**: A `fraud_feedback` ClickHouse table stores: `transaction_id`, `original_risk_score`, `original_risk_factors`, `outcome` (chargeback/legitimate/disputed), `outcome_date`, `feedback_lag_days`.
+
+**FRAUD-FB-003**: A weekly analytics job computes model precision/recall/F1 from the feedback data. For MVP rule-based models, these metrics are surfaced in the fraud analytics dashboard. For H3 ML models, this table serves as the training data source.
+
+---
+
+## 12. Open Items Carried Forward
 
 - **OQ-013**: Finalize the exact top-50 question list (§6.1) with Product/Finance-Ops persona input.
 - **OQ-014**: Confirm GPU hardware specification/quantity (ties to Part 1 DEP-003 and Part 4 §8) before Part 11 finalizes NFR-AI-001 numeric latency targets.

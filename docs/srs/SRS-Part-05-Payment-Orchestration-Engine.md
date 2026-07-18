@@ -247,7 +247,52 @@ When an acquirer returns a partial authorization (approved for less than the req
 
 ---
 
-## 11. Open Items Carried Forward
+## 11. Gap Analysis Additions — Settlement & Fee Enhancements
+
+### 11.1 Fee Breakdown in Settlement Records
+
+**FEE-001**: The `SettlementRecord` (Part 3 BC-09) is extended with an optional `FeeBreakdown` value object:
+
+```rust
+pub struct FeeBreakdown {
+    pub interchange_fee_minor_units: i64,
+    pub scheme_fee_minor_units: i64,
+    pub acquirer_markup_minor_units: i64,
+    pub processing_fee_minor_units: i64,
+    pub total_fee_minor_units: i64,
+    pub fee_currency: String,
+}
+```
+
+**FEE-002**: Fee breakdown is populated from settlement data when available (not all acquirers report fee breakdowns). Where unavailable, `total_fee_minor_units` is derived from the difference between captured amount and settled amount.
+
+**FEE-003**: Fee data feeds into:
+- Merchant fee analytics dashboard (UC-070) — "how much did we pay in acquirer fees last month, broken down by acquirer?"
+- H3 cost-based routing (GOAL-009) — routing algorithm can weight by total cost (authorization rate × fee)
+- Scheme compliance monitoring (Part 7 §9.2) — fee anomalies may indicate acquirer billing errors
+
+### 11.2 Settlement Reconciliation Enhancements
+
+**SETTLE-001**: Settlement record ingestion includes:
+- SHA-256 hash of the raw settlement file (for audit trail)
+- File format detection and normalization logging
+- Per-line-item fee extraction (where available)
+
+**SETTLE-002**: Unmatched settlement records are classified:
+- `no_reference_match`: No PaymentIntent found for the acquirer reference
+- `amount_mismatch`: PaymentIntent found but amount differs by more than configured tolerance
+- `duplicate_reference`: Multiple PaymentIntents found for the same acquirer reference
+- `orphan_record`: Settlement record references a transaction not processed through the platform
+
+**SETTLE-003**: Each classification has a default resolution workflow:
+- `no_reference_match`: Queue for manual review (ACT-02)
+- `amount_mismatch`: Queue for manual review with AI suggestion (UC-041)
+- `duplicate_reference`: Flag for compliance review (ACT-06)
+- `orphan_record`: Record but do not flag for review (expected for transactions processed outside platform)
+
+---
+
+## 12. Open Items Carried Forward
 
 - **OQ-011**: Finalize default and configurable-range values for RTY-002's hard hop ceiling — placeholder "3" used above pending a latency-budget modeling exercise in Part 11.
 - **OQ-012**: Confirm which MVP acquirer partners support native idempotency tokens (§4.1) vs. require status-check-before-retry — depends on OQ-003 (Part 1) acquirer shortlist; must be resolved before Part 7 finalizes per-connector capability flags.

@@ -421,7 +421,215 @@ All production-affecting changes follow the Maker/Checker pattern (Part 3 MKCK-0
 
 ---
 
-## 13. Open Items Carried Forward
+## 13. Gap Analysis Additions — Operational Hardening
+
+### 13.1 Alert Fatigue Prevention
+
+**ALERT-FAT-001**: Alert correlation and suppression framework:
+- **Alert groups**: Related alerts are grouped under a root cause (e.g., "acquirer-X-down" suppresses circuit breaker, error rate, DLQ depth, and consumer lag alerts for 30 minutes)
+- **Runbook linkage**: Every alert has a `runbook_url` field linking to the specific playbook (RUNBOOK-001)
+- **Alert review cadence**: Monthly review of alert thresholds, false-positive rates, and alert volume per on-call engineer
+
+**ALERT-FAT-002**: Alert severity escalation: if an alert is not acknowledged within its response time (ALERT-001), it auto-escalates to the next severity level and contacts the escalation chain.
+
+**ALERT-FAT-003**: Alert noise budget: maximum 5 actionable alerts per on-call engineer per week. If exceeded, thresholds are reviewed and adjusted.
+
+### 13.2 Runbook Template & Example Runbooks
+
+**RUNBOOK-TPL-001**: All runbooks follow this template:
+
+```markdown
+# Runbook: [Incident Type]
+
+## Detection
+- **Alert name**: [ALERT-XXX]
+- **Symptoms**: [What the operator sees]
+- **Metrics**: [Specific metric thresholds]
+
+## Impact
+- **Affected services**: [List]
+- **User impact**: [Description]
+- **Revenue impact**: [If applicable]
+
+## Triage Steps
+1. [Step 1]
+2. [Step 2]
+3. [Step 3]
+
+## Mitigation Steps
+1. [Step 1]
+2. [Step 2]
+
+## Validation Steps
+1. [How to confirm mitigation worked]
+2. [Metrics to watch]
+
+## Escalation
+- **Primary**: [On-call engineer]
+- **Secondary**: [Engineering lead]
+- **Security**: [CISO, for security incidents]
+
+## Post-Incident
+- [ ] Create incident report within 48 hours
+- [ ] Schedule post-mortem
+- [ ] Track remediation items
+```
+
+**RUNBOOK-EX-001**: Example runbook — Acquirer Outage:
+
+```markdown
+# Runbook: Acquirer Outage
+
+## Detection
+- **Alert name**: acquirer_circuit_breaker_open
+- **Symptoms**: circuit breaker open for >5 minutes, elevated error rate on checkout path
+- **Metrics**: acquirer_error_rate > 50%, checkout_error_rate elevated
+
+## Impact
+- **Affected services**: connector-gateway, orchestration-service
+- **User impact**: Payments routed to failing acquirer will fail; failover should automatically route to next acquirer
+- **Revenue impact**: Potential revenue loss if all acquirers are affected
+
+## Triage Steps
+1. Check acquirer status page (if available)
+2. Verify circuit breaker state in Redis: `redis-cli GET "cb:{connector_id}"`
+3. Check connector-gateway logs for error patterns
+4. Verify failover is working: check PaymentAuthorizationAttempted events for multi-hop routing
+
+## Mitigation Steps
+1. If single acquirer: confirm failover routing is active (automatic)
+2. If multiple acquirers: activate emergency maintenance mode (feature flag FF-EMERGENCY-MAINT)
+3. Notify affected operators via status page
+4. Contact acquirer support if available
+
+## Validation Steps
+1. Monitor checkout_error_rate — should stabilize after failover
+2. Check authorization_rate — should recover with secondary acquirers
+3. Verify no PaymentFailedAllRoutes events (indicates all acquirers down)
+
+## Escalation
+- **Primary**: On-call SRE
+- **Secondary**: Engineering lead (if >30 minutes)
+- **Business**: Product owner (if >1 hour, operator notification required)
+```
+
+**RUNBOOK-EX-002**: Example runbook — AI Model Degradation:
+
+```markdown
+# Runbook: AI Assistant Quality Degradation
+
+## Detection
+- **Alert name**: ai_model_quality_drop
+- **Symptoms**: hourly quality sampling shows accuracy drop below threshold
+- **Metrics**: ai_answer_accuracy < 80% of baseline for 1 hour
+
+## Impact
+- **Affected services**: ai-assistant-service, ai-gateway
+- **User impact**: AI Assistant may provide incorrect answers
+- **Revenue impact**: No direct revenue impact; operational efficiency impact
+
+## Triage Steps
+1. Check Ollama inference pool health
+2. Review recent model version changes (MODEL-PIN-002)
+3. Check retrieval quality metrics (AIMON-007)
+4. Review recent data ingestion for anomalies
+
+## Mitigation Steps
+1. If model version changed: rollback to previous version (MODEL-ROLLBACK-001)
+2. If retrieval degraded: trigger re-embedding (JOB-005)
+3. If Ollama issue: restart inference pool
+4. If persistent: degrade AI Assistant to raw-data mode (AIGW-005)
+
+## Validation Steps
+1. Monitor ai_answer_accuracy — should recover within 1 hour
+2. Check retrieval quality metrics — citation_hit_rate should recover
+3. Verify AI Assistant responses in dashboard
+```
+
+### 13.3 SLSA Level Targets
+
+**SLSA-001**: Build pipeline targets SLSA Level 2:
+- Build as code (CI/CD pipeline, not manual)
+- Authenticated provenance (signed build attestations)
+- Hermetic builds (dependencies pinned, no network access during build)
+
+**SLSA-002**: Container image build process includes SLSA Provenance attestation alongside cosign signature. Provenance is stored as a build artifact and attached to the image.
+
+**SLSA-003**: SBOM is signed alongside the image and stored in the same registry. Consumers can verify SBOM integrity independently.
+
+### 13.4 Chaos Engineering Enhancements
+
+**CHAOS-004**: Additional chaos scenarios:
+- **NATS JetStream store corruption**: Simulate corrupted event store; validate recovery procedures (Part 4 RECOVERY-001/002)
+- **Outbox relay failure**: Kill the outbox relay process; validate that events are not lost (outbox table retains unpublished entries)
+- **Postgres connection pool exhaustion**: Exhaust connection pool; validate that new requests fail fast with appropriate error (not timeout)
+- **OpenSearch index corruption**: Corrupt an OpenSearch index; validate that AI Assistant degrades gracefully to raw-data mode
+
+**CHAOS-005**: Chaos engineering findings feed back into:
+- Circuit breaker thresholds (Part 3 CB-001)
+- Retry configurations (Part 3 RETRY-001)
+- Graceful degradation modes (Part 4 AIGW-005)
+- Saga timeout values (Part 3 SAGA-004)
+
+### 13.5 Expand-Contract Migration Enhancements
+
+**MIG-004**: Migration validation steps:
+1. Migration tested against a staging database clone (MIG-MKCK-002.2)
+2. Migration executed during a maintenance window (for breaking changes) or online (for backward-compatible changes)
+3. Post-migration verification: automated health checks + manual spot-check
+4. Rollback procedure documented and tested before execution
+
+**MIG-005**: Migration history tracking in `migration_history` table (MIG-MKCK-003) includes:
+- Migration version number
+- Status (pending → applied → verified → rolled_back)
+- Maker (who created)
+- Checker(s) (who approved)
+- Applied at timestamp
+- Rollback available (boolean)
+- Duration (how long the migration took)
+
+### 13.6 Capacity Planning for NATS JetStream
+
+**NATS-CAP-001**: NATS stream sizing parameters:
+- Max stream size: configurable per stream (default: 10GB per bounded context)
+- Max message size: 1MB (matching APISEC-001)
+- Retention policy: time-based (configurable, default: 7 days) + size-based (max stream size)
+- Consumer throughput target: 10,000 events/second per consumer group
+
+**NATS-CAP-002**: Sizing formula: `stream_size = peak_tps × avg_event_size × retention_window_seconds × safety_factor(1.5)`
+
+**NATS-CAP-003**: Consumer lag monitoring: when lag exceeds 10,000 events for >5 minutes, alert to operations. When lag exceeds 100,000 events, consumer enters backpressure mode (Part 4 BACKPRESSURE-002).
+
+### 13.7 Disaster Recovery Enhancements
+
+**DR-005**: DR drill schedule: quarterly restoration from backups into an isolated environment, with application-level correctness validation (not just "the restore command succeeded"). A backup that has never been test-restored is not a verified backup.
+
+**DR-006**: Cross-region replication (H2): active-passive with UAE primary, secondary in another GCC country. DNS failover via health checks + weighted routing.
+
+**DR-007**: RTO/RPO targets (minimum for GA):
+- `orchestration-service`: RPO=0, RTO<5 minutes
+- `connector-gateway`: RPO=0, RTO<5 minutes
+- `iam-service`: RPO=0, RTO<5 minutes
+- `reconciliation-service`: RPO<1 hour, RTO<4 hours
+- `analytics-service`: RPO<4 hours, RTO<24 hours
+- All financial data: RPO=0 (no data loss tolerance for committed events)
+
+### 13.8 Incident Response Tabletop Exercises
+
+**IR-TTX-001**: Quarterly tabletop exercises covering:
+- Acquirer outage scenario
+- Database failover scenario
+- Data breach scenario
+- AI model compromise scenario
+- Supply chain compromise scenario
+
+**IR-TTX-002**: Annual incident response training for all on-call engineers, covering: detection, triage, mitigation, communication, and post-incident review.
+
+**IR-TTX-003**: Post-incident review for all SEV-1 and SEV-2 incidents (not just "within 48 hours" but with defined remediation tracking and follow-up).
+
+---
+
+## 14. Open Items Carried Forward
 
 - **OQ-026**: Run the PERF-001 benchmarking spike against provisioned staging infrastructure.
 - **OQ-027**: Set specific RPO/RTO numeric targets (§8 DR-001) jointly with Product/Compliance.

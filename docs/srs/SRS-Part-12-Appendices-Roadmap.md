@@ -150,7 +150,34 @@
 | OQ-062 (Part 4) | Finalize NATS subject version deprecation window (default 30 days, NATS-VER-003) | Architecture | Part 4 §4.3 NATS-VER-003 |
 | OQ-063 (Part 9) | Confirm SeaORM migration strategy for event-sourced services — forward-only vs reversible migrations | Engineering | Part 9 §1.1 DB migration approach |
 
-**Program management note**: Items with a Legal owner (ASSUMP-001/OQ-001, OQ-018, OQ-019) are the highest-priority blockers for GA. Items from the gap analysis (OQ-029 through OQ-052) represent new engineering decisions that should be resolved during M1–M2 to avoid blocking later milestones. Priority recommendation: resolve OQ-029 (saga persistence), OQ-030 (outbox relay), and OQ-031 (circuit breaker thresholds) before M2 implementation begins, as they are foundational patterns that affect multiple services.
+### New Open Questions from Gap Analysis (OQ-064 through OQ-085)
+
+| ID | Description | Owner | Blocks |
+|---|---|---|---|
+| OQ-064 (Part 3 §10.2) | Finalize double-entry ledger design: which entities, which settlement formats, how fee breakdown is populated from acquirer data | Architecture/Engineering | M4 reconciliation implementation |
+| OQ-065 (Part 3 §10.3) | Finalize reconciliation matching algorithm thresholds: auto-confirm threshold, review threshold, per-acquirer fee tolerance | Product/Engineering | M4 reconciliation implementation |
+| OQ-066 (Part 4 §10.1) | Finalize NATS/Redis encryption configuration: TLS cert management, encryption-at-rest key rotation schedule | Security/Infra | M1 foundation |
+| OQ-067 (Part 4 §10.2) | Finalize feature flag store: Redis-backed vs. off-the-shelf (e.g., LaunchDarkly, Unleash) | Engineering/Infra | M7 compliance hardening |
+| OQ-068 (Part 4 §10.4) | Finalize unified internal error taxonomy mapping to gRPC status codes | Architecture | M2 first connector |
+| OQ-069 (Part 6 §11.1) | Finalize AI bias test set: which protected characteristics, what fairness threshold | Product/AI | M6 AI assistant baseline |
+| OQ-070 (Part 6 §11.2) | Finalize hallucination detection secondary validation: numerical claim extraction vs. LLM-based verification | AI/Engineering | M6 AI assistant baseline |
+| OQ-071 (Part 8 §16.1) | Finalize PaymentMethodToken aggregate ownership: BC-05 extension vs. new BC-18 | Architecture | M2 first connector |
+| OQ-072 (Part 8 §16.2) | Finalize account recovery flow: backup codes vs. Admin-mediated identity verification vs. both | Product/Security | M7 compliance hardening |
+| OQ-073 (Part 8 §16.3) | Finalize PostgreSQL TDE: pg_tde extension vs. cloud-managed TDE vs. column-level encryption alternative | Security/Infra | M1 foundation |
+| OQ-074 (Part 8 §16.5) | Finalize infrastructure component security baselines: Redis AUTH/TLS, OpenSearch security plugin, ClickHouse auth, MinIO IAM | Security/Infra | M1 foundation |
+| OQ-075 (Part 8 §16.7) | Finalize CSRF protection mechanism: custom header vs. double-submit cookie vs. SameSite-only | Security | M7 compliance hardening |
+| OQ-076 (Part 8 §16.8) | Finalize credential access monitoring: real-time vs. batch alerting, rate limit threshold | Security/Compliance | M7 compliance hardening |
+| OQ-077 (Part 8 §16.10) | Finalize gRPC reflection disable enforcement: CI check vs. runtime assertion | Security/Engineering | M1 foundation |
+| OQ-078 (Part 8 §16.11) | Finalize AI bias monitoring: automated vs. manual quarterly audit, fairness metric definition | AI/Compliance | M6 AI assistant baseline |
+| OQ-079 (Part 8 §16.12) | Finalize data residency enforcement: IaC constraints vs. runtime validation vs. both | Security/Infra | M7 compliance hardening |
+| OQ-080 (Part 9 §12.2) | Finalize ClickHouse security: per-service user roles, TLS configuration, query logging | Security/Infra | M4 reconciliation |
+| OQ-081 (Part 9 §12.3) | Finalize OpenSearch security: security plugin vs. network-level isolation, index vs. document-level security | Security/Architecture | M6 AI assistant |
+| OQ-082 (Part 9 §12.5) | Finalize data masking service: which tools, which fields, how staging data is generated | Engineering/QA | M7 compliance hardening |
+| OQ-083 (Part 10 §10.3) | Finalize webhook delivery backpressure: adaptive throttling algorithm, priority queue implementation | Engineering | M5 products layer |
+| OQ-084 (Part 11 §13.2) | Finalize runbook templates: which scenarios get full runbooks for MVP, who maintains them | SRE/Engineering | M7 compliance hardening |
+| OQ-085 (Part 11 §13.7) | Finalize RPO/RTO targets with Product/Compliance: confirm minimums for GA | Product/Compliance/Engineering | M7 compliance hardening |
+
+**Program management note**: Items with a Legal owner (ASSUMP-001/OQ-001, OQ-018, OQ-019) are the highest-priority blockers for GA. Items from the gap analysis (OQ-029 through OQ-085) represent new engineering decisions that should be resolved during M1–M2 to avoid blocking later milestones. Priority recommendation: resolve OQ-029 (saga persistence), OQ-030 (outbox relay), OQ-031 (circuit breaker thresholds), OQ-066 (NATS/Redis encryption), and OQ-074 (infrastructure security) before M2 implementation begins, as they are foundational patterns that affect multiple services.
 
 ---
 
@@ -162,14 +189,14 @@
 
 | Milestone | Key Deliverables | Primary Parts |
 |---|---|---|
-| M1 — Foundation | `operator-service`, `iam-service`, `compliance-service` live; UC-001/002 functional | Parts 3, 4, 8, 9 |
-| M2 — First Connector | One acquirer connector conformant (Part 7 §5); `connector-gateway` + `orchestration-service` authorize/capture/void/refund functional in sandbox | Parts 5, 7, 9, 10 |
-| M3 — Multi-Connector Routing | Two additional connectors; `RoutingPolicy` + failover (UC-011, UC-020 AF-020a) live | Part 5 |
-| M4 — Reconciliation | `reconciliation-service` ingesting at least one connector's settlement format; UC-040/041 functional | Parts 7, 9 |
-| M5 — Products Layer | Invoice, payment link, subscription billing (PROC-04) live | Part 3 §5.5–5.6 |
-| M6 — AI Assistant Baseline | RAG pipeline live against real reconciliation/transaction data; top-50 question set (OQ-013) evaluated and passing EVAL-001 gate | Part 6 |
-| M7 — Compliance Hardening | Full audit framework (Part 8 §5), SECTEST-001 cross-tenant suite passing, legal sign-off on custody posture (OQ-001) obtained | Part 8, Part 11 §7 |
-| M8 — Pilot GA | First pilot merchant live on production with real acquirer connections | All |
+| M1 — Foundation | `operator-service`, `iam-service`, `compliance-service` live; UC-001/002 functional; NATS/Redis encryption configured; infrastructure security baselines (OQ-066, OQ-074); PostgreSQL TDE (OQ-073); feature flag store decided (OQ-067) | Parts 3, 4, 8, 9 |
+| M2 — First Connector | One acquirer connector conformant (Part 7 §5); `connector-gateway` + `orchestration-service` authorize/capture/void/refund functional in sandbox; PaymentMethodToken aggregate (OQ-071); SFTP security (Part 7 §9.1); cross-context idempotency (Part 3 §10.6) | Parts 5, 7, 9, 10 |
+| M3 — Multi-Connector Routing | Two additional connectors; `RoutingPolicy` + failover (UC-011, UC-020 AF-020a) live; scheme compliance monitoring (Part 7 §9.2) | Part 5, 7 |
+| M4 — Reconciliation | `reconciliation-service` ingesting at least one connector's settlement format; UC-040/041 functional; double-entry ledger (OQ-064); reconciliation matching algorithm (OQ-065); fee breakdown tracking (Part 5 §11.1); ClickHouse security (OQ-080) | Parts 7, 9 |
+| M5 — Products Layer | Invoice, payment link, subscription billing (PROC-04) live; webhook payload versioning (Part 10 §10.2); webhook delivery backpressure (OQ-083) | Part 3 §5.5–5.6, Part 10 |
+| M6 — AI Assistant Baseline | RAG pipeline live against real reconciliation/transaction data; top-50 question set (OQ-013) evaluated and passing EVAL-001 gate; AI bias test set (OQ-069); hallucination detection (OQ-070); real-time quality monitoring (Part 6 §11.3); OpenSearch security (OQ-081) | Part 6, 9 |
+| M7 — Compliance Hardening | Full audit framework (Part 8 §5), SECTEST-001 cross-tenant suite passing, legal sign-off on custody posture (OQ-001) obtained; audit tamper-evidence (Part 8 §16.4); CSRF protection (OQ-075); credential monitoring (OQ-076); account recovery flow (OQ-072); data masking (OQ-082); runbooks (OQ-084); RPO/RTO finalized (OQ-085); data residency enforcement (OQ-079); SIEM selected (OQ-054) | Part 8, Part 11 §7 |
+| M8 — Pilot GA | First pilot merchant live on production with real acquirer connections; PCI-DSS QSA scoping assessment completed; DR drill completed | All |
 
 ### 5.2 Horizon 2 — GCC Expansion
 
@@ -193,7 +220,8 @@
 - This series is a **living specification**. Every Part's Open Items section (consolidated in §4 above) represents known unknowns, not gaps in rigor — they are flagged precisely so they are resolved deliberately (with the right owner) rather than silently assumed away during implementation.
 - Where this SRS gives a placeholder (a latency number, a retention period, a hop-count default), it is explicitly marked as such and paired with the mechanism that will produce the real number (a benchmarking spike, a legal opinion, a Product decision) — the intent throughout has been to never present an invented figure with false confidence.
 - The gap analysis additions (Parts 3–11, new sections on sagas, outbox, circuit breakers, threat modeling, load testing, chaos engineering, etc.) address critical design patterns and cross-cutting concerns that were identified during the initial SRS review. These additions strengthen the specification's readiness for implementation without changing the fundamental architecture.
-- Recommended next step: convene STK-007 (Product), STK-008 (Engineering), STK-010 (Compliance), and STK-014 (Legal) to walk the §4 consolidated open-questions register and assign near-term resolution deadlines before M1 (§5.1) engineering work begins in earnest.
+- A comprehensive gap analysis was performed against the complete 12-part SRS across four dimensions: (1) production bank-grade security, (2) missing design patterns, (3) OWASP Top 10 (2021) compliance, and (4) cross-cutting architectural completeness. The findings are integrated into the respective Parts as "Gap Analysis Additions" sections. Key themes: infrastructure component security (NATS, Redis, OpenSearch, ClickHouse, MinIO encryption/auth), saga compensation completeness, double-entry ledger for reconciliation, payment token lifecycle, phishing-resistant MFA, audit tamper-evidence, and AI safety (bias detection, hallucination detection, real-time quality monitoring). New open questions OQ-064 through OQ-085 track the remaining decisions.
+- Recommended next step: convene STK-007 (Product), STK-008 (Engineering), STK-010 (Compliance), and STK-014 (Legal) to walk the §4 consolidated open-questions register and assign near-term resolution deadlines before M1 (§5.1) engineering work begins in earnest. Priority focus areas: OQ-066 (NATS/Redis encryption), OQ-073 (PostgreSQL TDE), OQ-074 (infrastructure security baselines), OQ-064 (double-entry ledger), and OQ-065 (reconciliation matching algorithm).
 
 ---
 

@@ -382,7 +382,58 @@ When a request is rate-limited, the API returns HTTP 429 with the following body
 
 ---
 
-## 10. Open Items Carried Forward
+## 10. Gap Analysis Additions — API Security & Integration
+
+### 10.1 Cursor Pagination Security
+
+**API-CURSOR-001**: Cursors are encrypted tokens (AES-GCM) containing: `last_record_id`, `sort_key`, `filter_hash` (hash of the query's filter parameters), `tenant_id`, and `expiry`.
+
+**API-CURSOR-002**: On decode, the server validates: (a) decryption succeeds, (b) `filter_hash` matches current request filters (prevents cursor reuse across different queries), (c) `tenant_id` matches (defense in depth), (d) expiry hasn't passed (cursors valid for 1 hour).
+
+**API-CURSOR-003**: Cursor encryption key is per-deployment and never exposed to clients. Cursors are opaque strings — no internal schema details leak.
+
+### 10.2 Webhook Payload Schema Versioning
+
+**WEBHOOK-VER-001**: Webhook payloads include a `schema_version` field (e.g., `"schema_version": "2026-07-18"`). New fields are additive and optional within a schema version.
+
+**WEBHOOK-VER-002**: Breaking changes (field removal, type changes) increment the schema version. Merchants can specify their preferred schema version when registering webhook endpoints.
+
+**WEBHOOK-VER-003**: During a migration window (12 months), both old and new schema versions are delivered. Schema version is tracked in `webhook_delivery_log` for debugging.
+
+### 10.3 Webhook Delivery Backpressure & Throttling
+
+**WEBHOOK-BP-001**: Per-endpoint timeout: 10 seconds for webhook delivery. If the merchant's endpoint doesn't respond within 10 seconds, the attempt is recorded as failed and retried per WEBHOOK-003.
+
+**WEBHOOK-BP-002**: Per-endpoint concurrent delivery limit: maximum 5 in-flight webhooks per endpoint. If the limit is reached, new deliveries queue with lower priority.
+
+**WEBHOOK-BP-003**: Adaptive throttling: if a merchant's endpoint has a >50% failure rate over the last 100 deliveries, reduce delivery frequency (maximum 1 delivery per 30 seconds) and alert the merchant.
+
+**WEBHOOK-BP-004**: Webhook delivery queue is priority-based: payment lifecycle events (highest) > invoice events > notification events (lowest). High-priority events bypass throttling.
+
+**WEBHOOK-BP-005**: Webhook delivery SLAs:
+- p95 delivery latency: < 30 seconds for payment events
+- Delivery success rate: > 99.9% for correctly-configured endpoints
+- Dead-letter retention: 30 days
+- Merchant notification when > 10% of webhooks fail within an hour
+
+### 10.4 API Response Staleness Disclosure
+
+**API-STALE-001**: Read endpoints serving data from eventually-consistent projections include:
+- `as_of` timestamp (Part 10 API-007) — when the data was last updated
+- `as_of_lag_seconds` — how far behind the projection is relative to the event store
+- When lag exceeds the maximum acceptable threshold (defined per read-model, e.g., 5 minutes for reconciliation exceptions, 15 minutes for analytics), the API returns a `503 Stale Data` response with a `Retry-After` header for mutation-dependent reads
+
+### 10.5 Webhook Inbound Security Enhancement
+
+**WEBHOOK-IN-001**: Inbound webhook endpoints (from acquirers) are rate-limited per connector to prevent abuse: maximum 100 webhooks per minute per acquirer.
+
+**WEBHOOK-IN-002**: Webhook payload size limited to 1MB (matching APISEC-001 document upload limits).
+
+**WEBHOOK-IN-003**: Webhook timestamp validation: webhooks with timestamps older than the configurable replay window (default: 5 minutes per OQ-048) are rejected with HTTP 400.
+
+---
+
+## 11. Open Items Carried Forward
 
 - **OQ-023**: Confirm final API-002 deprecation-window duration with Product/Legal.
 - **OQ-024**: Confirm final SDK language priority order (§4 SDK-001) against actual pilot-merchant technology stack survey results.

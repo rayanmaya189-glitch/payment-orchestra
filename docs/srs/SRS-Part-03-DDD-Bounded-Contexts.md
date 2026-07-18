@@ -509,7 +509,179 @@ This counter is NOT used for aggregate consistency (that's `event_sequence`); it
 
 ---
 
-## 10. Traceability to Part 1 / Part 2
+## 10. Gap Analysis Additions — Missing Design Patterns
+
+### 10.1 Saga Compensation Ordering & State Machine (Extends §9.1)
+
+The saga definition in §9.1 provides principles (SAGA-001 through SAGA-005) but lacks the operational state machine and compensation execution semantics required for implementation.
+
+**Saga State Machine:**
+
+```
+created → running → completed | compensating → compensated | failed → requires_manual_intervention
+```
+
+**Compensation Execution Rules:**
+
+- **SAGA-006 (Reverse-Order Compensation)**: Compensation steps execute in strict reverse order of forward steps (stack-based). If forward steps were [A, B, C] and C fails, compensation runs [B_compensate, A_compensate] — never parallel, never skip.
+- **SAGA-007 (Compensation Retry)**: Compensation steps retry up to 3 times with exponential backoff (100ms, 400ms, 1600ms). If all retries fail, the saga transitions to `requires_manual_intervention` and an alert is raised to ACT-07.
+- **SAGA-008 (Step Timeout Detection)**: A background sweep job (similar to JOB-007/008 in Part 5) checks `saga_instances` for steps in `in_progress` state longer than their configured timeout (SAGA-004). On timeout, the saga transitions to `Compensating` and triggers reverse-order compensation.
+- **SAGA-009 (Compensation Idempotency)**: Compensation actions use a compensation-specific `IdempotencyKey` derived from `saga_id + step_number`. The target service's command handler checks: if the aggregate is already in the target state (e.g., already `Voided`), the compensation command returns success without re-executing the operation. This is handled by state-machine transition guards, not a generic retry wrapper.
+
+**Saga Instance Entity — Extended Fields (SeaORM — Rust):**
+
+```rust
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
+#[sea_orm(table_name = "saga_instances")]
+pub struct Model {
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub saga_id: Uuid,
+    pub saga_type: String,
+    pub aggregate_id: Uuid,
+    pub status: String,       // 'created' | 'running' | 'completed' | 'compensating' | 'compensated' | 'failed' | 'requires_manual_intervention'
+    pub current_step: String,
+    pub steps_completed: Vec<String>,  // JSON array of completed step IDs
+    pub steps_compensated: Vec<String>, // JSON array of compensated step IDs
+    pub compensation_attempts: i32,
+    pub max_compensation_retries: i32, // default: 3
+    pub created_at: DateTimeWithTimeZone,
+    pub updated_at: DateTimeWithTimeZone,
+    pub deadline_at: Option<DateTimeWithTimeZone>, // overall saga deadline
+}
+```
+
+**Saga Step Definition:**
+
+```rust
+pub struct SagaStep {
+    pub step_id: String,
+    pub command: Box<dyn DynCommand>,        // forward command
+    pub compensation: Box<dyn DynCommand>,   // compensation command
+    pub timeout: Duration,                   // per-step timeout
+    pub idempotency_key_fn: Box<dyn Fn(&SagaInstance) -> IdempotencyKey>,
+}
+```
+
+### 10.2 Double-Entry Ledger Pattern (BC-09 Extension)
+
+Even for a non-custodial orchestration platform, a double-entry sub-ledger provides mathematical verification that every settlement record has a corresponding payment intent, and every fee deduction is accounted for.
+
+**LedgerEntry Aggregate (BC-09 — SeaORM — Rust):**
+
+```rust
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
+#[sea_orm(table_name = "ledger_entry")]
+pub struct Model {
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub entry_id: Uuid,                // UUIDv7
+    pub transaction_id: Uuid,          // links to PaymentIntent
+    pub entry_type: String,            // 'authorization' | 'capture' | 'settlement' | 'fee' | 'refund' | 'fx_adjustment'
+    pub debit_amount_minor_units: i64,
+    pub credit_amount_minor_units: i64,
+    pub currency: String,              // CHAR(3) ISO 4217
+    pub balance_before_minor_units: i64,
+    pub balance_after_minor_units: i64,
+    pub entry_date: DateTimeWithTimeZone,
+    pub source_acquirer: String,
+    pub reconciliation_batch_id: Option<Uuid>,
+    pub reconciled: bool,
+    pub created_at: DateTimeWithTimeZone,
+}
+```
+
+**Invariant (INV-10)**: Every `SettlementRecord` ingestion creates balanced debit/credit `LedgerEntry` pairs. The sum of all `debit_amount_minor_units` minus `credit_amount_minor_units` for a given `transaction_id` must equal zero (mathematical proof of balanced books).
+
+**Domain Events**: `EVT-20 LedgerEntryCreated`, `EVT-21 LedgerEntryReconciled`
+
+**LedgerBalance Materialized View (Postgres):**
+
+```sql
+CREATE MATERIALIZED VIEW ledger_balance_mv AS
+SELECT
+    source_acquirer,
+    currency,
+    DATE(entry_date) AS balance_date,
+    SUM(credit_amount_minor_units - debit_amount_minor_units) AS net_balance,
+    COUNT(*) AS entry_count,
+    COUNT(*) FILTER (WHERE NOT reconciled) AS unreconciled_count
+FROM ledger_entry
+GROUP BY source_acquirer, currency, DATE(entry_date);
+```
+
+### 10.3 Reconciliation Matching Algorithm Pattern (BC-09 Extension)
+
+Real-world reconciliation requires multi-strategy matching beyond exact acquirer-reference lookup.
+
+**ReconciliationMatcher — Chain of Responsibility:**
+
+```rust
+pub enum MatchStrategy {
+    Exact { confidence: f64 },           // 100% — acquirer ref → payment_intent_id
+    Fuzzy { confidence_range: (f64, f64) }, // 70-99% — amount ± fee tolerance + date proximity
+    AiAssisted { confidence_range: (f64, f64) }, // 50-70% — vector similarity over attributes
+}
+
+pub struct ReconciliationMatcher {
+    strategies: Vec<Box<dyn MatchStrategyImpl>>,
+    auto_confirm_threshold: f64,    // default: 0.95
+    review_threshold: f64,          // default: 0.70
+}
+```
+
+**Matching Rules:**
+
+| Strategy | Inputs | Confidence | Action |
+|---|---|---|---|
+| Exact | acquirer_reference → payment_intent_id | 100% | Auto-confirm |
+| Amount+Date Fuzzy | amount ± acquirer_fee_tolerance AND date within ±2 days AND partial reference match | 70-99% | Queue for human review if < auto_confirm_threshold |
+| AI-Assisted | vector similarity over (amount, date, card_last_four, currency) | 50-70% | Queue for human review (BR-041-1: AI suggests, human confirms) |
+| No Match | — | < 50% | Flag as `UnmatchedSettlementRecord` for manual investigation |
+
+**Per-Acquirer Configuration:**
+
+```rust
+pub struct AcquirerReconciliationConfig {
+    pub connector_id: String,
+    pub amount_fee_tolerance_percent: f64,   // default: 5.0
+    pub date_tolerance_days: i32,            // default: 2
+    pub reference_format_pattern: String,     // regex for expected format
+    pub auto_confirm_threshold: f64,         // default: 0.95
+    pub enable_ai_assisted: bool,            // default: true
+}
+```
+
+### 10.4 Fee Breakdown Tracking (BC-09 Extension)
+
+**FeeBreakdown Value Object (Part 3 §3.2 extension):**
+
+```rust
+pub struct FeeBreakdown {
+    pub interchange_fee_minor_units: i64,
+    pub scheme_fee_minor_units: i64,
+    pub acquirer_markup_minor_units: i64,
+    pub processing_fee_minor_units: i64,
+    pub total_fee_minor_units: i64,
+    pub fee_currency: String,
+}
+```
+
+Extended `SettlementRecord` to include `FeeBreakdown` as an optional field (not all acquirers report fee breakdowns). Fee data feeds into H3 cost-based routing (GOAL-009) and merchant fee analytics dashboard (UC-070).
+
+### 10.5 Out-of-Order Event Handling
+
+**EVT-ORDER-002**: Projections consuming from NATS JetStream must handle out-of-order delivery within a single aggregate's event stream. Each consumer tracks `last_processed_sequence` per aggregate. Out-of-order events are buffered and applied in sequence-number order. A gap-detection mechanism triggers re-fetch from the event store when a gap exceeds a configurable threshold (default: 100 missing sequences).
+
+### 10.6 Cross-Service Idempotency Key Propagation
+
+**IDEMP-001**: Internal service-to-service gRPC calls carry an `Idempotency-Key` in call metadata, derived from the originating command's key plus a service-specific suffix: `{command_id}:{source_service}:{target_service}`.
+
+**IDEMP-002**: Each service maintains its own idempotency cache (Redis) scoped to its own operations. The `orchestration-service` accepts idempotency keys from both external (merchant) and internal (invoice/subscription services) sources, storing the key source for audit.
+
+**IDEMP-003**: Cross-service idempotency keys are documented in the `.proto` service definitions (Part 10) as required metadata fields.
+
+---
+
+## 11. Traceability to Part 1 / Part 2
 
 | Part 1/2 Requirement | Enforced By (this Part) |
 |---|---|

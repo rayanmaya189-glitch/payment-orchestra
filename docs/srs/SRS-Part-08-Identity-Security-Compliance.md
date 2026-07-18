@@ -560,7 +560,215 @@ This Part is the authoritative home for the *security/compliance framing* of con
 
 ---
 
-## 16. Open Items Carried Forward
+## 16. Gap Analysis Additions — Bank-Grade Security Hardening
+
+### 16.1 Payment Token Lifecycle Management (PCI-DSS)
+
+**TOK-001**: A `PaymentMethodToken` aggregate (new entity within BC-05 or a dedicated BC-18) manages the lifecycle of acquirer-issued payment method tokens, separated from connector credentials.
+
+**TOK-002**: Token Entity (SeaORM — Rust):
+
+```rust
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
+#[sea_orm(table_name = "payment_method_token")]
+pub struct Model {
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub token_id: Uuid,
+    pub payment_method_type: String,    // 'card' | 'bank_account' | 'wallet'
+    pub last_four: String,
+    pub card_brand: Option<String>,     // 'visa' | 'mastercard' | 'amex' | 'mada'
+    pub expiry_month: Option<i32>,
+    pub expiry_year: Option<i32>,
+    pub token_status: String,           // 'active' | 'expired' | 'revoked'
+    pub acquirer_link_id: Uuid,
+    pub acquirer_token_reference: String, // the actual token from the acquirer
+    pub encrypted_token: Vec<u8>,       // envelope-encrypted
+    pub created_at: DateTimeWithTimeZone,
+    pub expires_at: Option<DateTimeWithTimeZone>,
+    pub revoked_at: Option<DateTimeWithTimeZone>,
+    pub revocation_reason: Option<String>,
+}
+```
+
+**TOK-003**: Token lifecycle commands: `StorePaymentMethodToken`, `ExpirePaymentMethodToken`, `RevokePaymentMethodToken`, `RefreshPaymentMethodToken` (for account-updater scenarios per Part 2 EX-031a).
+
+**TOK-004**: All token access is logged to Tier 2 audit (BIZ-040). Token storage is separated from connector credentials to ensure QSA can clearly identify the cardholder data boundary.
+
+**TOK-005**: Tokens are never returned in full via any read API. The dashboard shows last-four, brand, and expiry only.
+
+### 16.2 Phishing-Resistant MFA Mandate
+
+**AUTH-011**: WebAuthn (FIDO2) is the **minimum** MFA factor for Admin and Finance Operator roles. TOTP is permitted only as a secondary factor or for Developer/Read-Only roles.
+
+**AUTH-012**: WebAuthn authenticator attestation verification: on enrollment, the platform verifies the authenticator's attestation statement to confirm it's a genuine FIDO2 device (not a software simulator).
+
+**AUTH-013**: Session binding to WebAuthn authenticator: the session token includes a hash of the authenticator's credential ID, preventing token replay across devices.
+
+**AUTH-014**: Account recovery flow for lost MFA devices:
+- **Backup codes**: 10 single-use recovery codes generated at MFA enrollment, stored hashed server-side
+- **Recovery key**: Admin-generated recovery key for emergency access
+- **Identity verification**: If backup codes are lost, Admin-mediated identity verification (upload government ID + video call) with Maker/Checker approval
+
+**AUTH-015**: Login notification: all login events (new device/IP) trigger an email notification to the principal. Suspicious login patterns (impossible travel, new country) trigger an MFA re-challenge.
+
+**AUTH-016**: All sessions for a principal are invalidated when the principal's password is changed.
+
+### 16.3 Database Transparent Data Encryption (TDE)
+
+**ENC-010**: PostgreSQL databases containing Confidential or Restricted data use Transparent Data Encryption (TDE) via the `pg_tde` extension or cloud-managed TDE equivalent. TDE ensures encryption persists into WAL archives, base backups, and crash dumps — not just live volume data.
+
+**ENC-011**: Encryption at Rest Matrix:
+
+| Data Store | Live Volume | WAL/Logs | Backups | Replicas |
+|---|---|---|---|---|
+| PostgreSQL (event stores) | TDE (ENC-010) | TDE (encrypted WAL) | TDE (encrypted base backup) | TDE (encrypted replica data) |
+| ClickHouse | Volume encryption | N/A (append-only) | Volume encryption at backup destination | Volume encryption |
+| Redis | Volume encryption | N/A (AOF encrypted) | Volume encryption at backup destination | Volume encryption |
+| OpenSearch | Volume encryption | N/A | Volume encryption | Volume encryption |
+| MinIO | Per-object KMS (ENC-004) | N/A | Per-object KMS (replicated) | Per-object KMS |
+
+### 16.4 Audit Log Tamper-Evidence
+
+**AUD-004**: Audit log entries include cryptographic hash chaining for tamper-evidence:
+
+```rust
+pub struct AuditEntry {
+    // ... existing fields from DB-004 ...
+    pub previous_entry_hash: Option<Vec<u8>>,  // SHA-256 of previous entry
+    pub entry_hash: Vec<u8>,                    // SHA-256 of this entry (including previous_entry_hash)
+}
+```
+
+**AUD-005**: A background verification job walks the audit log chain daily and alerts on breaks (hash mismatch = tamper detected). The verification job itself is audit-logged.
+
+**AUD-006**: Optional: periodic hash summaries anchored to an external write-once store (e.g., AWS S3 Object Lock) for independent verification.
+
+### 16.5 Infrastructure Component Security Baseline
+
+**INFRA-SEC-001**: All infrastructure components require explicit security configuration:
+
+| Component | Required Controls |
+|---|---|
+| **Redis** | AUTH/TLS (Part 4 §10.1 REDIS-ENC-001/002/003), ACL with least-privilege roles, `protected-mode yes`, no default password |
+| **OpenSearch** | TLS for all connections, basic auth or mTLS, index-level security, audit logging, network policy restricting to `ai-assistant-service` only |
+| **ClickHouse** | TLS for client connections, per-service read-only users, network policy restricting to `analytics-service` and `ai-assistant-service` |
+| **MinIO** | TLS, access key/secret auth, per-service IAM policies, network policy restricting to `document-service`, `compliance-service`, `reconciliation-service`, `analytics-service` |
+| **NATS** | TLS 1.3 + mTLS (Part 4 §10.1 NATS-ENC-001/002/003) |
+| **PostgreSQL** | TDE (ENC-010), `sslmode=verify-full` (not just `require`), per-service roles, `pg_hba.conf` restricting to service mesh IPs |
+
+**INFRA-SEC-002**: First-boot credential rotation: all infrastructure components (MinIO, OpenSearch, Redis, ClickHouse, PostgreSQL) must have default credentials rotated on first deployment. Default credentials (e.g., MinIO `minioadmin:minioadmin`) must never exist in production.
+
+**INFRA-SEC-003**: K8s Secrets encryption at rest: Kubernetes etcd encryption enabled via KMS provider. Preference for CSI Secret Store Driver (direct Vault mount) over Kubernetes Secrets.
+
+### 16.6 Session Security Hardening
+
+**SESS-SEC-001**: Session cookies must have `SameSite=Strict; Secure; HttpOnly` attributes. Cookie domain scoped to the exact deployment domain (no wildcard domains).
+
+**SESS-SEC-002**: JWT tokens include `aud` claim binding to specific client type (dashboard vs. API). Tokens issued for the dashboard cannot be used against the API and vice versa.
+
+**SESS-SEC-003**: Refresh token rotation with concurrent session detection: if a refresh token is used after rotation (indicating potential theft), both the old and new sessions are invalidated and the principal is notified.
+
+**SESS-SEC-004**: Admin session revocation: Admins can revoke all sessions for any principal via `/v1/principals/{id}/sessions/revoke-all`.
+
+### 16.7 CSRF Protection
+
+**CSRF-001**: All state-changing API endpoints that accept cookie-based authentication require a CSRF token. The CSRF token is: (a) generated per-session, (b) included in a custom header (`X-CSRF-Token`) on every mutating request, (c) validated against the session's stored token at the API Gateway.
+
+**CSRF-002**: For API-key-authenticated requests, CSRF protection is not required (API keys are not auto-sent by browsers).
+
+### 16.8 Credential Access Monitoring
+
+**CRED-MON-001**: Every decrypt/access of `merchant_acquirer_link.encrypted_config` generates an `AcquirerCredentialAccessed` audit event (Tier 2) with: actor_id, timestamp, source_ip, access_purpose.
+
+**CRED-MON-002**: Credential access rate limiting: maximum 10 credential decryptions per principal per hour. Exceeding the limit triggers an alert and temporary access suspension.
+
+**CRED-MON-003**: Real-time alerting on any credential access (not just "outside business hours" — for a payment platform, credential access should always be monitored).
+
+### 16.9 IP Allowlisting for Sensitive Operations
+
+**ABAC-009**: IP allowlisting is **mandatory** (not optional per ABAC-007) for:
+- Acquirer credential management
+- KEK ceremonies
+- Production database access (PAM-001)
+- Routing policy changes above threshold
+
+**ABAC-010**: IP determination uses trusted proxy chain validation (not raw X-Forwarded-For). The API Gateway validates the full proxy chain and sets a trusted `X-Real-IP` header.
+
+### 16.10 gRPC Security Hardening
+
+**GRPC-SEC-001**: gRPC server reflection must be disabled in production. Reflection is permitted only in dev/sandbox environments.
+
+**GRPC-SEC-002**: Per-service internal rate limiting (configurable) enforced via gRPC interceptors. The `iam-service` `ValidatePermission` endpoint (critical path for every request) has explicit internal rate limiting to prevent DoS from a compromised service.
+
+### 16.11 AI Model Security Enhancements
+
+**AI-BIAS-001**: The evaluation harness (Part 6 §6) is extended with a bias test set covering: merchant size segments, geographic segments, transaction amount ranges. A fairness metric (equal accuracy across segments) is computed and monitored.
+
+**AI-BIAS-002**: Quarterly bias audit: a random sample of AI Assistant answers is reviewed by humans for fairness and consistency across merchant segments.
+
+**AI-HALL-001**: A secondary validation layer extracts numerical claims from AI answers and cross-checks against source documents. Claims with low source-relevance scores trigger a disclaimer: "This answer may not be fully grounded in your data."
+
+**AI-MON-001**: Hourly sampling of answer quality (automated checks on a rotating subset of the top-50 questions). Real-time latency monitoring with p99 threshold alerting. A "circuit breaker" degrades the AI Assistant to raw-data mode if quality drops below threshold within any 1-hour window.
+
+### 16.12 Data Residency Enforcement
+
+**RESID-001**: Infrastructure-as-code constraints enforce UAE region: deployment templates include region-locking (cloud provider region constraints), and CI/CD pipeline validates that no resource is provisioned outside the UAE region.
+
+**RESID-002**: Network egress controls prevent data transfer outside UAE region (egress NetworkPolicy restricting outbound to UAE-region endpoints).
+
+**RESID-003**: Backup destination validation: backups must target UAE-region storage. Backup verification job checks destination region.
+
+**RESID-004**: Data residency attestation as a pre-GA compliance check.
+
+### 16.13 SFTP Settlement File Security
+
+**SFTP-SEC-001**: SFTP credentials stored via envelope encryption (same as connector credentials per SEC-001).
+
+**SFTP-SEC-002**: SSH host key pinning for SFTP connections (prevents MITM on settlement file ingestion).
+
+**SFTP-SEC-003**: Settlement file hash verification (SHA-256) stored in audit log alongside the file metadata.
+
+**SFTP-SEC-004**: Network policy restricting outbound SFTP to known acquirer IP ranges only.
+
+### 16.14 API Key Lifecycle Automation
+
+**APIKEY-LIFE-001**: Automated key expiry enforcement: API keys are automatically deactivated after their configured maximum age (default: 90 days).
+
+**APIKEY-LIFE-002**: Expiry notifications: 30-day, 14-day, 7-day, 1-day warnings sent via notification-service before key expiry.
+
+**APIKEY-LIFE-003**: Emergency key revocation can be performed by Admin without Maker/Checker (APIKEY-MKCK-003), with all revocations logged.
+
+**APIKEY-LIFE-004**: Key age monitoring: dashboard alert if any key exceeds configured maximum age.
+
+### 16.15 AI Log Retention & Classification
+
+**AI-LOG-001**: AI conversation logs are classified as Confidential (Part 8 ENC-009).
+
+**AI-LOG-002**: Retention limit aligned with financial record retention (OQ-018). Default: same as Tier 2 audit logs.
+
+**AI-LOG-003**: AI log access restricted to Compliance Reviewer + Admin roles.
+
+**AI-LOG-004**: AI log deletion mechanism for PDPL erasure requests (where not conflicting with financial retention requirements).
+
+### 16.16 Kubernetes Security Hardening
+
+**K8S-SEC-001**: ResourceQuota per namespace (CPU, memory, pod count). LimitRange per container (min/max resource requests). PodDisruptionBudget for critical services (`orchestration-service`, `connector-gateway`, `iam-service`) with `minAvailable >= 2`.
+
+**K8S-SEC-002**: mTLS certificate lifetime: workload certificates ≤ 24 hours (auto-rotated by service mesh). Root CA offline/air-gapped. Zero-downtime rotation via SDS (Secret Discovery Service).
+
+### 16.17 Supply Chain Enhancements
+
+**SUPPLY-005**: License compliance scanning (`cargo deny` license checks) as a CI gate. Copyleft licenses (GPL/AGPL) require explicit approval.
+
+**SUPPLY-006**: SBOM uploaded to a vulnerability tracking platform (e.g., Dependency Track) for continuous post-build monitoring.
+
+**SUPPLY-007**: Ollama runtime version included in SBOM and pinned to a specific version with integrity verification.
+
+**SUPPLY-008**: Container registry: private registry with mTLS or token authentication; separate registries/namespaces for dev/staging/production; image retention policy (retain last N images per service).
+
+---
+
+## 17. Open Items Carried Forward
 
 - **OQ-018**: Confirm exact financial-record retention period (§5.2 AUD-001) with UAE legal counsel.
 - **OQ-019**: Confirm whether PDPL-style data-subject erasure requests are applicable to platform-processed payment/financial records.
