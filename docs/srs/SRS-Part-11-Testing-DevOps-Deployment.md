@@ -629,7 +629,112 @@ All production-affecting changes follow the Maker/Checker pattern (Part 3 MKCK-0
 
 ---
 
-## 14. Open Items Carried Forward
+## 14. Gap Analysis Additions — Round 2
+
+### 14.1 Infrastructure Degraded Mode Behaviors
+
+**REDIS-DEGRADED-001**: When Redis is unavailable, the API Gateway switches to a degraded rate-limiting mode: local in-memory rate limiter with per-replica counters (approximately 2× normal limit). Idempotency checks bypass Redis and go directly to the event store. Permission checks fall back to Postgres. All degraded-mode operations emit a `RedisDegradedMode` alert.
+
+**NATS-DEGRADED-001**: When NATS is unavailable for >5 minutes, the outbox relay enters degraded mode: continues appending to outbox table (events durably stored), raises critical alert. The outbox table has a hard maximum size (configurable, default: 1M rows). When exceeded, oldest unpublished entries archived to cold storage (MinIO).
+
+**CLICKHOUSE-DEGRADED-001**: When ClickHouse is unavailable, dashboard/report endpoints return last-cached query results with `as_of` timestamp reflecting last successful query, plus `X-Data-Stale: true` header. If staleness exceeds configurable threshold (default: 1 hour), return HTTP 503 with `Retry-After: 60`. Payment processing is unaffected.
+
+**OPENSEARCH-DEGRADED-001**: When OpenSearch is unavailable, the AI Assistant degrades to structured-only mode: can answer direct lookup questions (via Postgres direct query path) but returns "AI Assistant retrieval temporarily unavailable" for questions requiring semantic search.
+
+**MINIO-DEGRADED-001**: When MinIO is unavailable, settlement file ingestion queues files in a local staging directory (on connector-gateway pod's writable volume, max 1GB). Files moved to MinIO when it recovers. Payment processing is unaffected.
+
+### 14.2 Property-Based Testing for Payment State Machine
+
+**PROP-TEST-001**: Property-based test suite for `PaymentIntent` state machine using `proptest`:
+- Generate random sequences of valid commands
+- Assert invariant preservation after each command
+- Specific properties: "no sequence produces `captured_amount > authorized_amount`", "no sequence produces two simultaneous `Authorized` routing attempts", "every `Refunded` intent was previously `Captured`", "a `Voided` intent can never transition to `Captured`"
+- Run on every CI build for `orchestration-service`
+
+### 14.3 Payment-Flow-Specific Chaos Scenarios
+
+**CHAOS-PAY-001**: Payment-flow-specific chaos scenarios:
+- **Event loss simulation**: Kill outbox relay mid-transaction; verify events eventually published (outbox table retains them)
+- **Response loss simulation**: Mock acquirer returning success but dropping response; verify status-check detects actual state
+- **Concurrent mutation**: Send simultaneous capture + void requests; verify optimistic concurrency rejects one
+- **Double authorization prevention**: Send concurrent authorize requests for same PaymentIntent; verify only one succeeds
+
+### 14.4 Contract Testing
+
+**CONTRACT-001**: Contract test suite (using `prost-build` generated stubs + mock acquirer) validating the gRPC contract between `orchestration-service` and `connector-gateway` at the protobuf level. Validates: valid `AuthorizeRequest`/`AuthorizeResponse` messages, normalized `DeclineReason` value matching, error handling behavior (timeout, circuit open). Run on every CI build.
+
+### 14.5 Concurrent Payment Load Test Scenarios
+
+**LT-CONC-001**: Load test scenarios for concurrent payment operations:
+- **Same-card concurrency**: 10 simultaneous checkout attempts with same payment method token → verify only one succeeds
+- **Same-intent concurrency**: 5 simultaneous capture requests on same PaymentIntent → verify only one succeeds, others get optimistic concurrency error
+- **Refund race**: 3 simultaneous refund requests totaling more than captured amount → verify only first succeeds
+
+### 14.6 Schema Migration Rollback Classification
+
+**MIG-006**: Migration classification table for rollback guidance:
+- **Additive-only** (new columns, new tables): safe rollback by code revert
+- **Column rename**: requires expand-contract with alias
+- **Column drop**: two-phase (deploy code to stop reading → deploy migration to drop)
+- **Data backfill**: must be idempotent and re-runnable
+
+### 14.7 Invoice Overdue Transition Reliability
+
+**INV-OVERDUE-001**: JOB-004 uses leader election (LEADER-001) and processes invoices in deterministic order (by `due_date` ASC). Idempotency: transitioning an already-`Overdue` invoice is a no-op.
+
+**INV-OVERDUE-002**: Safety-net sweep checks for invoices more than 3 days past due still in `Sent` status and alerts operations, catching any JOB-004 failure.
+
+### 14.8 AI Output Rate Limiting Per Query Type
+
+**AI-RATE-001**: Per-query-type rate limits: (1) Detailed record queries: max 10 per minute per user, (2) Aggregate/statistical queries: max 30 per minute per user, (3) Document/PDF queries: max 5 per minute per user.
+
+**AI-RATE-002**: Query deduplication: if same query (or semantically equivalent) issued >3 times within 5 minutes, return cached result and log pattern for review.
+
+### 14.9 AI Data Exfiltration Prevention
+
+**AI-EXFIL-001**: Per-query output volume limits: (1) Maximum records in single AI response: configurable, default 100, (2) Maximum date range for aggregate queries: configurable, default 30 days, (3) Queries matching >1000 records require explicit confirmation, (4) Bulk raw record export via AI is prohibited — summaries and statistics only.
+
+**AI-EXFIL-002**: Log all AI queries and result volume; flag queries consistently returning large result sets for review.
+
+### 14.10 Local Development Environment
+
+**DEV-ENV-001**: Local development specification: (1) `docker-compose.yml` for all infrastructure dependencies (Postgres, Redis, NATS, MinIO, ClickHouse, OpenSearch, Ollama), (2) seed data scripts, (3) local feature flag configuration, (4) mock acquirer connector for local testing, (5) AI mock mode (canned responses without GPU).
+
+**DEV-ENV-002**: First-task walkthrough: add a new decline code to the normalization table (Part 7 §3.2) — exercises the full development cycle from trait implementation to conformance test to deployment.
+
+### 14.11 Communication Templates
+
+**IR-COMM-004**: Communication templates for: (1) planned maintenance (7-day advance notice), (2) unplanned degradation (initial within 15min for SEV-1, updates every 30min), (3) full outage (initial within 15min, updates every 15min), (4) post-incident summary (within 48h for SEV-1/2).
+
+### 14.12 Outbox Relay Manual Publish
+
+**RUNBOOK-EX-004**: "Outbox Relay Manual Publish" runbook with SQL query to extract unpublished outbox entries and NATS CLI command to publish them. Validation: after manual publish, check downstream projections are current.
+
+### 14.13 Complete Runbook Priority List
+
+**RUNBOOK-PRIORITY-001**: Runbooks to write before GA, in priority order: (1) data breach response, (2) secret compromise, (3) database complete cluster loss, (4) NATS partition/loss, (5) acquirer outage, (6) AI model degradation, (7) GPU cluster failure, (8) outbox relay failure, (9) Redis failure, (10) MinIO failure.
+
+### 14.14 NFR-AVAIL-001: Availability Target
+
+**NFR-AVAIL-001**: Platform availability target: [99.9% / 99.99%] measured monthly, excluding scheduled maintenance windows. Target set based on pilot merchant's requirements. Measurement: synthetic transaction monitoring from external probe.
+
+### 14.15 NFR-DUR-001: Data Durability Guarantee
+
+**NFR-DUR-001**: All committed financial events (PaymentIntent state transitions, settlement records, ledger entries) must have zero data loss under single-component failure. Durability guarantee: 100% of acknowledged writes are recoverable from persistent storage.
+
+### 14.16 NFR-PERF-001: Minimum TPS Target
+
+**NFR-PERF-001**: Platform must sustain at least [X] payment authorizations per second at p99 latency < [Y]ms under realistic load (3 acquirers, 5% failover rate, 10% 3DS step-up). Values set before M8 based on pilot merchant's expected volume.
+
+### 14.17 Capacity Planning Projections
+
+**CAP-001**: Volume projections (sample): 10,000 transactions/day at MVP, 100,000/day at 1 year, 500,000/day at 3 years. Storage requirements calculated for each data store at each milestone. Postgres WAL volume per day estimated for continuous archiving cost.
+
+**CAP-002**: AI inference cost projection: monthly GPU cost at 1,000 / 10,000 / 100,000 queries/day. Cost threshold for AI circuit breaker triggering defined.
+
+---
+
+## 15. Open Items Carried Forward
 
 - **OQ-026**: Run the PERF-001 benchmarking spike against provisioned staging infrastructure.
 - **OQ-027**: Set specific RPO/RTO numeric targets (§8 DR-001) jointly with Product/Compliance.

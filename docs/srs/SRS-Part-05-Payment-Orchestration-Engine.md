@@ -292,7 +292,51 @@ pub struct FeeBreakdown {
 
 ---
 
-## 12. Open Items Carried Forward
+## 12. Gap Analysis Additions — Round 2
+
+### 12.1 Deployment-Time Payment-Intent State Corruption Prevention
+
+**PAY-DEPLOY-001**: Define a "deployment quiesce protocol" for `orchestration-service`: before a canary or full deployment, the new version reads a `deployment_epoch` from a shared config. Any `PaymentIntent` created under a prior epoch must complete its lifecycle (or timeout) before the new epoch's routing logic applies. Implement as a `deployment_epoch` field on `PaymentIntent` with a pre-deployment grace period (default: 5 minutes, matching the authorization timeout for most acquirers).
+
+**PAY-DEPLOY-002**: The deployment epoch is incremented as part of the deployment pipeline. The old version continues processing existing PaymentIntents until the grace period expires, at which point any still-in-flight intents are force-timed-out via JOB-008.
+
+### 12.2 Payment Intent Replay Handling
+
+**PAY-IDEMP-001**: Document explicit replay-handling behavior for every mutating command: if the `PaymentIntent` is already in a state that makes the requested operation invalid (e.g., `CapturePaymentIntent` on an already-`Captured` intent), return a deterministic error code (per Part 3 §11.1 invalid-transition table) with the current state in the response.
+
+**PAY-IDEMP-002**: Idempotency cache TTL must be at least 2× the longest possible lifecycle of a PaymentIntent (from `Created` to terminal state). Default: 7 days. This ensures that even slow-retrying merchants get idempotent behavior.
+
+### 12.3 Stuck PaymentIntent Monitoring Extension
+
+**JOB-012**: A sweep job detects `PaymentIntent`s stuck in `Capturing` or `Refunding` beyond a configurable threshold (default: 5 minutes). For `Capturing`: trigger a status-check call to the acquirer (where `supports_realtime_status_check = true`). For `Refunding`: retry or escalate to manual intervention. The threshold must be shorter than the acquirer's timeout to avoid the acquirer having already completed the operation while the platform thinks it's still in progress.
+
+### 12.4 Refund Race Condition Prevention
+
+**REFUND-CONC-001**: Refund commands acquire an advisory lock on the `PaymentIntent` aggregate before executing the balance check. This prevents the TOCTOU race where two concurrent refund requests both pass the balance check individually but together exceed the refundable amount. Implemented via `SELECT FOR UPDATE` on the aggregate root within the command handler's transaction.
+
+### 12.5 Event Store Integrity Verification
+
+**EVT-INTEGRITY-001**: Extend the hash chaining mechanism (Part 8 AUD-004) to the event store: each event in `event_store` includes a `previous_event_hash` field (SHA-256 of the previous event in the same aggregate's stream). A background verification job walks each aggregate's event stream daily and alerts on hash breaks.
+
+**EVT-INTEGRITY-002**: Weekly integrity verification checks: (a) no sequence gaps per aggregate, (b) no duplicate sequences, (c) every aggregate's first event is a root-creation event, (d) no payload exceeds 1MB. Findings are alerted to operations.
+
+### 12.6 Event Signature Verification
+
+**EVT-SIG-001**: Every domain event published to NATS JetStream is signed using HMAC-SHA256 with a per-service signing key (stored in KMS). The signature is included in the `EventEnvelope` as a new field `signature: bytes`. Consumers verify the signature before processing any event.
+
+**EVT-SIG-002**: Signing keys are rotated every 90 days. The signature covers: `event_id + aggregate_id + event_type + payload_hash + occurred_at`, preventing both event forgery and event tampering.
+
+**EVT-SIG-003**: NATS JetStream accounts are configured with per-service publish permissions — `orchestration-service` can only publish to `events.bc05.>`, not to other contexts' subjects.
+
+### 12.7 Event Replay Attack Prevention
+
+**EVT-REPLAY-001**: Every consumer validates: (1) the event's `aggregate_id` matches the aggregate being processed, (2) the event's `event_sequence` is the next expected sequence for that aggregate (rejecting replay of old events), (3) the event's `occurred_at` is within an acceptable clock skew window (default: 5 minutes).
+
+**EVT-REPLAY-002**: The outbox relay includes a monotonic sequence number per aggregate in the event, and consumers track the last processed sequence per aggregate — an event with a sequence number ≤ the last processed sequence is rejected as a replay.
+
+---
+
+## 13. Open Items Carried Forward
 
 - **OQ-011**: Finalize default and configurable-range values for RTY-002's hard hop ceiling — placeholder "3" used above pending a latency-budget modeling exercise in Part 11.
 - **OQ-012**: Confirm which MVP acquirer partners support native idempotency tokens (§4.1) vs. require status-check-before-retry — depends on OQ-003 (Part 1) acquirer shortlist; must be resolved before Part 7 finalizes per-connector capability flags.

@@ -23,7 +23,7 @@
 | Core Language/Runtime | Rust (all backend services) |
 | ORM Layer | SeaORM (all services) — no raw SQL in application code |
 | AI Stack | Ollama-hosted Qwen3 32B (reasoning), Qwen3-VL 8B (vision/OCR), BGE-M3 (embeddings) + reranker (RAG) |
-| Related Documents | Part 2 (Use Cases), Part 3 (DDD + Gap Analysis: saga compensation, double-entry ledger, reconciliation matching), Part 4 (Microservices + Gap Analysis: NATS/Redis encryption, feature flags, structured logs, error taxonomy), Part 5 (Orchestration Engine + Gap Analysis: fee breakdown, settlement enhancements), Part 6 (AI Assistant/RAG + Gap Analysis: bias detection, hallucination detection, real-time monitoring), Part 7 (Gateway Connectors + Gap Analysis: SFTP security, scheme compliance), Part 8 (Security/Compliance + Gap Analysis: token vault, WebAuthn mandate, TDE, audit tamper-evidence, infrastructure security, CSRF, session binding, credential monitoring), Part 9 (Database Design + Gap Analysis: RLS examples, ClickHouse/OpenSearch/MinIO security, data masking), Part 10 (APIs/gRPC + Gap Analysis: cursor security, webhook versioning, delivery backpressure), Part 11 (Testing/DevOps + Gap Analysis: alert fatigue, runbook templates, SLSA, DR enhancements), Part 12 (Appendices/Roadmap + consolidated gap analysis OQ-064–085) |
+| Related Documents | Part 2 (Use Cases), Part 3 (DDD + Gap Analysis R1/R2: saga compensation, double-entry ledger, reconciliation matching, invalid state transitions, partial capture invariants, refund edge cases, subscription race prevention, payment link expiry), Part 4 (Microservices + Gap Analysis R1/R2: NATS/Redis encryption, feature flags, structured logs, error taxonomy, degraded mode behaviors), Part 5 (Orchestration Engine + Gap Analysis R1/R2: fee breakdown, settlement enhancements, deployment safety, payment replay handling, stuck state monitoring, event signatures, event store integrity), Part 6 (AI Assistant/RAG + Gap Analysis R1/R2: bias detection, hallucination detection, real-time monitoring, AI exfiltration prevention), Part 7 (Gateway Connectors + Gap Analysis R1/R2: SFTP security, scheme compliance, webhook dedup), Part 8 (Security/Compliance + Gap Analysis R1/R2: token vault, WebAuthn mandate, TDE, audit tamper-evidence, infrastructure security, CSRF, session binding, credential monitoring, PCI token scope, gRPC security, card testing abuse, network zones, DDoS edge, key inventory, HSM DR, KEK re-encryption, connector rotation, JWT hardening, SSRF round 2, log security round 2, data portability), Part 9 (Database Design + Gap Analysis R1/R2: RLS examples, ClickHouse/OpenSearch/MinIO security, data masking), Part 10 (APIs/gRPC + Gap Analysis R1/R2: cursor security, webhook versioning, delivery backpressure, API error catalog, webhook event catalog, API changelog), Part 11 (Testing/DevOps + Gap Analysis R1/R2: alert fatigue, runbook templates, SLSA, DR enhancements, property-based testing, chaos scenarios, contract testing, concurrent load tests, local dev environment, availability SLO, capacity planning), Part 12 (Appendices/Roadmap + consolidated gap analysis OQ-064–100) |
 
 ### 0.1 Revision History
 
@@ -362,7 +362,42 @@ High-level program success criteria (detailed, measurable acceptance criteria pe
 
 ---
 
-## 13. Open Questions for Business/Legal Sign-off Before Part 5 Finalization
+## 13. Gap Analysis Additions — Round 2
+
+### 13.1 Domestic Payment Schemes (AANI/UAEFTS)
+
+**DOM-001**: AANI (Advance Automated Network Infrastructure) and UAEFTS (UAE Funds Transfer System) integration is **not in scope for MVP** (card-based acquiring only). However, the data model and event schema must accommodate AANI-specific transaction types for H2 expansion.
+
+**DOM-002**: Required data model extensions for AANI/UAEFTS support (H2): (1) transaction type enum extension for instant payments and direct debit, (2) AANI-specific settlement cycle fields, (3) UAE Central Bank reporting fields referencing AANI/UAEFTS transactions.
+
+**DOM-003**: Add to roadmap as H2 item aligned with Saudi Arabia adapter (GOAL-006).
+
+### 13.2 PCI-DSS 4.0 Compliance
+
+**PCI-4-001**: Platform uses PCI-DSS 4.0 **Defined Approach** (not Customized Approach) for compliance.
+
+**PCI-4-002**: Targeted Risk Analysis (Requirement 12.3.1) template documenting frequency rationale for each periodic control (log reviews, segmentation testing, vulnerability scans). Include in M7 deliverables.
+
+**PCI-4-003**: Mapping of encryption controls (ENC-010/ENC-011) to Requirement 3.5.1.2 with cloud KMS documentation.
+
+### 13.3 Card Scheme Operating Regulations
+
+**SCHEME-REG-001**: Map against Visa Core Rules and Mastercard Standards at rule level for MVP:
+- Visa dispute reason code categories and representment time limits (30-day window for most codes)
+- Mastercard chargeback representment deadlines and documentation requirements
+- Visa VFMP (Fraud Monitoring Program) enrollment thresholds
+- Mastercard EFMP (Excessive Fraud Merchant) program thresholds
+- Card scheme mandated data retention (Visa: 13 months accessible)
+
+**SCHEME-REG-002**: For MVP, map top 10 dispute reason codes by frequency. Include specific scheme document version references.
+
+### 13.4 UAE Regulatory Reporting Format
+
+**REG-FORMAT-001**: Confirm UAE Central Bank regulatory reporting format requirements (XML schema, CSV template, or portal submission) with legal counsel. Add to open questions as OQ-086.
+
+---
+
+## 14. Open Questions for Business/Legal Sign-off Before Part 5 Finalization
 
 These must be resolved (or explicitly deferred with owner and date) before the Payment Orchestration Engine domain model (Part 5) is finalized, since they affect aggregate boundaries:
 

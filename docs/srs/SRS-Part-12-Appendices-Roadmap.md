@@ -177,7 +177,27 @@
 | OQ-084 (Part 11 §13.2) | Finalize runbook templates: which scenarios get full runbooks for MVP, who maintains them | SRE/Engineering | M7 compliance hardening |
 | OQ-085 (Part 11 §13.7) | Finalize RPO/RTO targets with Product/Compliance: confirm minimums for GA | Product/Compliance/Engineering | M7 compliance hardening |
 
-**Program management note**: Items with a Legal owner (ASSUMP-001/OQ-001, OQ-018, OQ-019) are the highest-priority blockers for GA. Items from the gap analysis (OQ-029 through OQ-085) represent new engineering decisions that should be resolved during M1–M2 to avoid blocking later milestones. Priority recommendation: resolve OQ-029 (saga persistence), OQ-030 (outbox relay), OQ-031 (circuit breaker thresholds), OQ-066 (NATS/Redis encryption), and OQ-074 (infrastructure security) before M2 implementation begins, as they are foundational patterns that affect multiple services.
+### New Open Questions from Round 2 Gap Analysis (OQ-086 through OQ-100)
+
+| ID | Description | Owner | Blocks |
+|---|---|---|---|
+| OQ-086 (Part 1 §13.4) | Confirm UAE Central Bank regulatory reporting format requirements (XML, CSV, portal) | Legal | M7 regulatory reporting |
+| OQ-087 (Part 11 §14.16) | Define minimum sustained TPS target against pilot merchant's expected peak volume | Product/Engineering | M8 pilot GA |
+| OQ-088 (Part 11 §14.17) | Define per-query AI inference cost budget and GPU utilization threshold for circuit breaker | AI/Engineering | M6 AI baseline |
+| OQ-089 (Part 8 §17.1) | Finalize PCI-DSS SAQ type with QSA — token classification as cardholder data affects scope | Compliance/Security | M7 compliance hardening |
+| OQ-090 (Part 8 §17.6) | Finalize network segmentation zones: separate K8s namespaces vs. separate clusters for CDE | Security/Infra | M7 compliance hardening |
+| OQ-091 (Part 8 §17.8) | Select edge DDoS protection vendor (Cloudflare, AWS CloudFront + WAF, etc.) | Security/Infra | M7 compliance hardening |
+| OQ-092 (Part 8 §17.11) | Finalize HSM vendor and DR replication mechanism | Security/Infra | M1 foundation |
+| OQ-093 (Part 5 §12.1) | Finalize deployment epoch grace period (default: 5 minutes) against actual acquirer authorization timeouts | Engineering | M2 first connector |
+| OQ-094 (Part 5 §12.6) | Finalize event signing key storage: KMS-managed vs. HSM-managed signing keys | Security | M7 compliance hardening |
+| OQ-095 (Part 3 §11.1) | Finalize invalid state transition error codes with merchant-facing API documentation | Product/Engineering | M2 first connector |
+| OQ-096 (Part 10 §11.1) | Confirm complete API error code catalog with SDK team for SDK error handling | Product/Engineering | M5 products layer |
+| OQ-097 (Part 11 §14.14) | Set availability SLO (99.9% vs 99.99%) against pilot merchant requirements | Product/Compliance | M7 compliance hardening |
+| OQ-098 (Part 11 §14.15) | Confirm data durability guarantee wording with legal/compliance | Legal/Compliance | M7 compliance hardening |
+| OQ-099 (Part 1 §13.3) | Map card scheme operating regulations (Visa Core Rules, Mastercard Standards) for MVP | Compliance | M7 compliance hardening |
+| OQ-100 (Part 8 §17.25) | Finalize data portability export format and retention for exported archives | Product/Legal | M7 compliance hardening |
+
+**Program management note**: Items with a Legal owner (ASSUMP-001/OQ-001, OQ-018, OQ-019, OQ-098) are the highest-priority blockers for GA. Items from the gap analysis (OQ-029 through OQ-100) represent engineering decisions that should be resolved during M1–M2 to avoid blocking later milestones. Priority recommendation: resolve OQ-089 (PCI token scope), OQ-090 (network zones), OQ-092 (HSM DR), OQ-093 (deployment safety), and OQ-095 (error codes) before M2 implementation begins.
 
 ---
 
@@ -189,14 +209,14 @@
 
 | Milestone | Key Deliverables | Primary Parts |
 |---|---|---|
-| M1 — Foundation | `operator-service`, `iam-service`, `compliance-service` live; UC-001/002 functional; NATS/Redis encryption configured; infrastructure security baselines (OQ-066, OQ-074); PostgreSQL TDE (OQ-073); feature flag store decided (OQ-067) | Parts 3, 4, 8, 9 |
-| M2 — First Connector | One acquirer connector conformant (Part 7 §5); `connector-gateway` + `orchestration-service` authorize/capture/void/refund functional in sandbox; PaymentMethodToken aggregate (OQ-071); SFTP security (Part 7 §9.1); cross-context idempotency (Part 3 §10.6) | Parts 5, 7, 9, 10 |
-| M3 — Multi-Connector Routing | Two additional connectors; `RoutingPolicy` + failover (UC-011, UC-020 AF-020a) live; scheme compliance monitoring (Part 7 §9.2) | Part 5, 7 |
-| M4 — Reconciliation | `reconciliation-service` ingesting at least one connector's settlement format; UC-040/041 functional; double-entry ledger (OQ-064); reconciliation matching algorithm (OQ-065); fee breakdown tracking (Part 5 §11.1); ClickHouse security (OQ-080) | Parts 7, 9 |
-| M5 — Products Layer | Invoice, payment link, subscription billing (PROC-04) live; webhook payload versioning (Part 10 §10.2); webhook delivery backpressure (OQ-083) | Part 3 §5.5–5.6, Part 10 |
-| M6 — AI Assistant Baseline | RAG pipeline live against real reconciliation/transaction data; top-50 question set (OQ-013) evaluated and passing EVAL-001 gate; AI bias test set (OQ-069); hallucination detection (OQ-070); real-time quality monitoring (Part 6 §11.3); OpenSearch security (OQ-081) | Part 6, 9 |
-| M7 — Compliance Hardening | Full audit framework (Part 8 §5), SECTEST-001 cross-tenant suite passing, legal sign-off on custody posture (OQ-001) obtained; audit tamper-evidence (Part 8 §16.4); CSRF protection (OQ-075); credential monitoring (OQ-076); account recovery flow (OQ-072); data masking (OQ-082); runbooks (OQ-084); RPO/RTO finalized (OQ-085); data residency enforcement (OQ-079); SIEM selected (OQ-054) | Part 8, Part 11 §7 |
-| M8 — Pilot GA | First pilot merchant live on production with real acquirer connections; PCI-DSS QSA scoping assessment completed; DR drill completed | All |
+| M1 — Foundation | `operator-service`, `iam-service`, `compliance-service` live; UC-001/002 functional; NATS/Redis encryption configured; infrastructure security baselines (OQ-066, OQ-074); PostgreSQL TDE (OQ-073); feature flag store decided (OQ-067); HSM DR plan (OQ-092); local dev environment (Part 11 §14.10) | Parts 3, 4, 8, 9 |
+| M2 — First Connector | One acquirer connector conformant (Part 7 §5); `connector-gateway` + `orchestration-service` authorize/capture/void/refund functional in sandbox; PaymentMethodToken aggregate (OQ-071); SFTP security (Part 7 §9.1); cross-context idempotency (Part 3 §10.6); invalid state transition table (OQ-095); deployment safety protocol (OQ-093); property-based tests (Part 11 §14.2) | Parts 5, 7, 9, 10 |
+| M3 — Multi-Connector Routing | Two additional connectors; `RoutingPolicy` + failover (UC-011, UC-020 AF-020a) live; scheme compliance monitoring (Part 7 §9.2); contract tests (Part 11 §14.4); card testing abuse prevention (Part 8 §17.5) | Part 5, 7 |
+| M4 — Reconciliation | `reconciliation-service` ingesting at least one connector's settlement format; UC-040/041 functional; double-entry ledger (OQ-064); reconciliation matching algorithm (OQ-065); fee breakdown tracking (Part 5 §11.1); ClickHouse security (OQ-080); ledger balance verification (Part 3 §11.7) | Parts 7, 9 |
+| M5 — Products Layer | Invoice, payment link, subscription billing (PROC-04) live; webhook payload versioning (Part 10 §10.2); webhook delivery backpressure (OQ-083); complete API error catalog (Part 10 §11.1); webhook event catalog (Part 10 §11.2) | Part 3 §5.5–5.6, Part 10 |
+| M6 — AI Assistant Baseline | RAG pipeline live against real reconciliation/transaction data; top-50 question set (OQ-013) evaluated and passing EVAL-001 gate; AI bias test set (OQ-069); hallucination detection (OQ-070); real-time quality monitoring (Part 6 §11.3); OpenSearch security (OQ-081); AI output rate limiting (Part 11 §14.8); AI exfiltration prevention (Part 11 §14.9) | Part 6, 9 |
+| M7 — Compliance Hardening | Full audit framework (Part 8 §5), SECTEST-001 cross-tenant suite passing, legal sign-off on custody posture (OQ-001) obtained; audit tamper-evidence (Part 8 §16.4); CSRF protection (OQ-075); credential monitoring (OQ-076); account recovery flow (OQ-072); data masking (OQ-082); runbooks written (Part 11 §14.13); RPO/RTO finalized (OQ-085); data residency enforcement (OQ-079); SIEM selected (OQ-054); PCI token scope confirmed (OQ-089); network zones defined (OQ-090); DDoS edge protection (OQ-091); event signatures (OQ-094); availability SLO set (OQ-097); data durability guarantee (OQ-098); card scheme rules mapped (OQ-099); data portability API (Part 8 §17.25); PCI network diagram (Part 8 §17.23); CHD flow diagram (Part 8 §17.3); key inventory (Part 8 §17.9) | Part 8, Part 11 §7 |
+| M8 — Pilot GA | First pilot merchant live on production with real acquirer connections; PCI-DSS QSA scoping assessment completed; DR drill completed (includes PostgreSQL cluster loss recovery, Part 11 §14.1); capacity projections validated (Part 11 §14.17); concurrent payment load tests passed (Part 11 §14.5) | All |
 
 ### 5.2 Horizon 2 — GCC Expansion
 
@@ -221,7 +241,8 @@
 - Where this SRS gives a placeholder (a latency number, a retention period, a hop-count default), it is explicitly marked as such and paired with the mechanism that will produce the real number (a benchmarking spike, a legal opinion, a Product decision) — the intent throughout has been to never present an invented figure with false confidence.
 - The gap analysis additions (Parts 3–11, new sections on sagas, outbox, circuit breakers, threat modeling, load testing, chaos engineering, etc.) address critical design patterns and cross-cutting concerns that were identified during the initial SRS review. These additions strengthen the specification's readiness for implementation without changing the fundamental architecture.
 - A comprehensive gap analysis was performed against the complete 12-part SRS across four dimensions: (1) production bank-grade security, (2) missing design patterns, (3) OWASP Top 10 (2021) compliance, and (4) cross-cutting architectural completeness. The findings are integrated into the respective Parts as "Gap Analysis Additions" sections. Key themes: infrastructure component security (NATS, Redis, OpenSearch, ClickHouse, MinIO encryption/auth), saga compensation completeness, double-entry ledger for reconciliation, payment token lifecycle, phishing-resistant MFA, audit tamper-evidence, and AI safety (bias detection, hallucination detection, real-time quality monitoring). New open questions OQ-064 through OQ-085 track the remaining decisions.
-- Recommended next step: convene STK-007 (Product), STK-008 (Engineering), STK-010 (Compliance), and STK-014 (Legal) to walk the §4 consolidated open-questions register and assign near-term resolution deadlines before M1 (§5.1) engineering work begins in earnest. Priority focus areas: OQ-066 (NATS/Redis encryption), OQ-073 (PostgreSQL TDE), OQ-074 (infrastructure security baselines), OQ-064 (double-entry ledger), and OQ-065 (reconciliation matching algorithm).
+- A **second-pass gap analysis** was performed with single-tenant deployment confirmed, finding ~111 additional findings across security, design patterns, OWASP, and cross-cutting concerns. Key themes: PCI-DSS token classification (acquirer tokens = cardholder data), event signature verification for NATS JetStream, card testing abuse prevention via platform failover, deployment-time payment state corruption prevention, exhaustive invalid state transition table, gRPC actor-context spoofing prevention, network segmentation zones for PCI CDE, and infrastructure degraded-mode behaviors (Redis/NATS/ClickHouse/OpenSearch/MinIO). New open questions OQ-086 through OQ-100 track remaining decisions.
+- Recommended next step: convene STK-007 (Product), STK-008 (Engineering), STK-010 (Compliance), and STK-014 (Legal) to walk the §4 consolidated open-questions register and assign near-term resolution deadlines before M1 (§5.1) engineering work begins in earnest. Priority focus areas: OQ-089 (PCI token scope with QSA), OQ-090 (network segmentation zones), OQ-092 (HSM DR), OQ-093 (deployment safety), OQ-095 (error codes), and OQ-097 (availability SLO).
 
 ---
 

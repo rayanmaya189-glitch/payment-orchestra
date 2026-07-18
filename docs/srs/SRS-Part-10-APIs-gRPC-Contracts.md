@@ -433,7 +433,118 @@ When a request is rate-limited, the API returns HTTP 429 with the following body
 
 ---
 
-## 11. Open Items Carried Forward
+## 11. Gap Analysis Additions — Round 2
+
+### 11.1 Complete API Error Code Catalog
+
+**API-ERRORS-001**: All API error codes organized by domain:
+
+**Payment Errors:**
+| Code | HTTP Status | Description |
+|---|---|---|
+| `PAYMENT_INTENT_NOT_FOUND` | 404 | PaymentIntent with given ID does not exist |
+| `INVALID_STATE_TRANSITION` | 409 | Command not valid for PaymentIntent's current state |
+| `PAYMENT_INTENT_FAILED` | 409 | PaymentIntent in terminal failed state |
+| `PAYMENT_INTENT_VOIDED` | 409 | PaymentIntent has been voided |
+| `AUTHORIZATION_EXPIRED` | 409 | Authorization validity window has passed |
+| `PAYMENT_INTENT_ALREADY_CAPTURED` | 409 | PaymentIntent already fully captured |
+| `PAYMENT_INTENT_FULLY_REFUNDED` | 409 | PaymentIntent fully refunded |
+| `PAYMENT_INTENT_AUTHORIZING` | 409 | PaymentIntent currently authorizing |
+| `PAYMENT_INTENT_CAPTURING` | 409 | PaymentIntent currently capturing |
+| `PAYMENT_INTENT_NOT_AUTHORIZED` | 409 | PaymentIntent not yet authorized |
+| `INSUFFICIENT_AUTHORIZED_AMOUNT` | 400 | Capture amount exceeds authorized amount |
+| `INSUFFICIENT_REFUNDABLE_BALANCE` | 400 | Refund amount exceeds refundable balance |
+| `ACQUIRER_LINK_DISABLED` | 409 | Original acquirer link is disabled |
+| `ZERO_AMOUNT_NOT_REFUNDABLE` | 400 | Cannot refund zero-amount authorization |
+| `DUPLICATE_IDEMPOTENCY_KEY` | 409 | Idempotency key used with different payload |
+| `PARTIAL_CAPTURE_NOT_SUPPORTED` | 400 | Connector does not support partial capture |
+| `MAX_PARTIAL_CAPTURES_EXCEEDED` | 400 | Exceeded connector's partial capture limit |
+| `DUPLICATE_ORDER_INVOICE` | 409 | Invoice already exists for this order reference |
+
+**Routing Errors:**
+| Code | HTTP Status | Description |
+|---|---|---|
+| `NO_ELIGIBLE_ROUTE` | 422 | No acquirer matches routing policy for this transaction |
+| `ROUTING_POLICY_INACTIVE` | 409 | No active routing policy configured |
+| `ALL_ACQUIRERS_DECLINED` | 402 | All acquirers in routing chain declined |
+
+**Auth Errors:**
+| Code | HTTP Status | Description |
+|---|---|---|
+| `AUTHENTICATION_REQUIRED` | 401 | Valid authentication credentials required |
+| `INSUFFICIENT_PERMISSIONS` | 403 | Principal lacks required permission |
+| `API_KEY_EXPIRED` | 401 | API key has expired |
+| `ACCOUNT_LOCKED` | 423 | Account locked due to failed attempts |
+| `MFA_REQUIRED` | 403 | Step-up MFA required for this operation |
+| `MAKER_CHECKER_PENDING` | 409 | Operation requires Maker/Checker approval |
+
+**General Errors:**
+| Code | HTTP Status | Description |
+|---|---|---|
+| `VALIDATION_ERROR` | 400 | Request body validation failed |
+| `RATE_LIMITED` | 429 | Rate limit exceeded (see Retry-After header) |
+| `REQUEST_TIMEOUT` | 504 | Request processing timed out |
+| `SERVICE_UNAVAILABLE` | 503 | Service temporarily unavailable |
+| `STALE_DATA` | 503 | Read model data exceeds staleness threshold |
+
+### 11.2 Complete Webhook Event Type Catalog
+
+**WEBHOOK-EVENTS-001**: All merchant-subscribable webhook event types:
+
+**Payment Lifecycle:**
+| Event Type | Payload |
+|---|---|
+| `payment.created` | payment_intent_id, amount, currency, status |
+| `payment.authorized` | payment_intent_id, amount, currency, acquirer, status |
+| `payment.captured` | payment_intent_id, captured_amount, currency, status |
+| `payment.failed` | payment_intent_id, failure_reason, decline_code, status |
+| `payment.voided` | payment_intent_id, status |
+| `payment.refunded` | payment_intent_id, refund_amount, currency, status |
+| `payment.partially_refunded` | payment_intent_id, refund_amount, remaining_refundable, status |
+| `payment.expired` | payment_intent_id, status |
+
+**Invoice Lifecycle:**
+| Event Type | Payload |
+|---|---|
+| `invoice.created` | invoice_id, amount, currency, due_date |
+| `invoice.sent` | invoice_id, recipient |
+| `invoice.paid` | invoice_id, amount_paid, payment_intent_id |
+| `invoice.overdue` | invoice_id, days_overdue |
+| `invoice.cancelled` | invoice_id |
+
+**Subscription Lifecycle:**
+| Event Type | Payload |
+|---|---|
+| `subscription.created` | subscription_id, plan_id, status |
+| `subscription.renewed` | subscription_id, payment_intent_id, period_end |
+| `subscription.renewal_failed` | subscription_id, failure_reason, retry_count |
+| `subscription.cancelled` | subscription_id, reason |
+
+**Dispute Lifecycle:**
+| Event Type | Payload |
+|---|---|
+| `chargeback.received` | chargeback_id, payment_intent_id, reason_code |
+| `chargeback.resolved` | chargeback_id, outcome (won/lost/accepted) |
+
+### 11.3 API Changelog Mechanism
+
+**API-CHANGELOG-001**: A versioned API changelog maintained in the public docs repository plus a `/v1/changelog` endpoint returning recent changes in JSON. Every API version change documented with: date, change type (additive/breaking), affected endpoints, migration guidance.
+
+**API-CHANGELOG-002**: Changelog is linked from API docs, SDK release notes, and email notifications to registered developer contacts.
+
+### 11.4 Webhook Inbound Security — Round 2
+
+**WEBHOOK-IN-004**: Inbound acquirer webhook endpoints validate that the acquirer reference in the webhook payload resolves to the correct `MerchantAcquirerLink` and owning operator — prevents webhook cross-operator processing if webhook secrets are shared.
+
+**WEBHOOK-DEDUP-001**: `connector-gateway` maintains a webhook deduplication cache (Redis, TTL 24h) keyed on `{connector_id}:{acquirer_webhook_id}`. On receipt, check cache: if present, return HTTP 200 (ack) without reprocessing.
+
+### 11.5 Payment Link URL Security
+
+**PLINK-SEC-003**: Payment link URLs use cryptographically random tokens with 128-bit minimum entropy (prevents enumeration). Token format: `plink_{random_32_bytes_base62}`.
+
+---
+
+## 12. Open Items Carried Forward
 
 - **OQ-023**: Confirm final API-002 deprecation-window duration with Product/Legal.
 - **OQ-024**: Confirm final SDK language priority order (§4 SDK-001) against actual pilot-merchant technology stack survey results.

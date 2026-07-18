@@ -768,7 +768,159 @@ pub struct AuditEntry {
 
 ---
 
-## 17. Open Items Carried Forward
+## 17. Gap Analysis Additions — Round 2
+
+### 17.1 PCI-DSS Token Classification
+
+**PCI-TOKEN-001**: Acknowledge that acquirer-issued tokens (Visa VTS, Mastercard MDES, network tokens) are classified as "cardholder data" per PCI-DSS v4.0 and require the same controls as PAN (encryption at rest, access logging, network segmentation).
+
+**PCI-TOKEN-002**: The `PaymentMethodToken` entity (§16.1 TOK-002) must be stored in the Cardholder Data Environment (CDE) — a logically or physically segmented network zone with: dedicated encryption keys, access limited to `orchestration-service` and `connector-gateway` only, all access logged to the CDE-specific audit trail.
+
+**PCI-TOKEN-003**: A formal scope determination by a QSA must be completed pre-GA. The SRS must NOT assume a specific SAQ type — document the architecture's intent but defer the scoping decision.
+
+### 17.2 Hosted Payment Page Domain Separation
+
+**PCI-DOMAIN-001**: The hosted payment page (SVC-07) must be served from a **completely separate domain** (e.g., `pay.merchant.com` or `checkout.platform.ae`) from the admin dashboard (e.g., `admin.platform.ae`). The payment page domain must have: no cookies from the admin domain, no shared `localStorage`, a separate Content Security Policy, and CORS restrictions preventing cross-domain requests.
+
+**PCI-DOMAIN-002**: Document the domain separation in the PCI-DSS network diagram (§17.5).
+
+### 17.3 Cardholder Data Flow Diagram
+
+**PCI-DFD-001**: Create a formal Cardholder Data Flow Diagram as a mandatory Part 12 appendix, showing: (1) point of card data entry (client SDK → acquirer tokenization endpoint), (2) token creation flow, (3) token storage location and encryption, (4) token usage in authorization flow, (5) token lifecycle (creation, refresh, revocation, destruction), (6) all systems that handle tokens.
+
+### 17.4 gRPC Security Hardening — Round 2
+
+**GRPC-SEC-003**: API Gateway HMAC-signs the `actor_context` metadata on every outbound gRPC call. Downstream services verify the signature before trusting the context. This prevents a compromised service from forging actor context in gRPC headers (mTLS authenticates the service, not the actor payload).
+
+**GRPC-SEC-004**: gRPC server reflection is compile-time disabled in staging/production builds via a `cfg` feature flag. Reflection code is compiled out entirely — not just disabled at runtime. CI grep checks production binaries for reflection symbols.
+
+### 17.5 Card Testing / Economic Abuse Prevention
+
+**ABUSE-001**: Operator-level velocity checks: maximum 100 authorization attempts per 15-minute window per operator (not per API key). Zero-amount authorizations (card verification) are rate-limited separately: maximum 10 per card BIN per hour.
+
+**ABUSE-002**: Cross-IP velocity detection: if authorization attempts for the same payment method token originate from more than 3 distinct IP addresses within 5 minutes, the attempts are flagged for fraud review and the payment method token is temporarily suspended.
+
+**ABUSE-003**: The platform logs a `CardTestingSuspected` event when velocity thresholds are exceeded, surfacing it to the fraud dashboard and AML alert queue.
+
+### 17.6 Network Segmentation Zones
+
+**NET-SEG-001**: Define three network zones: (1) **CDE Zone**: Contains `orchestration-service`, `connector-gateway`, and `PaymentMethodToken` database tables. Strict access: only `api-gateway` (inbound) and `connector-gateway` (outbound to acquirers). (2) **Application Zone**: All other services. Can communicate with CDE zone only via defined gRPC interfaces. (3) **Management Zone**: Admin dashboard, CI/CD, monitoring, logging. Can read from Application zone but cannot initiate payment operations.
+
+**NET-SEG-002**: Network zone boundaries enforced via separate Kubernetes namespaces with strict NetworkPolicies, or via separate Kubernetes clusters for CDE vs. non-CDE workloads.
+
+### 17.7 East-West Traffic Inspection
+
+**NET-INSPECT-001**: Deploy a service mesh with L7 observability providing: (1) per-service-pair request volume baselines, (2) response size monitoring (detecting unusual data volumes — potential exfiltration), (3) gRPC method-level access logging.
+
+**NET-INSPECT-002**: Alert on anomalous patterns: service A suddenly calling service B's methods it never called before, response sizes exceeding 2σ from baseline.
+
+### 17.8 DDoS Edge Protection
+
+**DDOS-EDGE-001**: Deploy edge-level DDoS protection via CDN/WAF layer with: volumetric DDoS mitigation, rate limiting at the edge (before reaching the API Gateway), IP reputation filtering, bot detection, and geo-blocking for non-UAE traffic (MVP scope).
+
+**DDOS-EDGE-002**: API Gateway rate limits (RL-003) serve as defense-in-depth after edge protection, not as the primary DDoS mitigation.
+
+### 17.9 Encryption Key Inventory
+
+**KEY-INVENTORY-001**: Maintain an `encryption_key_inventory` table tracking: `key_id`, `key_type` (KEK, DEK, API_signing, webhook_HMAC), `purpose`, `owner_service`, `created_at`, `last_rotated_at`, `next_rotation_due`, `status` (active, retired, compromised), `hsm_slot`.
+
+**KEY-INVENTORY-002**: Monthly reconciliation job verifies every key has a corresponding active secret using it, and every secret has a corresponding active key. Orphaned keys are flagged for retirement.
+
+### 17.10 Cryptographic Operation Logging
+
+**CRYPT-LOG-001**: Every encryption/decryption operation by the KMS client is logged to Tier 2 audit with: `operation_type` (encrypt/decrypt), `key_id`, `caller_service`, `caller_actor_id`, `timestamp`, `secret_type`, `secret_id`. Sensitive values are NEVER logged.
+
+**CRYPT-LOG-002**: KMS audit logs are stored in append-only storage and verified daily.
+
+### 17.11 HSM Disaster Recovery
+
+**HSM-DR-001**: Define HSM disaster recovery: (1) active-passive HSM pair with KEK material synchronized, (2) RTO for HSM failover: <15 minutes automated, <4 hours manual from backup, (3) KEK escrow in separate air-gapped storage as last-resort recovery, (4) continuous HSM health monitoring with critical alerts.
+
+**HSM-DR-002**: Quarterly HSM failover drills (aligned with DR-004 database restore drills).
+
+### 17.12 DEK Rotation Audit Trail
+
+**DEK-AUDIT-001**: Every DEK rotation (automated or manual) generates a `DEKRotated` audit event with: `service_id`, `dek_id`, `old_dek_wrapped_by`, `new_dek_wrapped_by`, `rotated_by`, `timestamp`, `verification_status`.
+
+**DEK-AUDIT-002**: DEK rotation events are logged to the immutable audit trail and retained permanently (same as KEK ceremony logs).
+
+### 17.13 KEK Re-Encryption Job
+
+**SEC-REENC-001**: A `KEKReEncryptionJob` runs as a durable saga that: (1) reads all DEKs from `encrypted_config` tables, (2) re-encrypts each DEK under the new KEK, (3) atomically swaps the encrypted DEK in a single transaction, (4) logs each re-encryption to the audit trail, (5) tracks progress in a `kek_reencryption_progress` table for crash recovery.
+
+**SEC-REENC-002**: During rotation window, the system accepts both old-KEK-wrapped and new-KEK-wrapped DEKs (dual-KEK support period, default: 24 hours). KMS client tries new KEK first, falls back to old KEK. After grace period, old KEK is destroyed per KMP-003.
+
+### 17.14 Connector Credential Rotation
+
+**SEC-CONN-ROT-001**: Connector credential rotation follows a two-phase protocol: (1) new credentials validated and stored alongside old credentials (`previous_config` field on `merchant_acquirer_link`), (2) deployment event causes `connector-gateway` to reload credentials, (3) after configurable grace period (default: 5 minutes), old credentials removed.
+
+**SEC-CONN-ROT-002**: If connector doesn't support dual-key overlap, rotation flagged with `requires_drain_period = true` — system waits for all in-flight transactions for that link to reach terminal state before completing rotation.
+
+### 17.15 JWT Security Hardening
+
+**AUTH-017**: JWT verification rejects algorithms `none`, `HS256`, `HS384`, `HS512`. Only `RS256` or `ES256` are permitted. Algorithm is validated against a whitelist on every verification.
+
+**AUTH-018**: MFA backup code verification: 5 failed attempts per 15-minute window triggers account lockout. Failures logged to Tier 2 audit. Code exhaustion requires Admin recovery.
+
+**AUTH-019**: API Gateway rejects requests with credentials (API keys, secrets) in URL query strings (HTTP 400). Prohibition documented in API spec and SDK docs.
+
+### 17.16 NATS Subject Injection Prevention
+
+**NATS-SEC-001**: All NATS subject segments validated against strict allowlist pattern `^[a-z][a-z0-9_]{0,63}$`. No user data interpolated into subject names without validation. CI lint on all `publish()` calls.
+
+### 17.17 Protobuf Deserialization Safety
+
+**DESER-001**: Bounded recursion depth (max 32 levels) and allocation limits for protobuf deserialization. Fuzzing targets for all protobuf types as CI gate.
+
+### 17.18 Envelope Encryption AAD
+
+**ENC-012**: DEKs generated via HKDF-SHA256, per-service-scoped. Additional Authenticated Data (AAD) bound to `operator_id + resource_id` to prevent ciphertext transplantation between contexts.
+
+### 17.19 Kubernetes Admission Controller
+
+**K8S-SEC-003**: Webhook admission controller configured with `failurePolicy: Fail` (fail-closed). PSA restricted profile as defense-in-depth layer independent of webhooks.
+
+### 17.20 API Credentials in URLs
+
+**APISEC-011**: OpenAPI/Swagger UI endpoints disabled in production builds via compile-time cfg. CI check: production responses don't contain OpenAPI paths.
+
+### 17.21 Log Security — Round 2
+
+**LOG-SEC-002**: All HTTP access log formats redact `Authorization` and `Cookie` headers. CI test: grep access log samples for JWT patterns.
+
+**LOG-SEC-003**: Application logs signed at generation time (HMAC per entry). SIEM verifies signatures on ingestion. Or ship to write-once storage before processing.
+
+**LOG-SEC-004**: Sanitize global panic hook — strip JWT patterns, API keys, secrets from panic output. `panic = 'abort'` for services with external restart.
+
+### 17.22 SSRF — Round 2
+
+**SSRF-003**: Document URL fetching: disable auto-redirect or re-validate redirect target IP. DNS resolve before request + re-validate after redirect. Max response size enforced. Content-Type validation. HTTPS-only.
+
+**SSRF-004**: Webhook callback URLs: fresh DNS resolution at delivery time with IP validation. IPv6-mapped deny-list. Single canonical URL parsing library. Reject userinfo component, non-standard ports.
+
+### 17.23 PCI-DSS Network Diagram
+
+**PCI-NETDIAG-001**: Create a formal PCI-DSS network diagram as a mandatory Part 12 appendix showing: CDE boundary, Application zone, Management zone, all ingress/egress points, network segmentation controls, encryption points. Updated with every network topology change and reviewed quarterly.
+
+### 17.24 Mass API Key Revocation
+
+**APIKEY-LIFE-005**: `POST /v1/operator/api-keys/revoke-all` endpoint immediately revokes all active API keys in a single transaction, invalidates all active sessions, and sends emergency notification. Requires operator re-authentication confirmation.
+
+### 17.25 Data Portability Export
+
+**UC-080**: Data Portability Export — `GET /v1/operator/data-export` produces a structured archive (JSONL for events, CSV for settlements, original files for MinIO objects) with a 7-day download window. Satisfies potential PDPL Article 17 portability requirements. Include in M7 deliverables.
+
+### 17.26 Break-Glass Support Access
+
+**PAM-004**: A `support-reader` PostgreSQL role with read-only access to all operator tables (no event_store write, no outbox write) provisioned via PAM with 2-hour auto-expiry. Every query under this role logged to audit_log with `actor_type = 'support'`.
+
+### 17.27 Secrets Rotation Runbook
+
+**RUNBOOK-SEC-001**: Dedicated `Secrets Rotation Runbook` covering each secret type (KEK, DEK, connector API key, platform API key, database password, SFTP credentials) with: prerequisites, rotation procedure, validation checklist, rollback steps, post-rotation monitoring, required notifications. Mandatory pre-GA compliance document.
+
+---
+
+## 18. Open Items Carried Forward
 
 - **OQ-018**: Confirm exact financial-record retention period (§5.2 AUD-001) with UAE legal counsel.
 - **OQ-019**: Confirm whether PDPL-style data-subject erasure requests are applicable to platform-processed payment/financial records.

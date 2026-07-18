@@ -681,7 +681,75 @@ Extended `SettlementRecord` to include `FeeBreakdown` as an optional field (not 
 
 ---
 
-## 11. Traceability to Part 1 / Part 2
+## 11. Gap Analysis Additions — Round 2
+
+### 11.1 Exhaustive Invalid State Transition Rejection Table
+
+**PAY-TRANS-001**: Every `(current_state, command)` pair NOT in the valid transition table (Part 5 §2.2) must be explicitly rejected with a deterministic error code. This is essential for TDD — developers must know what to test against.
+
+| Current State | Command | Rejection Error |
+|---|---|---|
+| `Failed` / `FailedAllRoutes` | `CapturePaymentIntent` | `PAYMENT_INTENT_FAILED` |
+| `Failed` / `FailedAllRoutes` | `VoidPaymentIntent` | `PAYMENT_INTENT_FAILED` |
+| `Voided` | `CapturePaymentIntent` | `PAYMENT_INTENT_VOIDED` |
+| `Voided` | `RefundPaymentIntent` | `PAYMENT_INTENT_VOIDED` |
+| `AuthorizationExpired` | `CapturePaymentIntent` | `AUTHORIZATION_EXPIRED` |
+| `AuthorizationExpired` | `VoidPaymentIntent` | `AUTHORIZATION_EXPIRED` |
+| `Captured` (full) | `CapturePaymentIntent` | `PAYMENT_INTENT_ALREADY_CAPTURED` |
+| `Captured` | `AuthorizePaymentIntent` | `PAYMENT_INTENT_ALREADY_CAPTURED` |
+| `Refunded` (full) | `RefundPaymentIntent` | `PAYMENT_INTENT_FULLY_REFUNDED` |
+| `Refunded` | `CapturePaymentIntent` | `PAYMENT_INTENT_FULLY_REFUNDED` |
+| `Authorizing` | `CapturePaymentIntent` | `PAYMENT_INTENT_AUTHORIZING` |
+| `Authorizing` | `VoidPaymentIntent` | `PAYMENT_INTENT_AUTHORIZING` |
+| `Capturing` | `VoidPaymentIntent` | `PAYMENT_INTENT_CAPTURING` |
+| `Capturing` | `RefundPaymentIntent` | `PAYMENT_INTENT_CAPTURING` |
+| `Created` | `CapturePaymentIntent` | `PAYMENT_INTENT_NOT_AUTHORIZED` |
+| `Created` | `VoidPaymentIntent` | `PAYMENT_INTENT_NOT_AUTHORIZED` |
+| `Created` | `RefundPaymentIntent` | `PAYMENT_INTENT_NOT_AUTHORIZED` |
+
+**PAY-TRANS-002**: The `Authorized` state after a partial capture can still accept `CapturePaymentIntent` (for remaining amount) but cannot accept `VoidPaymentIntent` (INV-01: cannot void after any capture).
+
+### 11.2 Partial Capture Invariant Extension
+
+**INV-01a**: The sum of all `PaymentPartiallyCaptured` amounts plus the final `PaymentCaptured` amount for a `PaymentIntent` must never exceed its `authorized_amount`. Enforced via optimistic concurrency (CONC-001): the aggregate reloads, rechecks the running total, and rejects if exceeded.
+
+**INV-01b**: When `supports_partial_capture = false` (Part 7 CONN-003), `CapturePaymentIntent` must request the full authorized amount or reject with `PARTIAL_CAPTURE_NOT_SUPPORTED`.
+
+**INV-01c**: Maximum number of partial captures per authorization is configurable per connector (default: 10). Exceeding the limit rejects with `MAX_PARTIAL_CAPTURES_EXCEEDED`.
+
+### 11.3 Refund Edge Case Extensions
+
+**REFUND-EDGE-003**: Refund of a zero-amount authorization (card verification, Part 5 §9.4 ZERO-AUTH-001) is rejected synchronously with `ZERO_AMOUNT_NOT_REFUNDABLE`.
+
+**REFUND-EDGE-004**: Refund after settlement is permitted (the acquirer handles actual fund movement), but the platform logs a `RefundAfterSettlement` event with a `settlement_status` field for audit visibility.
+
+**REFUND-SEC-001**: Concurrent refund requests: a `SELECT FOR UPDATE` on the `PaymentIntent` aggregate before the balance check prevents TOCTOU race conditions where two concurrent refunds both pass the balance check individually but together exceed the refundable amount.
+
+### 11.4 Subscription Cancellation Race Prevention
+
+**INV-SUB-01**: A `Subscription` cannot transition to `Cancelled` while a renewal saga is in `running` state for that subscription. The cancellation command must first signal the saga to transition to `Compensating` (via `SubscriptionCancelledDuringRenewal` domain event on BC-08), then wait for the saga to confirm compensation before completing cancellation.
+
+**JOB-011**: Each subscription renewal generates a deterministic idempotency key derived from `{subscription_id}:{billing_cycle_id}`. The `CreatePaymentIntent` command checks this key (Part 5 §4.1) and returns the existing `PaymentIntent` if one already exists for this cycle, preventing double-renewal regardless of scheduler race conditions.
+
+### 11.5 Invoice Duplicate Prevention
+
+**INV-INV-01**: An `Invoice` aggregate enforces a uniqueness invariant on `(operator_id, order_reference)` where `order_reference` is the merchant's external order ID. If `CreateInvoice` is called with an order reference that already has a non-`Cancelled` invoice, the command is rejected with `DUPLICATE_ORDER_INVOICE`.
+
+### 11.6 Payment Link Expiry
+
+**PLINK-001**: Payment links have a configurable expiry (default: 30 days). Expired links return HTTP 410 Gone on the hosted checkout page. A daily job transitions expired `PaymentLink`s to `Expired` status (matching Part 3 §5.5 domain event `PaymentLinkExpired`).
+
+**PLINK-SEC-001**: Payment link URL tokens are cryptographically random with 128-bit minimum entropy (prevents enumeration attacks).
+
+**PLINK-SEC-002**: Hosted payment page displays only minimum checkout information — no merchant admin context, no session cookies from admin domain.
+
+### 11.7 Double-Entry Ledger Balance Verification
+
+**LEDGER-VERIFY-001**: A daily background job scans `ledger_entry` for any `transaction_id` where `SUM(debit_amount_minor_units) - SUM(credit_amount_minor_units) != 0`. Imbalanced entries are flagged in a `ledger_integrity_exceptions` table and alerted to operations.
+
+---
+
+## 12. Traceability to Part 1 / Part 2
 
 | Part 1/2 Requirement | Enforced By (this Part) |
 |---|---|
