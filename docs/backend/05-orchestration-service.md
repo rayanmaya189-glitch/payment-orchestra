@@ -90,8 +90,38 @@ pub struct Model {
     pub deployment_epoch: i32,
     pub purpose: String, // 'payment' | 'card_verification'
     pub metadata: Option<String>, // JSON
+
+    // Gateway Profile Link — tracks which gateway handled this order
+    pub gateway_profile_id: Option<Uuid>,           // which gateway profile was selected
+    pub gateway_profile_version: Option<i32>,        // snapshot of profile at selection time
+    pub gateway_rotation_strategy: Option<String>,   // rotation strategy used
+    pub gateway_selection_reason: Option<String>,     // 'priority_1', 'round_robin_2', etc.
+
     pub created_at: DateTimeWithTimeZone,
     pub updated_at: DateTimeWithTimeZone,
+}
+```
+
+### RoutingAttempt — Extended with Gateway Profile
+
+```rust
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
+#[sea_orm(table_name = "routing_attempt")]
+pub struct Model {
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub attempt_id: Uuid,
+    pub payment_intent_id: Uuid,
+    pub attempt_number: i32,
+    pub acquirer_link_id: Uuid,
+    pub gateway_profile_id: Uuid,            // gateway profile used for this attempt
+    pub gateway_profile_snapshot: String,    // JSON snapshot of profile at attempt time
+    pub connector_id: String,
+    pub status: String,                      // 'approved' | 'declined' | 'timeout'
+    pub decline_reason: Option<String>,
+    pub acquirer_reference: Option<String>,
+    pub latency_ms: u32,
+    pub fee_calculated: Option<String>,      // JSON FeeBreakdown
+    pub attempted_at: DateTimeWithTimeZone,
 }
 ```
 
@@ -137,6 +167,7 @@ pub struct CreatePaymentIntentCommand {
     pub amount: Money,
     pub purpose: PaymentPurpose, // Payment | CardVerification
     pub metadata: Option<serde_json::Value>,
+    pub preferred_gateway_profile_id: Option<Uuid>, // optional: force specific gateway
 }
 
 pub enum PaymentPurpose {
@@ -149,8 +180,9 @@ pub enum PaymentPurpose {
 - Valid `Money` (amount >= 0, valid currency)
 - `idempotency_key` not previously used for a *different* payload
 - Duplicate key with same payload → return existing result (idempotent replay)
+- If `preferred_gateway_profile_id` is specified, validate gateway is active and within limits
 
-**Produces**: `PaymentIntentCreated` (EVT-01)
+**Produces**: `PaymentIntentCreated` (EVT-01) with `gateway_profile_id` set
 
 **TDD Test Cases**:
 
@@ -229,17 +261,55 @@ pub struct AuthorizePaymentIntentCommand {
 
 **Produces**: `PaymentAuthorizationAttempted` (EVT-02), then `PaymentAuthorized` (EVT-03) or `PaymentFailed` (EVT-06)
 
-**Routing Algorithm**:
+**Routing Algorithm (with Gateway Profile Selection)**:
 1. Load active `RoutingPolicy`
 2. Filter rules by card scheme, currency, amount
 3. Map to active `MerchantAcquirerLink` IDs
 4. Load `GatewayProfile` for each candidate link
 5. Filter by gateway profile limits (min/max amount, daily/monthly volume, card scheme, currency)
 6. Filter by gateway profile status (active only)
-7. Exclude already-attempted links
-8. Order by routing priority from `GatewayProfile`
-9. Select first candidate
-10. Validate total fee against merchant's cost threshold (if configured)
+7. Apply gateway rotation strategy (priority, round-robin, cost-based, etc.)
+8. Exclude already-attempted links
+9. Select first eligible candidate
+10. Calculate fee for selected gateway profile
+11. Record `gateway_profile_id` on `PaymentIntent` and `RoutingAttempt`
+
+### Order-Gateway Profile Linking Flow
+
+```
+1. CreatePaymentIntent → gateway_profile_id NOT yet set (selected at authorize time)
+2. AuthorizePaymentIntent:
+   a. Load all eligible GatewayProfiles for this operator
+   b. Apply rotation strategy to select best profile
+   c. Set PaymentIntent.gateway_profile_id = selected profile
+   d. Set PaymentIntent.gateway_rotation_strategy = strategy used
+   e. Set PaymentIntent.gateway_selection_reason = reason text
+   f. Create RoutingAttempt with gateway_profile_id + snapshot
+3. On failover (next hop):
+   a. Load next eligible GatewayProfile (excluding attempted gateways)
+   b. Create new RoutingAttempt with new gateway_profile_id
+   c. Update PaymentIntent.routing_attempt_gateway_ids
+4. On completion:
+   a. PaymentIntent.gateway_profile_id = winning gateway (the one that approved)
+   b. Fee calculated from winning gateway's FeeStructure
+   c. GatewayProfileSelected event emitted with full audit trail
+```
+
+**Audit Trail**:
+
+```rust
+pub struct GatewayProfileSelected {
+    pub payment_intent_id: Uuid,
+    pub gateway_profile_id: Uuid,
+    pub connector_id: String,
+    pub rotation_strategy: String,
+    pub selection_reason: String,
+    pub fee_calculated: Money,
+    pub daily_volume_after: Money,
+    pub monthly_volume_after: Money,
+    pub occurred_at: DateTime<Utc>,
+}
+```
 
 ```rust
 // Enhanced routing with gateway profiles

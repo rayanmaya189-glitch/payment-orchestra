@@ -103,7 +103,111 @@ if (payment.supportsPartialCapture) {
 
 ---
 
-## 5. Payment Status Badges
+## 5. Gateway Profile Section (Linked to Order)
+
+Every order/payment intent is linked to a specific gateway profile. This section shows which gateway handled the order.
+
+```tsx
+// In transaction detail page
+<GatewayProfileSection>
+  <SectionHeader title="Payment Gateway" />
+
+  <GatewayLink
+    profileId={payment.gatewayProfileId}
+    connectorName={payment.connectorName}
+    onClick={() => navigateTo(`/connectors/${payment.gatewayProfileId}`)}
+  />
+
+  <RotationInfo
+    strategy={payment.gatewayRotationStrategy}
+    selectionReason={payment.gatewaySelectionReason}
+  />
+
+  <FeeBreakdown
+    fixedFee={payment.fees.fixedFee}
+    percentageFee={payment.fees.percentageFee}
+    crossBorderFee={payment.fees.crossBorderFee}
+    totalFee={payment.fees.totalFee}
+    netAmount={payment.amount - payment.fees.totalFee}
+  />
+
+  <VolumeImpact
+    dailyVolumeBefore={payment.gatewayDailyVolumeBefore}
+    dailyVolumeAfter={payment.gatewayDailyVolumeAfter}
+    dailyLimit={payment.gatewayDailyLimit}
+  />
+</GatewayProfileSection>
+```
+
+### Gateway Selection During Order Creation
+
+```tsx
+// CreatePaymentIntent with optional gateway selection
+<CreatePaymentDialog
+  onSubmit={async (data) => {
+    const response = await api.post('/v1/payment-intents', {
+      amount: { amount_minor_units: data.amount * 100, currency_code: data.currency },
+      idempotency_key: crypto.randomUUID(),
+      purpose: data.purpose,
+      preferred_gateway_profile_id: data.preferredGateway || null, // null = auto-rotate
+    });
+    return response.data;
+  }}
+/>
+
+// Gateway selector (optional — if not selected, rotation strategy applies)
+<GatewaySelector
+  gateways={activeProfiles}
+  selected={selectedGateway}
+  onSelect={setSelectedGateway}
+  showFees={true}
+  showLimits={true}
+/>
+```
+
+### Routing Timeline with Gateway Profiles
+
+```tsx
+<RoutingTimeline attempts={payment.attempts}>
+  {payment.attempts.map((attempt, i) => (
+    <RoutingAttempt
+      key={i}
+      acquirer={attempt.acquirerName}
+      gatewayProfile={attempt.gatewayProfile}  // snapshot of gateway used
+      connectorName={attempt.connectorName}
+      status={attempt.approved ? 'success' : 'failed'}
+      declineReason={attempt.declineReason}
+      latencyMs={attempt.latencyMs}
+      fee={attempt.fee}
+      timestamp={attempt.timestamp}
+    />
+  ))}
+</RoutingTimeline>
+```
+
+### Gateway Usage History for Order
+
+```tsx
+// Show all gateways tried for this order (including failed attempts)
+<GatewayUsageHistory attempts={payment.attempts}>
+  {payment.attempts.map((attempt, i) => (
+    <GatewayUsageRow
+      key={i}
+      attemptNumber={i + 1}
+      gatewayName={attempt.connectorName}
+      profileId={attempt.gatewayProfileId}
+      status={attempt.approved ? 'Approved' : 'Declined'}
+      reason={attempt.declineReason}
+      fee={attempt.fee}
+      latencyMs={attempt.latencyMs}
+    />
+  ))}
+</GatewayUsageHistory>
+```
+
+---
+
+## 6. Payment Status Badges
 
 ```tsx
 const statusConfig = {
