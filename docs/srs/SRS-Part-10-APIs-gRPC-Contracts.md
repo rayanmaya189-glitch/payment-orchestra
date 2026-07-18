@@ -55,7 +55,16 @@
 
 ## 2. gRPC Design Conventions (Internal Surface)
 
-### 2.1 Representative Proto — Payment Orchestration Service
+### 2.1 Language-to-Protocol Mapping
+
+| From → To | Protocol | Rationale |
+|---|---|---|
+| Go service → Rust service | gRPC (Protobuf) | Cross-language interop; both Ent (Go) and SeaORM (Rust) services generate clients from `.proto` files |
+| Rust service → Go service | gRPC (Protobuf) | Same as above |
+| Any service → Any service (sync) | gRPC (Protobuf) | Type-safe, observable, traceable (Part 4 RULE-001) |
+| Any service → Any service (async events) | NATS JetStream | Fan-out, decoupled, durable (Part 4 RULE-002) |
+
+### 2.2 Representative Proto — Payment Orchestration Service (Rust/SeaORM)
 
 ```protobuf
 syntax = "proto3";

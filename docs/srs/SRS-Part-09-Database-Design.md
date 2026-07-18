@@ -21,114 +21,214 @@
 
 ## 1. PostgreSQL — Event Store Design (Event-Sourced Contexts)
 
-### 1.1 Shared Event Store Schema Pattern
+### 1.1 Shared Event Store Schema (SeaORM — Rust)
 
-Each event-sourced service (BC-05 `orchestration-service`, BC-08 `subscription-service`, BC-09 `reconciliation-service`, BC-10 `dispute-service`) owns its own Postgres database using the same event-store table shape, so the pattern is documented once here rather than four times.
+Each event-sourced service (BC-05 `orchestration-service`, BC-08 `subscription-service`, BC-09 `reconciliation-service`, BC-10 `dispute-service`) owns its own Postgres database using the same SeaORM entity:
 
-```sql
-CREATE TABLE event_store (
-    aggregate_type       TEXT        NOT NULL,
-    aggregate_id         UUID        NOT NULL,
-    event_sequence       BIGINT      NOT NULL,   -- per-aggregate monotonic version
-    event_id             UUID        NOT NULL,
-    event_type           TEXT        NOT NULL,
-    event_version        SMALLINT    NOT NULL,
-    occurred_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
-    actor_type           TEXT        NOT NULL,   -- 'user' | 'api_key' | 'system'
-    actor_id             UUID        NULL,
-    causation_id         UUID        NULL,
-    correlation_id       UUID        NOT NULL,
-    payload              BYTEA       NOT NULL,   -- protobuf-encoded (Part 10)
-    PRIMARY KEY (aggregate_type, aggregate_id, event_sequence)
-);
+```rust
+use sea_orm::entity::prelude::*;
 
-CREATE UNIQUE INDEX event_store_event_id_uq ON event_store (event_id);
-CREATE INDEX event_store_correlation_idx ON event_store (correlation_id);
-CREATE INDEX event_store_occurred_at_idx ON event_store (occurred_at);
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
+#[sea_orm(table_name = "event_store")]
+pub struct Model {
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub aggregate_type: String,
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub aggregate_id: Uuid,
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub event_sequence: i64,
+    pub event_id: Uuid,
+    pub event_type: String,
+    pub event_version: i16,
+    pub occurred_at: DateTimeWithTimeZone,
+    pub actor_type: String,       // 'user' | 'api_key' | 'system'
+    pub actor_id: Option<Uuid>,
+    pub causation_id: Option<Uuid>,
+    pub correlation_id: Uuid,
+    pub payload: Vec<u8>,          // protobuf-encoded (Part 10)
+}
+
+#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+pub enum Relation {}
+
+impl ActiveModelBehavior for ActiveModel {}
+```
+
+**Indexes (defined via SeaORM migration):**
+
+```rust
+// In SeaORM migration file
+use sea_orm_migration::prelude::*;
+
+#[derive(DeriveMigrationName)]
+pub struct Migration;
+
+#[async_trait::async_trait]
+impl MigrationTrait for Migration {
+    async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+        manager
+            .create_index(
+                Index::create()
+                    .name("event_store_event_id_uq")
+                    .table(EventStore::Table)
+                    .col(EventStore::EventId)
+                    .unique()
+                    .to_owned(),
+            )
+            .await?;
+        manager
+            .create_index(
+                Index::create()
+                    .name("event_store_correlation_idx")
+                    .table(EventStore::Table)
+                    .col(EventStore::CorrelationId)
+                    .to_owned(),
+            )
+            .await?;
+        manager
+            .create_index(
+                Index::create()
+                    .name("event_store_occurred_at_idx")
+                    .table(EventStore::Table)
+                    .col(EventStore::OccurredAt)
+                    .to_owned(),
+            )
+            .await?;
+        Ok(())
+    }
+}
 ```
 
 - **DB-001 (Optimistic concurrency)**: Appends specify `expected_event_sequence`; the insert is conditioned (application-level check-then-insert within a transaction, or a Postgres `EXCLUDE`/unique-constraint-based guard on `(aggregate_type, aggregate_id, event_sequence)`) so a concurrent writer's stale-sequence append fails and must reload+retry (Part 5 §4.2 CONC-001).
 - **DB-002 (Payload encoding)**: `payload` is protobuf, not JSON, for compactness and schema evolution discipline (Part 10 defines `.proto` schemas per event type, with explicit backward-compatibility rules — additive fields only within a version, breaking changes bump `event_version`).
-- **DB-003 (Snapshotting)**: For aggregates with long event streams (e.g., a `Subscription` that has renewed monthly for years), a `aggregate_snapshot` table stores periodic materialized state (every N events or T time) to bound replay cost:
+- **DB-003 (Snapshotting)**: For aggregates with long event streams (e.g., a `Subscription` that has renewed monthly for years), a `aggregate_snapshot` entity stores periodic materialized state to bound replay cost:
 
-```sql
-CREATE TABLE aggregate_snapshot (
-    aggregate_type   TEXT NOT NULL,
-    aggregate_id     UUID NOT NULL,
-    as_of_sequence   BIGINT NOT NULL,
-    state            BYTEA NOT NULL,   -- protobuf-encoded materialized aggregate state
-    created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
-    PRIMARY KEY (aggregate_type, aggregate_id, as_of_sequence)
-);
+```rust
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
+#[sea_orm(table_name = "aggregate_snapshot")]
+pub struct Model {
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub aggregate_type: String,
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub aggregate_id: Uuid,
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub as_of_sequence: i64,
+    pub state: Vec<u8>,           // protobuf-encoded materialized aggregate state
+    pub created_at: DateTimeWithTimeZone,
+}
 ```
 
-### 1.2 Read-Model (Projection) Tables
+### 1.2 Read-Model (Projection) Entities (SeaORM — Rust)
 
 Projections are plain, indexed-for-query Postgres tables (or ClickHouse for heavy analytics, §3), rebuilt from the event stream and kept eventually consistent (Part 3 §7 CQRS). Representative example — the reconciliation exception queue (UC-041):
 
-```sql
-CREATE TABLE reconciliation_exception_projection (
-    exception_id          UUID NOT NULL,
-    settlement_record_id   UUID NOT NULL,
-    payment_intent_id      UUID NULL,       -- null until/unless manually matched
-    amount_minor_units     BIGINT NOT NULL,
-    currency               CHAR(3) NOT NULL,
-    status                 TEXT NOT NULL,   -- 'unmatched' | 'resolved' | 'flagged_discrepancy'
-    detected_at            TIMESTAMPTZ NOT NULL,
-    resolved_at            TIMESTAMPTZ NULL,
-    resolved_by_actor_id   UUID NULL,
-    PRIMARY KEY (exception_id)
-);
-CREATE INDEX recon_exc_status_idx ON reconciliation_exception_projection (status, detected_at);
+```rust
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
+#[sea_orm(table_name = "reconciliation_exception_projection")]
+pub struct Model {
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub exception_id: Uuid,
+    pub settlement_record_id: Uuid,
+    pub payment_intent_id: Option<Uuid>,
+    pub amount_minor_units: i64,
+    pub currency: String,        // CHAR(3)
+    pub status: String,          // 'unmatched' | 'resolved' | 'flagged_discrepancy'
+    pub detected_at: DateTimeWithTimeZone,
+    pub resolved_at: Option<DateTimeWithTimeZone>,
+    pub resolved_by_actor_id: Option<Uuid>,
+}
 ```
 
-### 1.3 Non-Event-Sourced Service Schemas (Representative)
+### 1.3 Non-Event-Sourced Service Entities (Ent ORM — Go)
 
-For BC-01/02/03/13/14 (Tier-2-audited per Part 8 §5.1), tables are conventional normalized CRUD-plus-audit-log:
+For BC-01/02/03/13/14 (Tier-2-audited per Part 8 §5.1), tables use Ent ORM schemas:
 
-```sql
--- operator-management (SVC-01)
-CREATE TABLE operator (
-    operator_id     UUID PRIMARY KEY,
-    legal_name      TEXT NOT NULL,
-    trade_license_no TEXT NOT NULL,
-    country         CHAR(2) NOT NULL DEFAULT 'AE',
-    status          TEXT NOT NULL,   -- Pending | Active-Unverified | Active-Verified | Suspended | Expired-Unverified
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
-);
+```go
+// schema/operator.go — Ent ORM (Go)
+package schema
 
--- iam-service (SVC-02)
-CREATE TABLE principal (
-    principal_id    UUID PRIMARY KEY,
-    principal_type  TEXT NOT NULL,  -- 'human' | 'api_key' | 'service'
-    email           TEXT NULL,
-    password_hash   TEXT NULL,      -- argon2id
-    mfa_enrolled    BOOLEAN NOT NULL DEFAULT false,
-    status          TEXT NOT NULL DEFAULT 'active',
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
-);
+import (
+    "entgo.io/ent"
+    "entgo.io/ent/schema/field"
+    "entgo.io/ent/schema/index"
+)
 
-CREATE TABLE role_assignment (
-    principal_id    UUID NOT NULL,
-    role            TEXT NOT NULL,
-    abac_conditions JSONB NOT NULL DEFAULT '{}',  -- e.g., {"max_refund_amount_minor": 500000}
-    PRIMARY KEY (principal_id, role)
-);
+type Operator struct {
+    ent.Schema
+}
 
--- Tier 2 audit log
-CREATE TABLE audit_log (
-    audit_id        UUID NOT NULL,
-    actor_id        UUID NULL,
-    action          TEXT NOT NULL,
-    before_state     JSONB NULL,
-    after_state      JSONB NULL,
-    occurred_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
-    source_ip        INET NULL,
-    PRIMARY KEY (audit_id)
-);
+func (Operator) Fields() []ent.Field {
+    return []ent.Field{
+        field.UUID("id", uuid.UUID{}).Immutable(),
+        field.String("legal_name"),
+        field.String("trade_license_no"),
+        field.String("country").Default("AE").MaxLen(2),
+        field.Enum("status").Values("pending", "active_unverified", "active_verified", "suspended", "expired_unverified"),
+        field.Time("created_at").Default(time.Now).Immutable(),
+    }
+}
+
+func (Operator) Indexes() []ent.Index {
+    return []ent.Index{
+        index.Fields("trade_license_no").Unique(),
+    }
+}
+
+// schema/principal.go — Ent ORM (Go)
+type Principal struct {
+    ent.Schema
+}
+
+func (Principal) Fields() []ent.Field {
+    return []ent.Field{
+        field.UUID("id", uuid.UUID{}).Immutable(),
+        field.Enum("principal_type").Values("human", "api_key", "service"),
+        field.String("email").Optional().Nillable(),
+        field.Bytes("password_hash").Optional().Nillable(), // argon2id
+        field.Bool("mfa_enrolled").Default(false),
+        field.Enum("status").Default("active").Values("active", "suspended", "deleted"),
+        field.Time("created_at").Default(time.Now).Immutable(),
+    }
+}
+
+// schema/role_assignment.go — Ent ORM (Go)
+type RoleAssignment struct {
+    ent.Schema
+}
+
+func (RoleAssignment) Fields() []ent.Field {
+    return []ent.Field{
+        field.UUID("principal_id", uuid.UUID{}),
+        field.String("role"),
+        field.JSON("abac_conditions", map[string]interface{}).Default(map[string]interface{}{}),
+    }
+}
+
+func (RoleAssignment) Indexes() []ent.Index {
+    return []ent.Index{
+        index.Fields("principal_id", "role").Unique(),
+    }
+}
+
+// schema/audit_log.go — Ent ORM (Go, append-only)
+type AuditLog struct {
+    ent.Schema
+}
+
+func (AuditLog) Fields() []ent.Field {
+    return []ent.Field{
+        field.UUID("id", uuid.UUID{}).Immutable(),
+        field.UUID("actor_id", uuid.UUID{}).Optional().Nillable(),
+        field.String("action"),
+        field.JSON("before_state", map[string]interface{}{}).Optional().Nillable(),
+        field.JSON("after_state", map[string]interface{}{}).Optional().Nillable(),
+        field.Time("occurred_at").Default(time.Now).Immutable(),
+        field.IP("source_ip").Optional().Nillable(),
+    }
+}
 ```
 
-- **DB-004**: `audit_log` is append-only at the database-privilege level — the application's database role for these services is granted `INSERT`/`SELECT` only on `audit_log`, with no `UPDATE`/`DELETE` grant at all (Part 8 §5.3 AUD-003 enforced at the DB-permission layer, not merely by application code discipline).
+- **DB-004**: `audit_log` is append-only at the database-privilege level — the application's database role for these services is granted `INSERT`/`SELECT` only on `audit_log`, with no `UPDATE`/`DELETE` grant at all (Part 8 §5.3 AUD-003 enforced at the DB-permission layer). Ent ORM generates no `Update`/`Delete` methods for this entity by design (custom behavior override).
 
 - **DB-011 (Row-Level Security)**: All Postgres tables containing operator data implement Row-Level Security (RLS) policies as a defense-in-depth layer. Even if the application layer has an authorization bypass, the database enforces that queries can only access data belonging to the authenticated principal's operator context. RLS policies are applied at the table level and enforced by Postgres row-security policies, not application logic.
 
@@ -136,23 +236,25 @@ CREATE TABLE audit_log (
 
 - **DB-013 (Database Connection Security)**: Database connections use TLS 1.3 (matching Part 8 ENC-001). Database credentials are rotated automatically via the secrets management system (Part 8 SEC-003). No application hardcodes database credentials.
 
-### 1.4 Encrypted Field Storage (Ties to Part 8 §3/§4)
+### 1.4 Encrypted Field Storage (SeaORM — Rust, Ties to Part 8 §3/§4)
 
-Connector credentials (Part 7 §2.2) are stored as:
+Connector credentials (Part 7 §2.2) are stored via SeaORM:
 
-```sql
-CREATE TABLE merchant_acquirer_link (
-    link_id               UUID NOT NULL,
-    connector_id           TEXT NOT NULL,
-    status                 TEXT NOT NULL,   -- Connected-Untested | Active | Disabled
-    encrypted_config       BYTEA NOT NULL,   -- envelope-encrypted JSON blob (Part 8 §3 SEC-001)
-    dek_wrapped            BYTEA NOT NULL,   -- the DEK, wrapped by platform KEK
-    created_at             TIMESTAMPTZ NOT NULL DEFAULT now(),
-    PRIMARY KEY (link_id)
-);
+```rust
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
+#[sea_orm(table_name = "merchant_acquirer_link")]
+pub struct Model {
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub link_id: Uuid,
+    pub connector_id: String,
+    pub status: String,           // 'connected_untested' | 'active' | 'disabled'
+    pub encrypted_config: Vec<u8>, // envelope-encrypted JSON blob (Part 8 §3 SEC-001)
+    pub dek_wrapped: Vec<u8>,     // the DEK, wrapped by platform KEK
+    pub created_at: DateTimeWithTimeZone,
+}
 ```
 
-No column in this table ever holds a plaintext secret, satisfying CRED-001/ENC-003 structurally.
+No column in this entity ever holds a plaintext secret, satisfying CRED-001/ENC-003 structurally.
 
 ---
 
@@ -170,11 +272,29 @@ No column in this table ever holds a plaintext secret, satisfying CRED-001/ENC-0
 
 ---
 
-## 3. ClickHouse — Analytics Schema
+## 3. ClickHouse — Analytics Schema (Go ClickHouse Driver)
 
 ### 3.1 Design Approach
 
 Append-only, denormalized, wide event tables optimized for the analytical query patterns behind UC-070/UC-071 (unified dashboard, reconciliation export) and the AI Assistant's summary-document ingestion (Part 6 §3.1 ING-001).
+
+```go
+// analytics/model/payment_events.go — Go ClickHouse driver (not ORM — ClickHouse is append-only analytics)
+type PaymentEvent struct {
+    EventType         string    `ch:"event_type"`
+    PaymentIntentID   string    `ch:"payment_intent_id"`
+    AcquirerID        string    `ch:"acquirer_id"`
+    CardScheme        string    `ch:"card_scheme"`
+    Currency          string    `ch:"currency"`
+    AmountMinorUnits  int64     `ch:"amount_minor_units"`
+    DeclineReason     string    `ch:"decline_reason"`
+    LatencyMs         uint32    `ch:"latency_ms"`
+    OccurredAt        time.Time `ch:"occurred_at"`
+    EventDate         time.Time `ch:"event_date"` // materialized toDate(occurred_at)
+}
+```
+
+Note: ClickHouse uses a Go native driver (not Ent ORM) because ClickHouse is append-only analytics with no entity lifecycle management — it's a pure data sink for analytical queries. Ent ORM is used for Postgres-based services that have entity CRUD lifecycle.
 
 ```sql
 CREATE TABLE payment_events (
@@ -260,24 +380,24 @@ This same `auth_rate_hourly_mv`-style rollup is exactly the "summary document" s
 
 ## 6. Outbox Table Schema (Transactional Outbox)
 
-### 6.1 Outbox Table Pattern
+### 6.1 Outbox Entity (SeaORM — Rust)
 
-Every event-sourced service includes an `outbox` table alongside its `event_store` table, written within the same transaction (Part 3 §9.2):
+Every event-sourced service includes an outbox entity alongside its event store entity, written within the same transaction (Part 3 §9.2):
 
-```sql
-CREATE TABLE outbox (
-    outbox_id       UUID NOT NULL,
-    aggregate_type  TEXT NOT NULL,
-    aggregate_id    UUID NOT NULL,
-    event_type      TEXT NOT NULL,
-    event_version   SMALLINT NOT NULL,
-    payload         BYTEA NOT NULL,     -- same protobuf-encoded EventEnvelope as event_store
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
-    published_at    TIMESTAMPTZ NULL,   -- set by the relay process after NATS publish confirms
-    PRIMARY KEY (outbox_id)
-);
-
-CREATE INDEX outbox_unpublished_idx ON outbox (created_at) WHERE published_at IS NULL;
+```rust
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
+#[sea_orm(table_name = "outbox")]
+pub struct Model {
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub outbox_id: Uuid,
+    pub aggregate_type: String,
+    pub aggregate_id: Uuid,
+    pub event_type: String,
+    pub event_version: i16,
+    pub payload: Vec<u8>,          // same protobuf-encoded EventEnvelope as event_store
+    pub created_at: DateTimeWithTimeZone,
+    pub published_at: Option<DateTimeWithTimeZone>,
+}
 ```
 
 - **DB-005**: The outbox entry is written in the SAME Postgres transaction as the `event_store` append (Part 3 OUTBOX-001). This guarantees that if the event is committed to Postgres, it will eventually be published to NATS — no events are silently lost.
@@ -286,26 +406,15 @@ CREATE INDEX outbox_unpublished_idx ON outbox (created_at) WHERE published_at IS
 
 ### 6.2 Event Store Archival
 
-- **DB-008**: Event stores for aggregates in terminal states are archived to a cold-storage table after a configurable retention period (Part 3 ARCH-001, default 90 days):
+- **DB-008**: Event stores for aggregates in terminal states are archived to a cold-storage table after a configurable retention period (Part 3 ARCH-001, default 90 days). The archive uses the same SeaORM entity as `event_store` but with an additional `archived_at` field:
 
-```sql
-CREATE TABLE event_store_archive (
-    -- identical schema to event_store (Part 9 §1.1)
-    aggregate_type       TEXT        NOT NULL,
-    aggregate_id         UUID        NOT NULL,
-    event_sequence       BIGINT      NOT NULL,
-    event_id             UUID        NOT NULL,
-    event_type           TEXT        NOT NULL,
-    event_version        SMALLINT    NOT NULL,
-    occurred_at          TIMESTAMPTZ NOT NULL,
-    actor_type           TEXT        NOT NULL,
-    actor_id             UUID        NULL,
-    causation_id         UUID        NULL,
-    correlation_id       UUID        NOT NULL,
-    payload              BYTEA       NOT NULL,
-    archived_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
-    PRIMARY KEY (aggregate_type, aggregate_id, event_sequence)
-);
+```rust
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
+#[sea_orm(table_name = "event_store_archive")]
+pub struct Model {
+    // identical fields to event_store Model, plus:
+    pub archived_at: DateTimeWithTimeZone,
+}
 ```
 
 - **DB-009**: Archival is performed by a background job that moves event streams for terminal-state aggregates from `event_store` to `event_store_archive`. The job respects the legal retention floor (Part 8 AUD-001) — no events are archived or deleted before the floor expires.

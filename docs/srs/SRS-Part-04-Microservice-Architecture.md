@@ -23,25 +23,25 @@
 
 ### 1.1 Mapping Bounded Contexts → Microservices
 
-| Service ID | Service Name | Bounded Context(s) | Language/Runtime | Primary Datastore |
-|---|---|---|---|---|
-| SVC-01 | `tenant-service` | BC-01 Tenant Management | Rust (Axum + Tonic) | PostgreSQL |
-| SVC-02 | `iam-service` | BC-02 Identity & Access | Rust | PostgreSQL + Redis (session/token cache) |
-| SVC-03 | `compliance-service` | BC-03 Merchant Compliance (KYB) | Rust | PostgreSQL |
-| SVC-04 | `connector-gateway` | BC-04 Gateway Connector Framework | Rust | PostgreSQL (connector config only; no transaction data) |
-| SVC-05 | `orchestration-service` | BC-05 Payment Orchestration | Rust | PostgreSQL (event store) + Redis (idempotency cache, hot routing config) |
-| SVC-06 | `invoice-service` | BC-06 Invoice Service | Rust | PostgreSQL |
-| SVC-07 | `payment-link-service` | BC-07 Payment Link Service | Rust | PostgreSQL |
-| SVC-08 | `subscription-service` | BC-08 Subscription Billing | Rust | PostgreSQL (event store) |
-| SVC-09 | `reconciliation-service` | BC-09 Settlement & Reconciliation | Rust | PostgreSQL (event store) |
-| SVC-10 | `dispute-service` | BC-10 Dispute Management | Rust | PostgreSQL (event store) |
-| SVC-11 | `risk-service` | BC-11 Fraud & Risk Scoring | Rust | PostgreSQL + Redis (hot scoring cache) |
-| SVC-12 | `ai-assistant-service` | BC-12 AI Payment Assistant | Rust (orchestrator) + Ollama (inference) | OpenSearch (vectors) + Postgres (conversation/citation metadata) |
-| SVC-13 | `document-service` | BC-13 Document Management | Rust | PostgreSQL (metadata) + MinIO (blobs) |
-| SVC-14 | `notification-service` | BC-14 Notification Service | Rust | PostgreSQL + Redis (delivery dedup) |
-| SVC-15 | `analytics-service` | BC-15 Analytics & Reporting | Rust (ingestion) | ClickHouse |
-| SVC-17 | `api-gateway` | Cross-cutting (not a bounded context) | Rust (Axum) | Redis (rate-limit counters only) |
-| SVC-18 | `ai-gateway` | Cross-cutting routing/guardrail layer in front of SVC-12 | Rust | Redis (rate limits), Postgres (guardrail audit log) |
+| Service ID | Service Name | Bounded Context(s) | Language/Runtime | ORM | Primary Datastore |
+|---|---|---|---|---|---|
+| SVC-01 | `operator-service` | BC-01 Operator Management | Go (Ent) | Ent ORM | PostgreSQL |
+| SVC-02 | `iam-service` | BC-02 Identity & Access | Go (Ent) | Ent ORM | PostgreSQL + Redis (session/token cache) |
+| SVC-03 | `compliance-service` | BC-03 Merchant Compliance (KYB) | Go (Ent) | Ent ORM | PostgreSQL |
+| SVC-04 | `connector-gateway` | BC-04 Gateway Connector Framework | Rust (SeaORM) | SeaORM | PostgreSQL (connector config only; no transaction data) |
+| SVC-05 | `orchestration-service` | BC-05 Payment Orchestration | Rust (SeaORM) | SeaORM | PostgreSQL (event store) + Redis (idempotency cache, hot routing config) |
+| SVC-06 | `invoice-service` | BC-06 Invoice Service | Go (Ent) | Ent ORM | PostgreSQL |
+| SVC-07 | `payment-link-service` | BC-07 Payment Link Service | Go (Ent) | Ent ORM | PostgreSQL |
+| SVC-08 | `subscription-service` | BC-08 Subscription Billing | Rust (SeaORM) | SeaORM | PostgreSQL (event store) |
+| SVC-09 | `reconciliation-service` | BC-09 Settlement & Reconciliation | Rust (SeaORM) | SeaORM | PostgreSQL (event store) |
+| SVC-10 | `dispute-service` | BC-10 Dispute Management | Rust (SeaORM) | SeaORM | PostgreSQL (event store) |
+| SVC-11 | `risk-service` | BC-11 Fraud & Risk Scoring | Rust (SeaORM) | SeaORM | PostgreSQL + Redis (hot scoring cache) |
+| SVC-12 | `ai-assistant-service` | BC-12 AI Payment Assistant | Rust (SeaORM) | SeaORM | OpenSearch (vectors) + Postgres (conversation/citation metadata) |
+| SVC-13 | `document-service` | BC-13 Document Management | Go (Ent) | Ent ORM | PostgreSQL (metadata) + MinIO (blobs) |
+| SVC-14 | `notification-service` | BC-14 Notification Service | Go (Ent) | Ent ORM | PostgreSQL + Redis (delivery dedup) |
+| SVC-15 | `analytics-service` | BC-15 Analytics & Reporting | Go | ClickHouse driver | ClickHouse |
+| SVC-17 | `api-gateway` | Cross-cutting (not a bounded context) | Go (Ent) | Ent ORM | Redis (rate-limit counters only) |
+| SVC-18 | `ai-gateway` | Cross-cutting routing/guardrail layer in front of SVC-12 | Go (Ent) | Ent ORM | Redis (rate limits), Postgres (guardrail audit log) |
 
 ### 1.2 Deliberate Deviations from Strict 1:1 Mapping
 
@@ -86,16 +86,29 @@ The AI Gateway exists because AI-Assistant traffic has distinct requirements tha
 
 ### 4.1 Communication Style Decision Matrix
 
-| Interaction | Style | Rationale |
-|---|---|---|
-| API Gateway → any domain service (synchronous user-facing request) | gRPC (internal), translated from REST/gRPC-Web at the edge | Low latency, strongly-typed contracts (Part 10), needed for checkout-path latency budgets (Part 11) |
-| `orchestration-service` → `connector-gateway` (authorize/capture/refund call to acquirer) | gRPC (synchronous, in the checkout hot path) | Must return a result within the tenant's configured latency budget (BR-020-2, Part 2) |
-| `orchestration-service` publishing domain events (EVT-01…EVT-12) | NATS JetStream (async, at-least-once, durable) | Multiple downstream consumers (BC-06, BC-08, BC-09, BC-12, BC-15 per Part 3 §4 table); publisher must not block on every consumer's processing speed |
-| `reconciliation-service` ingesting settlement files/webhooks | Mixed: webhook ingress via gRPC/REST at connector-gateway → published as NATS event; polling/SFTP-based ingestion is a scheduled job publishing directly to NATS | Decouples ingestion cadence (which varies wildly per acquirer) from downstream reconciliation processing |
-| `ai-assistant-service` reading context from other contexts | Direct read-model queries (gRPC query endpoints exposed by owning services, or direct read-only access to each service's dedicated read-replica/projection — never the write-model database) | BC-12 is a read-only Conformist (Part 3 §1.3); it must never acquire a write path into other contexts |
-| `notification-service` triggering | NATS JetStream subscription to relevant events (EVT-03, EVT-07, EVT-15, EVT-17, etc.) | Naturally asynchronous, at-least-once with idempotent send-dedup (Part 3 §5.10) |
+| Interaction | Style | Protocol | Rationale |
+|---|---|---|---|
+| API Gateway → domain service (synchronous user-facing request) | **gRPC** | HTTP/2 + Protobuf | Low latency, strongly-typed contracts (Part 10), needed for checkout-path latency budgets (Part 11) |
+| `orchestration-service` → `connector-gateway` (authorize/capture/refund call to acquirer) | **gRPC** (synchronous, in the checkout hot path) | HTTP/2 + Protobuf | Must return a result within the latency budget (BR-020-2, Part 2) |
+| `orchestration-service` → `risk-service` (pre-authorization risk score) | **gRPC** (synchronous, in the checkout hot path) | HTTP/2 + Protobuf | Risk score needed before routing decision; must be fast |
+| `orchestration-service` publishing domain events (EVT-01…EVT-19) | **NATS JetStream** (async, durable) | NATS protocol | Multiple downstream consumers; publisher must not block |
+| `reconciliation-service` ingesting settlement files | **Mixed**: webhook via gRPC at connector-gateway → published to NATS; polling/SFTP via scheduled job → published to NATS | NATS protocol | Decouples ingestion cadence from downstream processing |
+| `ai-assistant-service` reading context from other contexts | **gRPC** (direct read-model queries) | HTTP/2 + Protobuf | BC-12 is a read-only Conformist; must never acquire write path |
+| `notification-service` triggering | **NATS JetStream** subscription to relevant events | NATS protocol | Naturally asynchronous, at-least-once with idempotent dedup |
+| `compliance-service` → `document-service` (OCR trigger) | **gRPC** (synchronous) | HTTP/2 + Protobuf | Request-response; caller needs OCR result |
+| `analytics-service` consuming events | **NATS JetStream** subscription to all event streams | NATS protocol | Pure event consumer, never called synchronously |
+| `invoice-service` / `subscription-service` state updates | **NATS JetStream** subscription to orchestration events | NATS protocol | Eventually consistent; invoice/subscription status updated async after payment events |
+| Cross-service queries (read-heavy, non-critical path) | **gRPC** (query endpoints) | HTTP/2 + Protobuf | Type-safe, observable, traceable |
 
-### 4.2 NATS JetStream Subject Taxonomy
+### 4.2 gRPC vs NATS Decision Rules
+
+- **RULE-001**: Use **gRPC** when the caller needs a synchronous response within the request's latency budget (checkout path, pre-authorization checks, document OCR requests).
+- **RULE-002**: Use **NATS JetStream** when the interaction is naturally asynchronous, fan-out to multiple consumers, or doesn't require the caller to wait for completion (domain event publishing, notification dispatch, analytics ingestion).
+- **RULE-003**: Never use NATS for the checkout hot path (Create/Authorize/Capture) — the latency of NATS publish-ack is unnecessary overhead when a direct gRPC call is more appropriate.
+- **RULE-004**: Never use gRPC for fan-out event distribution — the publisher would need to know and manage all consumers, defeating the decoupling benefit of event-driven architecture.
+- **RULE-005**: Service-to-service calls from Go services to Rust services (and vice versa) use gRPC with Protobuf — this is the cross-language RPC contract that both Ent ORM (Go) and SeaORM (Rust) services can generate clients for from `.proto` files.
+
+### 4.3 NATS JetStream Subject Taxonomy (Versioned)
 
 Following the naming convention introduced in Part 3 §4:
 
@@ -104,9 +117,21 @@ events.<context>.<aggregate>.<event_name>.v<version>
 
 Examples:
 events.orchestration.payment_intent.payment_authorized.v1
+events.orchestration.payment_intent.payment_captured.v1
+events.orchestration.routing_policy.routing_policy_activated.v1
+events.reconciliation.settlement_batch.settlement_batch_ingested.v1
 events.reconciliation.settlement_batch.settlement_record_matched.v1
 events.dispute.chargeback_case.chargeback_received.v1
+events.invoice.invoice.invoice_paid.v1
+events.subscription.subscription.subscription_renewed.v1
+events.notification.notification.notification_sent.v1
+events.document.document.document_ocr_completed.v1
 ```
+
+- **NATS-VER-001**: Every subject includes a version suffix (`v1`, `v2`, ...) that corresponds to the event's `event_version` field (Part 10 §2.2 GRPC-003). When an event schema changes in a backward-incompatible way, the version is incremented and a new subject is published to — consumers explicitly migrate to the new subject rather than auto-handling the new shape.
+- **NATS-VER-002**: Consumers subscribe to a specific version (e.g., `events.orchestration.payment_intent.payment_authorized.v1`) — not a wildcard — to ensure they receive only the schema they expect. This prevents version mismatch bugs where a consumer receives an event it doesn't understand.
+- **NATS-VER-003**: During a version transition (v1 → v2), the publisher emits to BOTH subjects for a defined deprecation window (default: 30 days). Consumers are migrated during this window. After the window, v1 publishing stops.
+- **NATS-VER-004**: Subject naming uses snake_case for all segments: `events.<context_snake>.<aggregate_snake>.<event_name_snake>.v<N>`. This is consistent across Go and Rust publishers.
 
 - **Streams**: One JetStream stream per bounded context (e.g., `ORCHESTRATION_EVENTS`, `RECONCILIATION_EVENTS`), partitioned by subject wildcard, retained per the policy resolved in OQ-008 (Part 3) — to be finalized numerically in Part 9 alongside storage sizing.
 - **Consumer groups**: Each downstream service creates a durable consumer per stream it subscribes to, with explicit ack after successful projection/side-effect processing, and dead-letter handling (redeliver with backoff, then park in a `*_DLQ` subject after N failed attempts) surfaced to SVC-07... correction: surfaced to an operational alert channel monitored by ACT-07 (Support/Ops Engineer, Part 2).

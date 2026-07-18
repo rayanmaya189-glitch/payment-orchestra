@@ -20,7 +20,8 @@
 | Custody Model | **No payment custody** — software orchestration, routing, and reconciliation only. All funds flow between licensed acquirers, PSPs, and banks; the platform never becomes a holder of client/merchant funds. |
 | Tenancy Model | Single-tenant deployment (one merchant/operator per deployment) |
 | Architecture Style | API-first, Domain-Driven Design, Microservices, Event-Driven (NATS JetStream), CQRS |
-| Core Language/Runtime | Rust (all backend services) |
+| Core Languages | Rust (payment-critical services: orchestration, connectors, AI) + Go (infrastructure services: tenant, IAM, compliance, notifications, analytics) |
+| ORM Layer | SeaORM (Rust services) + Ent ORM (Go services) — no raw SQL in application code |
 | AI Stack | Ollama-hosted Qwen3 32B (reasoning), Qwen3-VL 8B (vision/OCR), BGE-M3 (embeddings) + reranker (RAG) |
 | Related Documents | Part 2 (Use Cases), Part 3 (DDD), Part 4 (Microservices), Part 5 (Orchestration Engine), Part 6 (AI Assistant/RAG), Part 7 (Gateway Connectors), Part 8 (Security/Compliance), Part 9 (Database Design), Part 10 (APIs/gRPC), Part 11 (Testing/DevOps), Part 12 (Appendices/Roadmap) |
 
@@ -326,7 +327,7 @@ Brief personas are introduced here because they justify business requirements; f
 
 ### 10.3 Constraints
 
-- **CONS-001**: All backend services must be implemented in Rust (organizational technology constraint).
+- **CONS-001**: Payment-critical services (orchestration, connector-gateway, AI assistant) must be implemented in Rust for performance and memory safety. Infrastructure services (tenant, IAM, compliance, notifications, analytics, document management) must be implemented in Go for development velocity and ecosystem maturity. No plain SQL in application code — all database access through ORMs (SeaORM for Rust, Ent for Go).
 - **CONS-002**: All domain logic must be developed test-first (TDD) — see Part 11 for standards; this is a process constraint that affects estimation and delivery cadence, recorded here because it is a business decision (quality/maintainability trade-off), not merely a technical preference.
 - **CONS-003**: The platform must not, in its base architecture, require a payment institution license for the platform operator (see §6, §6.4) — all fund movement must route through licensed partners rather than internal pooled accounts.
 - **CONS-004**: Primary data residency is UAE; architecture must not assume a single global region deployment (Part 9/11 will define region-aware deployment topology).

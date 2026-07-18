@@ -19,7 +19,13 @@
 
 ### 0.1 Modeling Approach
 
-This platform is modeled using **strategic DDD** (context mapping, ubiquitous language per context, explicit anti-corruption layers at every external-system boundary) and **tactical DDD** (aggregates, entities, value objects, domain events, repositories) implemented via **event sourcing + CQRS** for money-movement-relevant contexts (Payment Orchestration, Settlement/Reconciliation, Dispute Management) and simpler CRUD-plus-events for lower-risk supporting contexts (Notification, Document Management metadata). This distinction is deliberate and stated explicitly per context below — not every context needs the cost of full event sourcing, and applying it uniformly would be over-engineering exactly the contexts (e.g., Notification templates) where it adds no auditability value.
+This platform is modeled using **strategic DDD** (context mapping, ubiquitous language per context, explicit anti-corruption layers at every external-system boundary) and **tactical DDD** (aggregates, entities, value objects, domain events, repositories) implemented via **event sourcing + CQRS** for money-movement-relevant contexts (Payment Orchestration, Settlement/Reconciliation, Dispute Management) and simpler CRUD-plus-events for lower-risk supporting contexts (Notification, Document Management metadata).
+
+**ORM Layer**: All database access is through ORMs — no raw SQL in application code:
+- **Rust services** (orchestration, connector-gateway, AI assistant, risk): SeaORM entities with derive macros
+- **Go services** (tenant, IAM, compliance, notifications, analytics, document): Ent ORM schemas with generated code
+
+This distinction is deliberate — not every context needs the cost of full event sourcing, and applying it uniformly would be over-engineering exactly the contexts (e.g., Notification templates) where it adds no auditability value.
 
 **Why event sourcing for the core money-movement contexts specifically**: BIZ-040 (Part 1) requires immutable, complete audit trails of every money-movement-relevant event. Event sourcing makes "what happened and in what order" the source of truth by construction, rather than a derived/logged side effect of CRUD updates — which directly satisfies BIZ-040 and SUCC-005 without a separate audit subsystem bolted on afterward.
 
@@ -308,19 +314,56 @@ The SRS describes event-driven cross-service coordination but never explicitly d
 
 **Implementation Rule (SAGA-001)**: Each saga is modeled as a durable state machine persisted in its own Postgres `saga_instances` table, keyed by `saga_id`. Saga state transitions are recorded as events in a dedicated `saga_events` stream, providing audit trails consistent with PRIN-05. No saga relies on in-memory state — crash recovery replays the saga event stream to rebuild current state.
 
-**Saga Instance Schema:**
+**Saga Instance Entity (SeaORM — Rust):**
 
-```sql
-CREATE TABLE saga_instances (
-    saga_id         UUID NOT NULL,
-    saga_type       TEXT NOT NULL,
-    aggregate_id    UUID NOT NULL,       -- the primary aggregate this saga operates on
-    status          TEXT NOT NULL,       -- 'running' | 'completed' | 'compensating' | 'failed'
-    current_step    TEXT NOT NULL,
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
-    PRIMARY KEY (saga_id)
-);
+```rust
+use sea_orm::entity::prelude::*;
+
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
+#[sea_orm(table_name = "saga_instances")]
+pub struct Model {
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub saga_id: Uuid,
+    pub saga_type: String,
+    pub aggregate_id: Uuid,
+    pub status: String,       // 'running' | 'completed' | 'compensating' | 'failed'
+    pub current_step: String,
+    pub created_at: DateTimeWithTimeZone,
+    pub updated_at: DateTimeWithTimeZone,
+}
+
+#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+pub enum Relation {}
+
+impl ActiveModelBehavior for ActiveModel {}
+```
+
+**Saga Instance Entity (Ent — Go):**
+
+```go
+// schema/saga_instance.go
+package schema
+
+import (
+    "entgo.io/ent"
+    "entgo.io/ent/schema/field"
+)
+
+type SagaInstance struct {
+    ent.Schema
+}
+
+func (SagaInstance) Fields() []ent.Field {
+    return []ent.Field{
+        field.UUID("id", uuid.UUID{}).Immutable(),
+        field.String("saga_type"),
+        field.UUID("aggregate_id", uuid.UUID{}),
+        field.Enum("status").Values("running", "completed", "compensating", "failed"),
+        field.String("current_step"),
+        field.Time("created_at").Default(time.Now).Immutable(),
+        field.Time("updated_at").Default(time.Now).UpdateDefault(time.Now),
+    }
+}
 ```
 
 **Design Principle (SAGA-002)**: Sagas never hold custody of funds (consistent with Part 1 §6). A saga's compensation logic for payment flows is always "revert the orchestration state machine" (void, cancel), never "move funds back through a platform-controlled account."
@@ -335,22 +378,29 @@ CREATE TABLE saga_instances (
 
 Event publishing reliability requires the Transactional Outbox pattern to guarantee that domain events are published to NATS JetStream if and only if the corresponding aggregate state change commits to Postgres.
 
-**Event Store Modification**: Every event-sourced context's event append operation writes to both the `event_store` table AND an `outbox` table within the same Postgres transaction:
+**Outbox Entity (SeaORM — Rust):**
 
-```sql
-CREATE TABLE outbox (
-    outbox_id       UUID NOT NULL,
-    aggregate_type  TEXT NOT NULL,
-    aggregate_id    UUID NOT NULL,
-    event_type      TEXT NOT NULL,
-    event_version   SMALLINT NOT NULL,
-    payload         BYTEA NOT NULL,     -- same protobuf-encoded EventEnvelope as event_store
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
-    published_at    TIMESTAMPTZ NULL,   -- set by the relay process after NATS publish confirms
-    PRIMARY KEY (outbox_id)
-);
+```rust
+use sea_orm::entity::prelude::*;
 
-CREATE INDEX outbox_unpublished_idx ON outbox (created_at) WHERE published_at IS NULL;
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
+#[sea_orm(table_name = "outbox")]
+pub struct Model {
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub outbox_id: Uuid,
+    pub aggregate_type: String,
+    pub aggregate_id: Uuid,
+    pub event_type: String,
+    pub event_version: i16,
+    pub payload: Vec<u8>,       // protobuf-encoded EventEnvelope
+    pub created_at: DateTimeWithTimeZone,
+    pub published_at: Option<DateTimeWithTimeZone>,
+}
+
+#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+pub enum Relation {}
+
+impl ActiveModelBehavior for ActiveModel {}
 ```
 
 **Relay Process (OUTBOX-001)**: A dedicated relay process (implemented within each event-sourced service, not a separate microservice for MVP) polls unpublished outbox entries, publishes to NATS JetStream, and marks them published. The relay runs at sub-second polling intervals to minimize propagation lag. On crash recovery, the relay resumes from the last unconfirmed publish — at-least-once delivery is guaranteed; exactly-once effect is achieved at the consumer level per Part 4 §4.2.
@@ -400,10 +450,18 @@ CREATE INDEX outbox_unpublished_idx ON outbox (created_at) WHERE published_at IS
 
 **EVT-ORDER-001**: For use cases requiring cross-aggregate chronological ordering (AI Assistant summary documents, analytics dashboards), a per-tenant global event sequence is assigned by a lightweight `tenant_event_counter` table incremented atomically alongside event store appends:
 
-```sql
-CREATE TABLE tenant_event_counter (
-    next_sequence   BIGINT NOT NULL DEFAULT 0
-);
+**Event Counter Entity (SeaORM — Rust):**
+
+```rust
+use sea_orm::entity::prelude::*;
+
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
+#[sea_orm(table_name = "event_counter")]
+pub struct Model {
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub id: i32,               // always 1 (singleton row)
+    pub next_sequence: i64,
+}
 ```
 
 This counter is NOT used for aggregate consistency (that's `event_sequence`); it's purely a read-model concern for cross-aggregate ordering.
