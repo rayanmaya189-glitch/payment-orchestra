@@ -350,7 +350,7 @@ This Part is the authoritative home for the *security/compliance framing* of con
 - **INPUT-001**: All API inputs are validated against their OpenAPI/gRPC schema at the API Gateway before reaching domain services. Schema validation includes:
   - Type validation (string, integer, enum, etc.)
   - Length/range validation (min/max values, string length limits)
-  - Format validation (email, UUIDv7, ISO 4217 currency code, ISO 8601 timestamp)
+  - Format validation (email, UUIDv7, ISO 4217 currency code, ISO 8601 timestamp with 3-digit millisecond precision: `YYYY-MM-DDTHH:MM:SS.mmmZ`)
   - Required field validation
 
 - **INPUT-002**: Domain-specific validation happens in the command handler (Part 3 PRIN-01) — the API Gateway handles syntactic validation; the domain layer handles semantic validation (e.g., "amount must be positive," "currency must be supported," "acquirer link must be Active").

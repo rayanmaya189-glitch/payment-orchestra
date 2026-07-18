@@ -79,6 +79,7 @@
 | Routing Policy | The operator-configured, versioned rule set determining acquirer selection and failover order. |
 | SeaORM | Rust-native ORM for entity lifecycle management (schema generation, migrations, querying) used by Rust services. |
 | Settlement Batch | An ingested set of settlement records from an acquirer/bank, matched against internal payment records. |
+| Timestamp (3-digit ms) | ISO 8601 format with 3-digit millisecond precision: `YYYY-MM-DDTHH:MM:SS.mmmZ`. Used for all timestamps across the system — domain events, audit logs, API responses, database columns, webhook payloads. Enforced at the type level (Rust `DateTimeWithTimeZone`, Go `time.Time`). |
 | UUIDv7 | Time-ordered UUID (RFC 9562) used as the primary identifier for all aggregates, entities, and domain events. Provides sequential insert performance on B-tree indexes while retaining distributed-generation benefits. |
 
 ---

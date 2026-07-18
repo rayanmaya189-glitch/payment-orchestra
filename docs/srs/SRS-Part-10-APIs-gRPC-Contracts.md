@@ -127,7 +127,7 @@ message EventEnvelope {
   string aggregate_id = 3;
   string event_type = 4;
   uint32 event_version = 5;
-  int64 occurred_at_unix_ms = 6;
+  int64 occurred_at_unix_ms = 6;  // milliseconds since epoch, 3-digit millisecond precision
   string actor_type = 7;
   string actor_id = 8;
   string causation_id = 9;
@@ -162,7 +162,7 @@ message PaymentAuthorizedV1 {
 {
   "event_id": "01HZQ...",
   "event_type": "payment.authorized",
-  "occurred_at": "2026-07-16T10:15:00Z",
+  "occurred_at": "2026-07-16T10:15:00.123Z",
   "data": {
     "payment_intent_id": "01HZP...",
     "amount": { "amount_minor_units": 10000, "currency_code": "AED" },
@@ -210,7 +210,7 @@ message PaymentAuthorizedV1 {
 - **APISEC-003**: All API inputs validated against OpenAPI/gRPC schema at API Gateway before reaching domain services:
   - Type validation (string, integer, enum)
   - Length/range validation (min/max, string length)
-  - Format validation (email, UUIDv7, ISO 4217, ISO 8601)
+  - Format validation (email, UUIDv7, ISO 4217, ISO 8601 with 3-digit millisecond precision: `YYYY-MM-DDTHH:MM:SS.mmmZ`)
   - Required field validation
   - Pattern validation (regex for structured fields like trade license numbers)
 
@@ -268,7 +268,7 @@ message PaymentAuthorizedV1 {
 
 ## 7. Webhook Replay Protection
 
-- **WEBHOOK-REPLAY-001**: Outbound webhook payloads include a `timestamp` field (UTC ISO 8601) and a nonce (`event_id`). Merchants should reject webhooks with timestamps older than a configurable window (default: 5 minutes) to prevent replay attacks.
+- **WEBHOOK-REPLAY-001**: Outbound webhook payloads include a `timestamp` field (UTC ISO 8601 with 3-digit millisecond precision: `YYYY-MM-DDTHH:MM:SS.mmmZ`) and a nonce (`event_id`). Merchants should reject webhooks with timestamps older than a configurable window (default: 5 minutes) to prevent replay attacks.
 - **WEBHOOK-REPLAY-002**: The HMAC-SHA256 signature (WEBHOOK-002) is computed over `timestamp + "." + event_id + "." + body` rather than body alone, binding the signature to a specific time window and event instance.
 - **WEBHOOK-REPLAY-003**: Merchants are documented (SDK/docs) to maintain a set of recently-processed `event_id` values and reject duplicates within a configurable dedup window (default: 24 hours), complementing the platform's own at-least-once delivery semantics.
 

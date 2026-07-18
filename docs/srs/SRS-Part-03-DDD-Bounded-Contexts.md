@@ -191,7 +191,7 @@ EventEnvelope {
   aggregate_id: UUIDv7
   event_type: string
   event_version: u16
-  occurred_at: timestamp (UTC)
+  occurred_at: timestamp with 3-digit millisecond precision (UTC, ISO 8601: YYYY-MM-DDTHH:MM:SS.mmmZ)
   actor: ActorReference (user_id | system_actor_id)
   causation_id: UUIDv7        // the command that caused this event
   correlation_id: UUIDv7      // ties together a full business transaction across contexts
@@ -272,6 +272,7 @@ EventEnvelope {
 - **PRIN-03 (UUIDv7 for all identities)**: Every aggregate, entity, and domain event uses UUIDv7 (RFC 9562) as its primary identifier. UUIDv7 is time-ordered (timestamp-prefixed), providing sequential insert performance on B-tree indexes while retaining the distributed-generation benefits of UUIDs. No UUIDv4, ULID, or other ID formats are used. All ID generation uses the `uuid_v7()` function (Rust: `uuid::Uuid::now_v7()`, Go: `github.com/google/uuid.New()`). This is enforced at the type-system level — aggregate ID types are `Uuid` (Rust) / `uuid.UUID` (Go) with no ID generation in application code outside the designated factory functions.
 - **PRIN-04 (Money is never a float)**: All `Money` value objects use integer minor-unit representation; currency conversion, where it appears at all (BIZ-016), is always an explicit, recorded operation producing a new `Money` value with provenance (rate, source, timestamp), never an implicit cast.
 - **PRIN-05 (Events are the audit log; there is no separate bolt-on audit table for event-sourced contexts)**: For BC-05, BC-09, BC-10, BC-08, the event stream *is* the audit trail (BIZ-040). For non-event-sourced supporting contexts (BC-01, BC-02, BC-13, BC-14), a lighter-weight append-only audit log table captures command execution (actor, timestamp, before/after) without full event sourcing overhead, since replay/rebuild-from-events is not a requirement for those contexts.
+- **PRIN-06 (All timestamps use 3-digit millisecond precision)**: Every timestamp in the system (domain events, audit logs, API responses, database columns, webhook payloads) uses ISO 8601 format with 3-digit millisecond precision (`YYYY-MM-DDTHH:MM:SS.mmmZ`). This is enforced at the type level: Rust `DateTimeWithTimeZone` and Go `time.Time` both store sub-second precision. The millisecond precision is critical for: (1) event ordering within the same second on high-throughput streams, (2) latency measurement accuracy on the checkout path, and (3) forensic audit trail granularity. No timestamp field anywhere in the system truncates to seconds or minutes.
 
 ---
 
