@@ -156,6 +156,46 @@ async fn test_amount_mismatch_record_flagged() {
     let result = matcher.match_record(&settlement_record, &payment_intents).unwrap();
     assert_eq!(result.outcome, SettlementMatchOutcome::AmountMismatch);
 }
+
+#[tokio::test]
+async fn test_inv_07_matched_record_refs_exactly_one_payment_intent() {
+    // Settlement record matches 0 intents → Unmatched
+    // Settlement record matches 2 intents → DuplicateReference
+    // Settlement record matches 1 intent → Matched
+}
+
+#[tokio::test]
+async fn test_inv_10_ledger_balanced() {
+    // Create settlement record → creates debit + credit entries
+    // Verify: SUM(debit) - SUM(credit) = 0 per transaction_id
+}
+
+#[tokio::test]
+async fn test_duplicate_reference_flagged() {
+    // Two PaymentIntents with same acquirer_reference
+    let result = matcher.match_record(&settlement_record, &payment_intents).unwrap();
+    assert_eq!(result.outcome, SettlementMatchOutcome::DuplicateReference);
+}
+```
+
+---
+
+## 3. Repository Interface
+
+```rust
+#[async_trait]
+pub trait SettlementBatchRepository: Send + Sync {
+    async fn load(&self, id: SettlementBatchId) -> Result<Option<SettlementBatch>, PlatformError>;
+    async fn save(&self, aggregate: &SettlementBatch) -> Result<(), PlatformError>;
+    async fn find_by_checksum(&self, checksum: &str) -> Result<Option<SettlementBatch>, PlatformError>;
+}
+
+#[async_trait]
+pub trait LedgerEntryRepository: Send + Sync {
+    async fn append(&self, entry: &LedgerEntry) -> Result<(), PlatformError>;
+    async fn verify_balance(&self, transaction_id: Uuid) -> Result<bool, PlatformError>;
+    async fn find_imbalanced(&self) -> Result<Vec<Uuid>, PlatformError>;
+}
 ```
 
 ---

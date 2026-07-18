@@ -43,10 +43,76 @@ pub struct RateLimitConfig {
 | `/v1/invoices` | 100 | 60s |
 | `/v1/auth/login` | 10 | 60s (per IP) |
 | `/v1/assistant/query` | 30 | 60s (separate quota) |
+| `/v1/operators` | 100 | 60s |
+| `/v1/kyb-cases` | 10 | 60s |
+| `/v1/settlements` | 50 | 60s |
+| `/v1/disputes` | 50 | 60s |
+| `/v1/subscriptions` | 50 | 60s |
+| `/v1/risk/assess` | 100 | 60s |
+| `/v1/documents` | 20 | 60s |
+| `/v1/analytics/*` | 100 | 60s |
+| `/v1/webhooks` | 10 | 60s |
+
+**Concurrent Request Limiting** (RL-CONC-001):
+
+```rust
+// Redis-backed per API key: max 100 concurrent in-flight requests
+// TTL safety net: 30s auto-decrement for crashed connections
+```
 
 ---
 
-## 4. Security Headers
+## 4. CORS Policy (CORS-001)
+
+```rust
+pub fn cors_middleware(allowed_origins: &[String]) -> CorsLayer {
+    CorsLayer::new()
+        .allow_origin(AllowedOrigins::list(allowed_origins)) // exact match only
+        .allow_methods([GET, POST, PUT, PATCH, DELETE, OPTIONS])
+        .allow_headers([CONTENT_TYPE, AUTHORIZATION, X_API_KEY, X_IDEMPOTENCY_KEY, X_REQUEST_ID, X_CSRF_TOKEN])
+        .allow_credentials(true)
+        .max_age(Duration::from_secs(3600))
+}
+```
+
+---
+
+## 5. Request Size & Timeout Limits (APISEC-001/002)
+
+```rust
+pub struct RequestLimits {
+    pub max_standard_body: usize,      // 1MB
+    pub max_document_upload: usize,    // 10MB
+    pub max_payment_creation: usize,   // 100KB
+    pub general_timeout: Duration,     // 30s
+    pub checkout_timeout: Duration,    // 10s
+}
+```
+
+---
+
+## 6. Input Validation (APISEC-003)
+
+All API inputs validated against OpenAPI/gRPC schema at API Gateway before reaching domain services:
+- Type validation (string, integer, enum)
+- Length/range validation (min/max, string length)
+- Format validation (UUIDv7, ISO 4217, ISO 8601 with 3-digit ms)
+- Required field validation
+
+---
+
+## 7. Request Correlation (REQ-003)
+
+Every inbound request generates UUIDv7 `request_id`. Propagated in:
+- gRPC metadata: `x-request-id`
+- HTTP header: `X-Request-ID`
+- Log context
+- Distributed trace
+- Error responses
+
+---
+
+## 8. Security Headers (HDR-001)
 
 ```
 Strict-Transport-Security: max-age=31536000; includeSubDomains; preload

@@ -251,10 +251,78 @@ async fn test_revoke_api_key() {
 
 - **AUTH-007**: 5 failed → 15min lockout; 10 → 1hr; 20 → suspension
 - **AUTH-008**: Session timeout: 30min (Admin/Finance), 60min (Developer/ReadOnly)
+- **AUTH-011**: WebAuthn minimum for Admin/Finance (not just TOTP)
+- **AUTH-012**: WebAuthn attestation verification on enrollment
+- **AUTH-013**: Session token includes hash of credential_id
+- **AUTH-014**: 10 backup codes generated at MFA enrollment (argon2id hashed)
+- **AUTH-015**: Login notification on new device/IP
+- **AUTH-016**: All sessions invalidated on password change
 - **AUTH-017**: JWT: RS256 or ES256 only; reject `none`/`HS256`
 - **AUTH-018**: Backup code: 5 failed/15min → lockout
 - **AUTH-019**: Reject credentials in URL query strings
 - **SESS-SEC-001**: Cookies: SameSite=Strict; Secure; HttpOnly
 - **SESS-SEC-002**: JWT `aud` claim binding to client type
 - **SESS-SEC-003**: Refresh token rotation with concurrent session detection
+- **SESS-SEC-004**: Admin session revocation endpoint
 - **CSRF-001**: CSRF token on state-changing endpoints with cookie auth
+- **ABAC-002**: Step-up re-auth for sensitive actions (acquirer credential changes)
+- **ABAC-009**: IP allowlisting for sensitive operations (KEK ceremonies, DB access)
+- **AUTHZ-001**: PermissionDenied events logged + alerting on repeated denials
+- **PAM-004**: Break-glass support access (support-reader role, 2hr auto-expiry)
+
+### Missing Commands (Added per Gap Analysis)
+
+```rust
+pub struct InvalidateAllSessionsCommand {
+    pub principal_id: Uuid, // triggered on password change (AUTH-016)
+}
+
+pub struct SendLoginNotificationCommand {
+    pub principal_id: Uuid,
+    pub ip_address: IpAddr,
+    pub user_agent: String,
+    pub is_new_device: bool, // AUTH-015
+}
+
+pub struct RevokeAllSessionsCommand {
+    pub operator_id: Uuid, // Admin session revocation (SESS-SEC-004)
+}
+```
+
+### Missing TDD Tests
+
+```rust
+#[tokio::test]
+async fn test_maker_checker_self_approval_rejected() {
+    let result = handler.handle(ApprovePendingChangeCommand {
+        change_id,
+        checker_id: maker_id, // same as maker
+    }).await;
+    assert!(matches!(result, Err(PlatformError::AuthorizationDenied(_))));
+}
+
+#[tokio::test]
+async fn test_pending_change_auto_expires() {
+    // Create pending change, advance time past timeout
+    // Verify status transitions to 'expired'
+}
+
+#[tokio::test]
+async fn test_permission_denied_event_published() {
+    // Attempt unauthorized operation
+    // Verify PermissionDenied event emitted
+}
+
+#[tokio::test]
+async fn test_all_sessions_invalidated_on_password_change() {
+    // Create 3 sessions for same principal
+    // Change password
+    // Verify all 3 sessions are invalid
+}
+
+#[tokio::test]
+async fn test_webauthn_mfa_enforced_for_admin() {
+    // Admin without WebAuthn → cannot authenticate
+    // Admin with TOTP only → step-up required
+}
+```

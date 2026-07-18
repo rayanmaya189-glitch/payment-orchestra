@@ -491,9 +491,104 @@ pub struct ActivateRoutingPolicyCommand {
 
 **Produces**: `RoutingPolicyActivated` (EVT-11), previous policy's `RoutingPolicyDeactivated` (EVT-12)
 
+**TDD Tests**:
+
+```rust
+#[tokio::test]
+async fn test_activate_routing_policy_success() {
+    let result = handler.handle(ActivateRoutingPolicyCommand {
+        rules: vec![RoutingRule { acquirer_link_id, priority: 1, condition: RoutingCondition::all() }],
+        failover_config: FailoverConfig::default(),
+        partial_auth_policy: PartialAuthorizationPolicy { strategy: PartialAuthStrategy::RetryNextAcquirer },
+        max_transaction_amount: None,
+    }).await.unwrap();
+    assert_eq!(result.status, "active");
+    assert_eq!(result.version, 1);
+}
+
+#[tokio::test]
+async fn test_activate_routing_policy_immutability() {
+    // Policy v1 activated
+    let v1 = handler.handle(ActivateRoutingPolicyCommand { ... }).await.unwrap();
+    // Try to modify v1 → rejected (INV-05)
+    // Create v2 instead
+    let v2 = handler.handle(ActivateRoutingPolicyCommand { ... }).await.unwrap();
+    assert_eq!(v2.version, 2);
+}
+
+#[tokio::test]
+async fn test_activate_routing_policy_validates_acquirer_links() {
+    // Rule references a disabled acquirer link
+    let result = handler.handle(ActivateRoutingPolicyCommand {
+        rules: vec![RoutingRule { acquirer_link_id: disabled_link_id, ... }],
+        ...
+    }).await;
+    assert!(result.is_err());
+}
+
+#[tokio::test]
+async fn test_activate_routing_policy_maker_checker_required() {
+    // Without Maker/Checker approval → rejected
+}
+```
+
+### Missing Invariant Tests (Added per Gap Analysis)
+
+```rust
+#[tokio::test]
+async fn test_inv_01a_partial_captures_sum_never_exceeds_authorized() {
+    // Authorized: 10000
+    // Capture 3000 → OK
+    // Capture 4000 → OK (total 7000)
+    // Capture 4000 → REJECTED (total would be 11000 > 10000)
+}
+
+#[tokio::test]
+async fn test_inv_01b_full_capture_required_when_partial_not_supported() {
+    // Connector with supports_partial_capture = false
+    // Capture 5000 of 10000 → REJECTED with PARTIAL_CAPTURE_NOT_SUPPORTED
+}
+
+#[tokio::test]
+async fn test_inv_01c_max_partial_catches_per_connector() {
+    // Connector with max_partial_captures = 3
+    // Capture 3 times → OK
+    // Capture 4th time → REJECTED with MAX_PARTIAL_CAPTURES_EXCEEDED
+}
+
+#[tokio::test]
+async fn test_inv_05_routing_policy_immutable_once_activated() {
+    // Activate policy v1
+    // Attempt to modify rules on v1 → rejected
+    // Must create v2
+}
+
+#[tokio::test]
+async fn test_inv_07_settlement_match_refs_exactly_one_payment_intent() {
+    // Settlement record matches 0 intents → Unmatched
+    // Settlement record matches 2 intents → DuplicateReference
+    // Settlement record matches 1 intent → Matched
+}
+```
+
 ---
 
-## 3. Domain Events
+## 3. Domain Events — Consumer Mapping (Complete)
+
+| Event | Consumer 1 | Consumer 2 | Consumer 3 | Consumer 4 |
+|---|---|---|---|---|
+| `PaymentIntentCreated` | reconciliation-service | analytics-service | ai-assistant-service | — |
+| `PaymentAuthorizationAttempted` | analytics-service | ai-assistant-service | risk-service | — |
+| `PaymentAuthorized` | invoice-service | subscription-service | reconciliation-service | notification-service |
+| `PaymentCaptured` | invoice-service | subscription-service | reconciliation-service | analytics-service |
+| `PaymentPartiallyCaptured` | reconciliation-service | analytics-service | — | — |
+| `PaymentFailed` | analytics-service | ai-assistant-service | risk-service | notification-service |
+| `PaymentFailedAllRoutes` | notification-service | ai-assistant-service | risk-service | — |
+| `PaymentVoided` | invoice-service | reconciliation-service | — | — |
+| `PaymentRefunded` | invoice-service | reconciliation-service | notification-service | — |
+| `PaymentPartiallyRefunded` | reconciliation-service | notification-service | — | — |
+| `RoutingPolicyActivated` | analytics-service | ai-assistant-service | — | — |
+| `RoutingPolicyDeactivated` | analytics-service | — | — | — |
 
 | Event | Fields | Published To |
 |---|---|---|

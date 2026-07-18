@@ -197,7 +197,27 @@
 | OQ-099 (Part 1 §13.3) | Map card scheme operating regulations (Visa Core Rules, Mastercard Standards) for MVP | Compliance | M7 compliance hardening |
 | OQ-100 (Part 8 §17.25) | Finalize data portability export format and retention for exported archives | Product/Legal | M7 compliance hardening |
 
-**Program management note**: Items with a Legal owner (ASSUMP-001/OQ-001, OQ-018, OQ-019, OQ-098) are the highest-priority blockers for GA. Items from the gap analysis (OQ-029 through OQ-100) represent engineering decisions that should be resolved during M1–M2 to avoid blocking later milestones. Priority recommendation: resolve OQ-089 (PCI token scope), OQ-090 (network zones), OQ-092 (HSM DR), OQ-093 (deployment safety), and OQ-095 (error codes) before M2 implementation begins.
+### New Open Questions from SRS ↔ Backend Gap Analysis (OQ-101 through OQ-115)
+
+| ID | Description | Owner | Blocks |
+|---|---|---|---|
+| OQ-101 | Finalize envelope encryption DEK/KEK implementation: which KMS (Vault vs cloud-native), DEK caching strategy, AAD binding | Security/Infra | M1 foundation |
+| OQ-102 | Finalize outbox relay polling interval vs CDC (Debezium) trade-off for production event volume | Engineering | M2 first connector |
+| OQ-103 | Confirm health check endpoint authentication: internal-only vs unauthenticated for K8s probes | Security/Infra | M1 foundation |
+| OQ-104 | Finalize graceful shutdown drain timeout values per service against real traffic patterns | Engineering | M1 foundation |
+| OQ-105 | Confirm feature flag store choice: Redis-backed custom vs off-the-shelf (LaunchDarkly, Unleash) | Engineering/Infra | M7 compliance hardening |
+| OQ-106 | Finalize structured log schema: which fields mandatory vs optional, log retention per service | Engineering/Security | M1 foundation |
+| OQ-107 | Confirm connection pool sizing per service against pilot merchant traffic projections | Engineering | M8 pilot GA |
+| OQ-108 | Finalize degraded mode behavior thresholds: Redis lag tolerance, NATS outage duration, ClickHouse staleness limit | SRE/Engineering | M7 compliance hardening |
+| OQ-109 | Confirm SSRF deny-list completeness: all RFC 1918/3927/4193 ranges, IPv6-mapped addresses | Security | M2 first connector |
+| OQ-110 | Finalize API key lifecycle: auto-expiry enforcement, notification timing, grace period | Product/Security | M7 compliance hardening |
+| OQ-111 | Confirm cursor pagination encryption key management: per-deployment vs per-tenant | Security | M5 products layer |
+| OQ-112 | Finalize webhook delivery backpressure: adaptive throttling algorithm, priority queue implementation | Engineering | M5 products layer |
+| OQ-113 | Confirm AML transaction monitoring rule set: specific rules, thresholds, detection logic | Compliance/Legal | M7 compliance hardening |
+| OQ-114 | Finalize property-based test coverage targets: which invariants, how many generated cases | Engineering | M2 first connector |
+| OQ-115 | Confirm gRPC .proto file generation pipeline: prost-build vs tonic-build, shared type packaging | Engineering | M1 foundation |
+
+**Program management note**: Items with a Legal owner (ASSUMP-001/OQ-001, OQ-018, OQ-019, OQ-098, OQ-113) are the highest-priority blockers for GA. Items from the gap analysis (OQ-029 through OQ-115) represent engineering decisions that should be resolved during M1–M2 to avoid blocking later milestones. Priority recommendation: resolve OQ-101 (envelope encryption), OQ-102 (outbox relay), OQ-103 (health checks), OQ-106 (log schema), and OQ-115 (proto generation) before M1 implementation begins — these are foundational patterns that affect every service.
 
 ---
 
@@ -242,7 +262,8 @@
 - The gap analysis additions (Parts 3–11, new sections on sagas, outbox, circuit breakers, threat modeling, load testing, chaos engineering, etc.) address critical design patterns and cross-cutting concerns that were identified during the initial SRS review. These additions strengthen the specification's readiness for implementation without changing the fundamental architecture.
 - A comprehensive gap analysis was performed against the complete 12-part SRS across four dimensions: (1) production bank-grade security, (2) missing design patterns, (3) OWASP Top 10 (2021) compliance, and (4) cross-cutting architectural completeness. The findings are integrated into the respective Parts as "Gap Analysis Additions" sections. Key themes: infrastructure component security (NATS, Redis, OpenSearch, ClickHouse, MinIO encryption/auth), saga compensation completeness, double-entry ledger for reconciliation, payment token lifecycle, phishing-resistant MFA, audit tamper-evidence, and AI safety (bias detection, hallucination detection, real-time quality monitoring). New open questions OQ-064 through OQ-085 track the remaining decisions.
 - A **second-pass gap analysis** was performed with single-tenant deployment confirmed, finding ~111 additional findings across security, design patterns, OWASP, and cross-cutting concerns. Key themes: PCI-DSS token classification (acquirer tokens = cardholder data), event signature verification for NATS JetStream, card testing abuse prevention via platform failover, deployment-time payment state corruption prevention, exhaustive invalid state transition table, gRPC actor-context spoofing prevention, network segmentation zones for PCI CDE, and infrastructure degraded-mode behaviors (Redis/NATS/ClickHouse/OpenSearch/MinIO). New open questions OQ-086 through OQ-100 track remaining decisions.
-- Recommended next step: convene STK-007 (Product), STK-008 (Engineering), STK-010 (Compliance), and STK-014 (Legal) to walk the §4 consolidated open-questions register and assign near-term resolution deadlines before M1 (§5.1) engineering work begins in earnest. Priority focus areas: OQ-089 (PCI token scope with QSA), OQ-090 (network segmentation zones), OQ-092 (HSM DR), OQ-093 (deployment safety), OQ-095 (error codes), and OQ-097 (availability SLO).
+- A **SRS-to-backend gap analysis** was performed comparing all 12 SRS parts against all 20 backend development files. The backend docs cover core domain logic well (payment orchestration 90%+ complete) but systematically lack cross-cutting security infrastructure, operational hardening, and testing depth. Key gaps: envelope encryption absent, no CDE segmentation, no AML monitoring, no audit tamper-evidence, no supply chain security, no health checks/graceful shutdown, no property-based testing, no degraded mode behaviors, no repository interfaces for 12 of 14 aggregates, no gRPC .proto files for any service, no error catalogs for 17 of 18 services. A new file `docs/backend/19-infrastructure-cross-cutting.md` was created covering outbox, health checks, graceful shutdown, leader election, feature flags, structured logging, connection pools, degraded modes, envelope encryption, SSRF prevention, audit tamper-evidence, card testing abuse prevention, WebAuthn, data retention, CORS, request limits, input validation, cursor pagination security, webhook versioning, API staleness disclosure, and SFTP security. New open questions OQ-101 through OQ-115 track remaining infrastructure decisions.
+- Recommended next step: convene STK-007 (Product), STK-008 (Engineering), STK-010 (Compliance), and STK-014 (Legal) to walk the §4 consolidated open-questions register and assign near-term resolution deadlines before M1 (§5.1) engineering work begins in earnest. Priority focus areas: OQ-101 (envelope encryption), OQ-102 (outbox relay), OQ-103 (health checks), OQ-106 (log schema), OQ-115 (proto generation), OQ-089 (PCI token scope), OQ-092 (HSM DR), and OQ-113 (AML rules).
 
 ---
 

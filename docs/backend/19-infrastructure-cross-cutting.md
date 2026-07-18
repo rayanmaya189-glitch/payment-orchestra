@@ -1,0 +1,781 @@
+# 19 — Infrastructure & Cross-Cutting Concerns
+
+Missing from all service-specific backend docs. Covers: outbox, health checks, graceful shutdown, leader election, feature flags, logging, connection pools, degraded modes, secrets, encryption, audit, SSRF, and operational hardening.
+
+---
+
+## 1. Transactional Outbox Pattern (Part 3 §9.2)
+
+Every event-sourced service writes events to the `outbox` table in the SAME Postgres transaction as the aggregate state change.
+
+**Outbox Entity (SeaORM)**:
+
+```rust
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
+#[sea_orm(table_name = "outbox")]
+pub struct Model {
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub outbox_id: Uuid,
+    pub aggregate_type: String,
+    pub aggregate_id: Uuid,
+    pub event_type: String,
+    pub event_version: i16,
+    pub payload: Vec<u8>,
+    pub created_at: DateTimeWithTimeZone,
+    pub published_at: Option<DateTimeWithTimeZone>,
+}
+```
+
+**Relay Process**: Dedicated relay polls unpublished entries, publishes to NATS, marks published. Crash recovery resumes from last unconfirmed publish.
+
+**OUTBOX-001**: Events are published to NATS if and only if the corresponding aggregate state change commits to Postgres. No silent event loss.
+
+---
+
+## 2. Health Check Endpoints (Part 4 §6.3)
+
+Every service exposes on port 8081:
+
+```rust
+// GET /healthz — Liveness (HTTP 200 if process alive)
+// GET /readyz — Readiness (HTTP 200 if can accept traffic)
+//   Checks: Postgres ping, Redis PING, event store writable
+// GET /startupz — Startup (HTTP 200 after initialization complete)
+//   AI services: 120s timeout. Others: 10s.
+// GET /healthz/deep — Deep health (authenticated or internal-only)
+//   Returns: all subsystem health, latency, error states
+```
+
+**HEALTH-005**: Health endpoints never expose sensitive info (no IPs, connection strings, version details).
+
+---
+
+## 3. Graceful Shutdown (Part 4 §6.2)
+
+Every service implements on SIGTERM:
+
+```
+1. Stop accepting new requests (deregister from service mesh)
+2. Complete in-flight requests (drain timeout: 15s checkout-critical, 60s others)
+3. Flush outbox entries
+4. Release leader election locks
+5. Close database connections
+6. Exit with code 0
+```
+
+**SHUTDOWN-003**: K8s pod lifecycle hooks (`preStop` + `terminationGracePeriodSeconds`) match service drain timeout.
+
+---
+
+## 4. Leader Election (Part 4 §6.1)
+
+Redis SETNX-based distributed locks with TTL:
+
+```rust
+pub struct LeaderElection {
+    redis: RedisPool,
+    job_type: String,
+    ttl: Duration, // default: 30s (checkout), 60s (settlement poll)
+}
+
+impl LeaderElection {
+    pub async fn try_acquire(&self) -> Result<bool, PlatformError> {
+        let key = format!("leader:{}", self.job_type);
+        let result = self.redis.set_nx(&key, "1").expire(self.ttl).await?;
+        Ok(result)
+    }
+
+    pub async fn release(&self) -> Result<(), PlatformError> {
+        let key = format!("leader:{}", self.job_type);
+        self.redis.del(&key).await?;
+        Ok(())
+    }
+}
+```
+
+**LEADER-001**: Each job type elects exactly one leader. Leader dies → TTL expires → another replica acquires within one TTL cycle.
+
+---
+
+## 5. Feature Flag Management (Part 4 §10.2)
+
+```rust
+pub struct FeatureFlag {
+    pub flag_key: String,
+    pub enabled: bool,
+    pub targeting: FlagTargeting,
+    pub kill_switch: bool,
+}
+
+pub enum FlagTargeting {
+    Global(bool),
+    Percentage(f64),
+    Segment(String),
+}
+```
+
+Flag changes are domain events (`FeatureFlagChanged`) consumed by all services. Kill-switch flags propagate via Redis pub/sub for sub-second effect. All flag changes follow Maker/Checker pattern.
+
+---
+
+## 6. Structured Log Schema (Part 4 §10.3)
+
+Every service emits:
+
+```json
+{
+  "timestamp": "2026-07-18T10:15:00.123Z",
+  "level": "INFO|WARN|ERROR|DEBUG",
+  "service": "orchestration-service",
+  "correlation_id": "01HZ...",
+  "causation_id": "01HZ...",
+  "actor_id": "01HZ...",
+  "actor_type": "user|api_key|system",
+  "event_type": "PaymentAuthorized",
+  "message": "...",
+  "metadata": { ... }
+}
+```
+
+**LOG-SCHEMA-002**: Enforced via shared `platform-logging` crate. No runtime regex — compile-time typed fields.
+
+**LOG-SCHEMA-003**: Sensitive fields (credentials, PAN, tokens) excluded. Log-scrubbing layer strips accidentally included data.
+
+---
+
+## 7. Connection Pool Management (Part 9 §9.1)
+
+```rust
+pub struct PoolConfig {
+    pub max_connections: u32,      // default: 20 (event-sourced), 10 (supporting)
+    pub connection_timeout: Duration, // 5s
+    pub idle_timeout: Duration,    // 300s
+    pub max_lifetime: Duration,    // 1800s
+}
+
+// Sizing formula: pool_size = (cpu_cores * 2) + disk_spindles
+// Event-sourced services: 20 connections (higher write throughput)
+// Supporting services: 10 connections
+```
+
+**POOL-003**: When `cl_waiting` > 0 for >5s → alert. When >10 → service degraded.
+
+---
+
+## 8. Infrastructure Degraded Modes (Part 11 §14.1)
+
+### Redis Down
+
+**REDIS-DEGRADED-001**: Local in-memory rate limiter (2× normal limit). Idempotency bypasses Redis → direct event store. Permission cache falls back to Postgres. Alert: `RedisDegradedMode`.
+
+### NATS Down
+
+**NATS-DEGRADED-001**: Outbox relay continues appending to outbox table (events durably stored). Critical alert raised. Outbox table max size: 1M rows; overflow → archive to MinIO.
+
+### ClickHouse Down
+
+**CLICKHOUSE-DEGRADED-001**: Dashboard endpoints return last-cached results with `X-Data-Stale: true` header. Staleness >1hr → HTTP 503 with `Retry-After: 60`.
+
+### OpenSearch Down
+
+**OPENSEARCH-DEGRADED-001**: AI Assistant degrades to structured-only mode. Direct Postgres lookups work; semantic search returns "retrieval temporarily unavailable."
+
+### MinIO Down
+
+**MINIO-DEGRADED-001**: Settlement file ingestion queues in local staging dir (max 1GB on pod volume). Files moved to MinIO on recovery.
+
+---
+
+## 9. Envelope Encryption (Part 8 §3)
+
+```rust
+pub struct KmsClient {
+    kek_id: String,
+    dek_cache: HashMap<String, Vec<u8>>,
+}
+
+impl KmsClient {
+    /// Encrypt: generate DEK, encrypt data with DEK, wrap DEK with KEK
+    pub async fn encrypt(&self, data: &[u8], context: &EncryptionContext) -> Result<EncryptedData, PlatformError> {
+        let dek = Aes256Gcm::generate_key(&mut OsRng);
+        let ciphertext = encrypt_data(&dek, data, &context.aad())?;
+        let wrapped_dek = self.wrap_dek(&dek).await?;
+        Ok(EncryptedData { ciphertext, wrapped_dek, key_version: self.kek_version })
+    }
+
+    /// Decrypt: unwrap DEK with KEK, decrypt data with DEK
+    pub async fn decrypt(&self, encrypted: &EncryptedData, context: &EncryptionContext) -> Result<Vec<u8>, PlatformError> {
+        let dek = self.unwrap_dek(&encrypted.wrapped_dek).await?;
+        decrypt_data(&dek, &encrypted.ciphertext, &context.aad())
+    }
+}
+
+pub struct EncryptionContext {
+    pub operator_id: Uuid,
+    pub resource_id: Uuid,
+}
+
+impl EncryptionContext {
+    pub fn aad(&self) -> Vec<u8> {
+        // AAD binds ciphertext to specific context (ENC-012)
+        format!("{}:{}", self.operator_id, self.resource_id).into_bytes()
+    }
+}
+```
+
+---
+
+## 10. SSRF Prevention (Part 8 §7.4)
+
+```rust
+pub fn validate_outbound_url(url: &Url) -> Result<(), SsrfError> {
+    // 1. Scheme must be HTTPS
+    if url.scheme() != "https" {
+        return Err(SsrfError::NonHttpsScheme);
+    }
+
+    // 2. Resolve DNS
+    let ips = resolve_dns(url.host_str().ok_or(SsrfError::NoHost)?)?;
+
+    // 3. Check resolved IPs against deny-list
+    for ip in &ips {
+        if is_private_or_reserved(ip) {
+            return Err(SsrfError::PrivateIpDetected { ip: *ip });
+        }
+    }
+
+    // 4. No redirect following without re-validation
+    Ok(())
+}
+
+fn is_private_or_reserved(ip: &IpAddr) -> bool {
+    match ip {
+        IpAddr::V4(v4) => v4.is_loopback() || v4.is_private() || v4.is_link_local(),
+        IpAddr::V6(v6) => v6.is_loopback() || v6.is_unique_local() || v6.is_unicast_link_local(),
+    }
+}
+```
+
+---
+
+## 11. Audit Log Tamper-Evidence (Part 8 §16.4)
+
+```rust
+pub struct AuditEntry {
+    pub id: Uuid,
+    pub previous_entry_hash: Option<Vec<u8>>,  // SHA-256 of previous entry
+    pub entry_hash: Vec<u8>,                    // SHA-256 of this entry + previous_hash
+    // ... other fields
+}
+
+impl AuditEntry {
+    pub fn compute_hash(&self) -> Vec<u8> {
+        let mut hasher = Sha256::new();
+        hasher.update(self.previous_entry_hash.as_deref().unwrap_or(&[]));
+        hasher.update(self.action.as_bytes());
+        hasher.update(self.actor_id.as_bytes());
+        hasher.update(self.occurred_at.to_rfc3339().as_bytes());
+        hasher.finalize().to_vec()
+    }
+}
+```
+
+**AUD-005**: Daily verification job walks chain, alerts on breaks.
+
+---
+
+## 12. Card Testing Abuse Prevention (Part 8 §17.5)
+
+```rust
+pub struct AbuseDetector {
+    redis: RedisPool,
+}
+
+impl AbuseDetector {
+    /// Operator-level velocity: max 100 auth attempts per 15min window
+    pub async fn check_operator_velocity(&self, operator_id: Uuid) -> Result<(), AbuseError> {
+        let key = format!("abuse:auth_velocity:{}", operator_id);
+        let count = self.redis.incr(&key).await?;
+        self.redis.expire(&key, Duration::from_secs(900)).await?;
+        if count > 100 {
+            return Err(AbuseError::OperatorVelocityExceeded);
+        }
+        Ok(())
+    }
+
+    /// Zero-amount auth rate limit: max 10 per card BIN per hour
+    pub async fn check_zero_auth_rate(&self, bin: &str) -> Result<(), AbuseError> {
+        let key = format!("abuse:zero_auth:{}", bin);
+        let count = self.redis.incr(&key).await?;
+        self.redis.expire(&key, Duration::from_secs(3600)).await?;
+        if count > 10 {
+            return Err(AbuseError::ZeroAuthRateExceeded);
+        }
+        Ok(())
+    }
+
+    /// Cross-IP detection: same payment method token from >3 IPs in 5min
+    pub async fn check_cross_ip(&self, token_id: Uuid, ip: IpAddr) -> Result<(), AbuseError> {
+        let key = format!("abuse:cross_ip:{}", token_id);
+        self.redis.sadd(&key, ip.to_string()).await?;
+        self.redis.expire(&key, Duration::from_secs(300)).await?;
+        let count = self.redis.scard(&key).await?;
+        if count > 3 {
+            return Err(AbuseError::CrossIpDetected);
+        }
+        Ok(())
+    }
+}
+```
+
+---
+
+## 13. WebAuthn MFA (Part 8 §16.2)
+
+```rust
+pub struct WebAuthnEnrollment {
+    pub credential_id: Vec<u8>,
+    pub public_key: Vec<u8>,
+    pub attestation_object: Vec<u8>,
+    pub sign_count: u32,
+}
+
+pub struct BackupCode {
+    pub code_hash: Vec<u8>, // argon2id hash
+    pub used: bool,
+    pub used_at: Option<DateTimeWithTimeZone>,
+}
+
+// AUTH-011: WebAuthn minimum for Admin/Finance roles
+// AUTH-012: Attestation verification on enrollment
+// AUTH-013: Session token includes hash of credential_id
+// AUTH-014: 10 backup codes generated at enrollment
+// AUTH-015: Login notification on new device/IP
+// AUTH-016: All sessions invalidated on password change
+```
+
+---
+
+## 14. Data Retention Automation (Part 8 §14 / BIZ-051)
+
+```rust
+pub struct DataRetentionEnforcer {
+    db: DatabaseConnection,
+}
+
+impl DataRetentionEnforcer {
+    pub async fn enforce(&self, policy: &RetentionPolicy) -> Result<RetentionResult, PlatformError> {
+        let terminal_aggregates = self.find_terminal_aggregates(policy).await?;
+
+        for aggregate in terminal_aggregates {
+            // Move event stream to archive
+            self.archive_events(aggregate.id, &policy.archive_table).await?;
+
+            // Log archival action
+            self.log_retention_action(RetentionAuditEntry {
+                aggregate_id: aggregate.id,
+                events_archived: aggregate.event_count,
+                retention_policy: policy.name.clone(),
+                archived_at: Utc::now(),
+                legal_floor_respected: true,
+            }).await?;
+        }
+
+        Ok(RetentionResult { archived: terminal_aggregates.len() })
+    }
+}
+```
+
+---
+
+## 15. Scheduled Jobs Registry
+
+| Job | Service | Schedule | Leader Election |
+|---|---|---|---|
+| JOB-001: Subscription renewal | subscription-service | Per billing cycle | Yes |
+| JOB-002: Dunning retry | subscription-service | Configurable | Yes |
+| JOB-003: Settlement polling | reconciliation-service | Per connector config | Yes |
+| JOB-004: Invoice overdue | invoice-service | Daily | Yes |
+| JOB-005: AI re-embedding | ai-assistant-service | Hourly | Yes |
+| JOB-006: Exception aging alerts | reconciliation-service | Daily | Yes |
+| JOB-007: Auth expiry sweep | orchestration-service | Every 5 min | Yes |
+| JOB-008: Stuck Authorizing | orchestration-service | Every 1 min | Yes |
+| JOB-009: Data retention | per-service | Daily | Yes |
+| JOB-010: Outbox relay health | per-service | Every 30s | No (all replicas) |
+| JOB-011: Renewal idempotency | subscription-service | Per renewal | Yes |
+| JOB-012: Stuck Capturing/Refunding | orchestration-service | Every 1 min | Yes |
+| LEDGER-VERIFY-001: Ledger balance | reconciliation-service | Daily | Yes |
+| CONSIST-001: Cross-service consistency | reconciliation-service | Daily | Yes |
+| AUD-005: Audit hash chain verify | iam-service | Daily | Yes |
+
+---
+
+## 16. API Key Lifecycle Automation (Part 8 §16.14)
+
+```rust
+pub struct ApiKeyLifecycleManager {
+    notification_service: NotificationClient,
+}
+
+impl ApiKeyLifecycleManager {
+    pub async fn check_and_notify(&self) -> Result<(), PlatformError> {
+        let expiring_keys = self.find_keys_expiring_within(30).await?;
+        for key in expiring_keys {
+            self.notification_service.send(ApiKeyExpiringNotification {
+                principal_id: key.principal_id,
+                key_name: key.name,
+                days_until_expiry: key.days_until_expiry(),
+            }).await?;
+        }
+
+        let expired_keys = self.find_expired_keys().await?;
+        for key in expired_keys {
+            self.revoke_key(key.id, "auto-expired").await?;
+        }
+
+        Ok(())
+    }
+}
+```
+
+---
+
+## 17. CORS Policy (Part 8 §12.3)
+
+```rust
+pub fn cors_middleware(allowed_origins: &[String]) -> CorsLayer {
+    CorsLayer::new()
+        .allow_origin(AllowedOrigins::list(allowed_origins)) // exact match only
+        .allow_methods([GET, POST, PUT, PATCH, DELETE, OPTIONS])
+        .allow_headers([CONTENT_TYPE, AUTHORIZATION, X_API_KEY, X_IDEMPOTENCY_KEY, X_REQUEST_ID, X_CSRF_TOKEN])
+        .allow_credentials(true)
+        .max_age(Duration::from_secs(3600)) // 1 hour (not 24h for auth endpoints)
+}
+```
+
+---
+
+## 18. Request Size & Timeout Limits (Part 10 §6)
+
+```rust
+pub struct RequestLimits {
+    pub max_standard_body: usize,      // 1MB
+    pub max_document_upload: usize,    // 10MB
+    pub max_payment_creation: usize,   // 100KB
+    pub general_timeout: Duration,     // 30s
+    pub checkout_timeout: Duration,    // 10s
+    pub acquirer_authorize_timeout: Duration, // 15s
+    pub acquirer_settlement_timeout: Duration, // 30s
+}
+```
+
+---
+
+## 19. Input Validation (Part 10 §6.2)
+
+```rust
+pub fn validate_api_input<T: DeserializeOwned>(body: &str) -> Result<T, ValidationError> {
+    let value: T = serde_json::from_str(body)?;
+
+    // Type validation (implicit via serde)
+    // Length/range validation (via #[serde(deserialize_with)] or custom validators)
+    // Format validation (UUIDv7, ISO 4217, ISO 8601 with 3-digit ms)
+    // Required field validation (via #[serde(default)] + custom checks)
+
+    Ok(value)
+}
+```
+
+---
+
+## 20. Request Correlation (Part 10 §12.1 REQ-003)
+
+```rust
+// Every inbound request generates UUIDv7 request_id
+// Propagated in:
+//   - gRPC metadata: x-request-id
+//   - HTTP header: X-Request-ID
+//   - Log context (LOG-SCHEMA-001)
+//   - Distributed trace (OBS-005)
+//   - Error responses (API-005)
+```
+
+---
+
+## 21. CSRF Protection (Part 8 §16.7)
+
+```rust
+pub struct CsrfGuard {
+    session_store: RedisPool,
+}
+
+impl CsrfGuard {
+    pub async fn generate_token(&self, session_id: &str) -> Result<String, PlatformError> {
+        let token = generate_random_bytes(32); // 256-bit
+        self.session_store.set(
+            &format!("csrf:{}", session_id),
+            &token,
+            Duration::from_secs(1800),
+        ).await?;
+        Ok(base64::encode(&token))
+    }
+
+    pub async fn validate(&self, session_id: &str, token: &str) -> Result<(), PlatformError> {
+        let stored = self.session_store.get(&format!("csrf:{}", session_id)).await?;
+        if stored != base64::decode(token)? {
+            return Err(PlatformError::AuthorizationDenied("CSRF token mismatch".into()));
+        }
+        Ok(())
+    }
+}
+```
+
+---
+
+## 22. Database Connection Security (Part 9 §12.6)
+
+```toml
+# All Postgres connections use:
+# sslmode=verify-full (not just require)
+# Connection string validation in CI: no sslmode=disable or sslmode=allow
+
+[database]
+url = "postgres://user:password@host:5432/db?sslmode=verify-full"
+```
+
+---
+
+## 23. Event Store Integrity Verification (Part 5 §12.5)
+
+```rust
+pub struct EventStoreIntegrityChecker {
+    db: DatabaseConnection,
+}
+
+impl EventStoreIntegrityChecker {
+    pub async fn verify_aggregate(&self, aggregate_id: Uuid) -> Result<IntegrityResult, PlatformError> {
+        let events = self.load_events(aggregate_id).await?;
+
+        // Check: no sequence gaps
+        for window in events.windows(2) {
+            if window[1].event_sequence - window[0].event_sequence != 1 {
+                return Ok(IntegrityResult::GapDetected {
+                    aggregate_id,
+                    gap_between: (window[0].event_sequence, window[1].event_sequence),
+                });
+            }
+        }
+
+        // Check: no duplicate sequences
+        let sequences: Vec<i64> = events.iter().map(|e| e.event_sequence).collect();
+        if sequences.iter().collect::<HashSet<_>>().len() != sequences.len() {
+            return Ok(IntegrityResult::DuplicateDetected { aggregate_id });
+        }
+
+        // Check: first event is a root-creation event
+        if !events[0].event_type.ends_with("Created") {
+            return Ok(IntegrityResult::MissingRootEvent { aggregate_id });
+        }
+
+        Ok(IntegrityResult::Valid)
+    }
+}
+```
+
+---
+
+## 24. Concurrent Request Rate Limiting (Part 4 §10.6)
+
+```rust
+pub async fn check_concurrent_limit(
+    redis: &RedisPool,
+    api_key_id: &str,
+    max_concurrent: u32,
+) -> Result<(), PlatformError> {
+    let key = format!("concurrent:{}", api_key_id);
+    let count = redis.incr(&key).await?;
+    if count > max_concurrent as i64 {
+        redis.decr(&key).await?; // rollback
+        return Err(PlatformError::RateLimited { retry_after_ms: 1000 });
+    }
+    // TTL safety net: auto-decrement after 30s
+    redis.expire_at(&key, Utc::now() + Duration::from_secs(30)).await?;
+    Ok(())
+}
+```
+
+---
+
+## 25. SFTP Settlement File Security (Part 7 §9.1)
+
+```rust
+pub struct SftpClient {
+    host_key_fingerprints: Vec<String>, // pinned
+}
+
+impl SftpClient {
+    pub async fn connect(&self, config: &SftpConfig) -> Result<SftpSession, PlatformError> {
+        // 1. Connect with TLS
+        let session = SshSession::connect(&config.host, config.port).await?;
+
+        // 2. Verify host key against pinned fingerprints
+        let server_fingerprint = session.host_key_fingerprint();
+        if !self.host_key_fingerprints.contains(&server_fingerprint) {
+            return Err(PlatformError::AuthorizationDenied("SSH host key mismatch".into()));
+        }
+
+        // 3. Authenticate with encrypted credentials
+        session.authenticate(&config.credentials).await?;
+
+        Ok(session)
+    }
+
+    pub async fn download_settlement_file(&self, path: &str) -> Result<SettlementFile, PlatformError> {
+        let content = self.session.read_file(path).await?;
+        let checksum = Sha256::digest(&content);
+
+        // Log to audit trail
+        self.audit_log(SettlementFileDownloaded {
+            path: path.to_string(),
+            checksum: hex::encode(checksum),
+            downloaded_at: Utc::now(),
+        }).await?;
+
+        Ok(SettlementFile { content, checksum: hex::encode(checksum) })
+    }
+}
+```
+
+---
+
+## 26. Cursor Pagination Security (Part 10 §10.1)
+
+```rust
+pub struct SecureCursor {
+    encryption_key: [u8; 32], // AES-256 key
+}
+
+impl SecureCursor {
+    pub fn encode(&self, cursor: &CursorData) -> Result<String, PlatformError> {
+        let json = serde_json::to_vec(cursor)?;
+        let nonce = Aes256Gcm::generate_nonce(&mut OsRng);
+        let cipher = Aes256Gcm::new(&self.encryption_key.into());
+        let ciphertext = cipher.encrypt(&nonce, json.as_ref())?;
+        Ok(base64::encode([&nonce[..], &ciphertext].concat()))
+    }
+
+    pub fn decode(&self, encoded: &str, expected_filters: &str) -> Result<CursorData, PlatformError> {
+        let bytes = base64::decode(encoded)?;
+        let (nonce, ciphertext) = bytes.split_at(12);
+        let cipher = Aes256Gcm::new(&self.encryption_key.into());
+        let json = cipher.decrypt(nonce.into(), ciphertext)?;
+        let cursor: CursorData = serde_json::from_slice(&json)?;
+
+        // Validate filter_hash matches current request filters
+        if cursor.filter_hash != hash_filters(expected_filters) {
+            return Err(PlatformError::Validation(ValidationError::InvalidIdempotencyKey));
+        }
+
+        // Validate expiry (1 hour)
+        if cursor.expires_at < Utc::now() {
+            return Err(PlatformError::Validation(ValidationError::InvalidIdempotencyKey));
+        }
+
+        Ok(cursor)
+    }
+}
+```
+
+---
+
+## 27. Webhook Payload Schema Versioning (Part 10 §10.2)
+
+```rust
+pub struct WebhookPayload {
+    pub schema_version: String, // "2026-07-18"
+    pub event_id: Uuid,
+    pub event_type: String,
+    pub occurred_at: DateTime<Utc>,
+    pub data: serde_json::Value,
+}
+```
+
+New fields are additive within a schema version. Breaking changes increment version. Merchants register preferred schema version per endpoint.
+
+---
+
+## 28. API Staleness Disclosure (Part 10 §10.4)
+
+```rust
+pub struct StalenessConfig {
+    pub max_lag_seconds: u64, // per read-model, e.g., 300 for reconciliation
+}
+
+pub fn check_staleness(
+    as_of: DateTime<Utc>,
+    max_lag: Duration,
+) -> Result<(), StalenessError> {
+    let lag = Utc::now().signed_duration_since(as_of);
+    if lag > max_lag {
+        return Err(StalenessError::DataTooStale {
+            lag_seconds: lag.num_seconds(),
+            max_allowed: max_lag.num_seconds(),
+        });
+    }
+    Ok(())
+}
+```
+
+---
+
+## 29. Webhook Delivery Backpressure (Part 10 §10.3)
+
+```rust
+pub struct WebhookThrottler {
+    redis: RedisPool,
+}
+
+impl WebhookThrottler {
+    pub async fn should_throttle(&self, endpoint_id: Uuid) -> Result<bool, PlatformError> {
+        // Per-endpoint concurrent limit: max 5 in-flight
+        let key = format!("webhook:inflight:{}", endpoint_id);
+        let count = self.redis.incr(&key).await?;
+        self.redis.expire(&key, Duration::from_secs(10)).await?;
+        Ok(count > 5)
+    }
+
+    pub async fn adaptive_throttle(&self, endpoint_id: Uuid) -> Result<bool, PlatformError> {
+        // If >50% failure rate over last 100 deliveries → throttle to 1/30s
+        let failure_rate = self.get_failure_rate(endpoint_id, 100).await?;
+        if failure_rate > 0.5 {
+            let key = format!("webhook:throttle:{}", endpoint_id);
+            self.redis.set(&key, "1", Duration::from_secs(30)).await?;
+            return Ok(true);
+        }
+        Ok(false)
+    }
+}
+```
+
+---
+
+## 30. Complete Rate Limiting Table (Part 10 §11)
+
+| Endpoint | Limit | Window | Per |
+|---|---|---|---|
+| `POST /v1/payment-intents` | 1000 | 60s | ApiKey |
+| `POST /v1/payment-intents/{id}/authorize` | 1000 | 60s | ApiKey |
+| `POST /v1/payment-intents/{id}/capture` | 500 | 60s | ApiKey |
+| `POST /v1/payment-intents/{id}/void` | 500 | 60s | ApiKey |
+| `POST /v1/payment-intents/{id}/refund` | 200 | 60s | ApiKey |
+| `GET /v1/invoices` | 100 | 60s | ApiKey |
+| `POST /v1/invoices` | 50 | 60s | ApiKey |
+| `GET /v1/subscriptions` | 100 | 60s | ApiKey |
+| `POST /v1/subscriptions` | 50 | 60s | ApiKey |
+| `POST /v1/routing-policies` | 10 | 60s | ApiKey |
+| `POST /v1/auth/login` | 10 | 60s | IP |
+| `POST /v1/assistant/query` | 30 | 60s | ApiKey |
+| `POST /v1/documents` | 20 | 60s | ApiKey |
+| `GET /v1/analytics/*` | 100 | 60s | ApiKey |
+| `POST /v1/kyb-cases` | 10 | 60s | ApiKey |
+| `POST /v1/webhooks` | 10 | 60s | ApiKey |
