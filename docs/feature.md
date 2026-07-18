@@ -156,7 +156,40 @@ A single-tenant, API-first payment orchestration platform that enables merchants
 | F-135 | PCI-DSS QSA scoping assessment | Must | Compliance |
 | F-136 | Infrastructure degraded modes (Redis/NATS/ClickHouse/OpenSearch/MinIO) | Must | Infrastructure |
 
-## 3. Non-Functional Requirements Summary
+## 3. Tech Stack
+
+### Backend
+```
+Rust + SeaORM + NATS JetStream + PostgreSQL
+Redis + ClickHouse + OpenSearch + MinIO + Ollama
+```
+
+### Frontend
+```
+React 19 + React Router DOM 7 + Vite 8
+TypeScript 5.x (strict) + Tailwind CSS 4
+TanStack React Query v5 + Zustand v5
+Axios v1.x + Zod + react-i18next
+Recharts + TanStack Table v9 + Lucide React
+```
+
+### Frontend Pages
+
+| Page | Route | Auth | Description |
+|------|-------|------|-------------|
+| Dashboard | `/dashboard` | Yes | Stats cards, charts, real-time updates |
+| Payments | `/payments` | Yes | Transaction list with filters |
+| Payment Detail | `/payments/:id` | Yes | Transaction detail, routing timeline |
+| Reconciliation | `/reconciliation` | Yes | Settlement matching dashboard |
+| Exceptions | `/reconciliation/exceptions` | Yes | Unmatched settlement queue |
+| Invoices | `/invoices` | Yes | Invoice list and management |
+| Subscriptions | `/subscriptions` | Yes | Subscription lifecycle |
+| Connectors | `/connectors` | Yes | Acquirer connections |
+| Settings | `/settings/*` | Yes | API keys, users, routing, compliance |
+| AI Assistant | `/assistant` | Yes | Natural-language Q&A |
+| Hosted Checkout | `/pay/:token` | No | PCI-DSS isolated payment page |
+
+## 4. Non-Functional Requirements Summary
 
 | NFR | Target | Measurement |
 |---|---|---|
@@ -167,6 +200,9 @@ A single-tenant, API-first payment orchestration platform that enables merchants
 | RTO (orchestration) | < 5 minutes | DR drill |
 | AI response time | [TBD per GPU spec] | p99 latency |
 | Audit completeness | 100% of money-movement events | Daily integrity check |
+| Frontend bundle size | < 500KB gzipped | Vite build analysis |
+| Lighthouse performance | > 90 | Automated CI check |
+| WCAG 2.1 AA | Compliant | Accessibility audit |
 
 ## 4. Open Questions (OQ-001 through OQ-100)
 
