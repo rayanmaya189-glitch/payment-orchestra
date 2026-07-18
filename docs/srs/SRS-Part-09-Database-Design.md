@@ -139,96 +139,65 @@ pub struct Model {
 }
 ```
 
-### 1.3 Non-Event-Sourced Service Entities (Ent ORM — Go)
+### 1.3 Non-Event-Sourced Service Entities (SeaORM — Rust)
 
-For BC-01/02/03/13/14 (Tier-2-audited per Part 8 §5.1), tables use Ent ORM schemas:
+For BC-01/02/03/13/14 (Tier-2-audited per Part 8 §5.1), tables use SeaORM entities:
 
-```go
-// schema/operator.go — Ent ORM (Go)
-package schema
-
-import (
-    "entgo.io/ent"
-    "entgo.io/ent/schema/field"
-    "entgo.io/ent/schema/index"
-)
-
-type Operator struct {
-    ent.Schema
+```rust
+// SeaORM entity for operator (Rust)
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
+#[sea_orm(table_name = "operator")]
+pub struct OperatorModel {
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub id: Uuid,
+    pub legal_name: String,
+    pub trade_license_no: String,
+    pub country: String,           // CHAR(2), default 'AE'
+    pub status: String,            // pending | active_unverified | active_verified | suspended | expired_unverified
+    pub created_at: DateTimeWithTimeZone,
 }
 
-func (Operator) Fields() []ent.Field {
-    return []ent.Field{
-        field.UUID("id", uuid.UUID{}).Immutable(),
-        field.String("legal_name"),
-        field.String("trade_license_no"),
-        field.String("country").Default("AE").MaxLen(2),
-        field.Enum("status").Values("pending", "active_unverified", "active_verified", "suspended", "expired_unverified"),
-        field.Time("created_at").Default(time.Now).Immutable(),
-    }
+// SeaORM entity for principal (Rust)
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
+#[sea_orm(table_name = "principal")]
+pub struct PrincipalModel {
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub id: Uuid,
+    pub principal_type: String,    // human | api_key | service
+    pub email: Option<String>,
+    pub password_hash: Option<Vec<u8>>,  // argon2id
+    pub mfa_enrolled: bool,
+    pub status: String,            // active | suspended | deleted
+    pub created_at: DateTimeWithTimeZone,
 }
 
-func (Operator) Indexes() []ent.Index {
-    return []ent.Index{
-        index.Fields("trade_license_no").Unique(),
-    }
+// SeaORM entity for role_assignment (Rust)
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
+#[sea_orm(table_name = "role_assignment")]
+pub struct RoleAssignmentModel {
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub principal_id: Uuid,
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub role: String,
+    pub abac_conditions: String,   // JSON: {"max_refund_amount_minor": 500000}
 }
 
-// schema/principal.go — Ent ORM (Go)
-type Principal struct {
-    ent.Schema
-}
-
-func (Principal) Fields() []ent.Field {
-    return []ent.Field{
-        field.UUID("id", uuid.UUID{}).Immutable(),
-        field.Enum("principal_type").Values("human", "api_key", "service"),
-        field.String("email").Optional().Nillable(),
-        field.Bytes("password_hash").Optional().Nillable(), // argon2id
-        field.Bool("mfa_enrolled").Default(false),
-        field.Enum("status").Default("active").Values("active", "suspended", "deleted"),
-        field.Time("created_at").Default(time.Now).Immutable(),
-    }
-}
-
-// schema/role_assignment.go — Ent ORM (Go)
-type RoleAssignment struct {
-    ent.Schema
-}
-
-func (RoleAssignment) Fields() []ent.Field {
-    return []ent.Field{
-        field.UUID("principal_id", uuid.UUID{}),
-        field.String("role"),
-        field.JSON("abac_conditions", map[string]interface{}).Default(map[string]interface{}{}),  // e.g., {"max_refund_amount_minor": 500000}
-    }
-}
-
-func (RoleAssignment) Indexes() []ent.Index {
-    return []ent.Index{
-        index.Fields("principal_id", "role").Unique(),
-    }
-}
-
-// schema/audit_log.go — Ent ORM (Go, append-only)
-type AuditLog struct {
-    ent.Schema
-}
-
-func (AuditLog) Fields() []ent.Field {
-    return []ent.Field{
-        field.UUID("id", uuid.UUID{}).Immutable(),
-        field.UUID("actor_id", uuid.UUID{}).Optional().Nillable(),
-        field.String("action"),
-        field.JSON("before_state", map[string]interface{}{}).Optional().Nillable(),
-        field.JSON("after_state", map[string]interface{}{}).Optional().Nillable(),
-        field.Time("occurred_at").Default(time.Now).Immutable(),
-        field.IP("source_ip").Optional().Nillable(),
-    }
+// SeaORM entity for audit_log (Rust, append-only)
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
+#[sea_orm(table_name = "audit_log")]
+pub struct AuditLogModel {
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub id: Uuid,
+    pub actor_id: Option<Uuid>,
+    pub action: String,
+    pub before_state: Option<String>,  // JSON
+    pub after_state: Option<String>,   // JSON
+    pub occurred_at: DateTimeWithTimeZone,
+    pub source_ip: Option<String>,
 }
 ```
 
-- **DB-004**: `audit_log` is append-only at the database-privilege level — the application's database role for these services is granted `INSERT`/`SELECT` only on `audit_log`, with no `UPDATE`/`DELETE` grant at all (Part 8 §5.3 AUD-003 enforced at the DB-permission layer). Ent ORM generates no `Update`/`Delete` methods for this entity by design (custom behavior override).
+- **DB-004**: `audit_log` is append-only at the database-privilege level — the application's database role for these services is granted `INSERT`/`SELECT` only on `audit_log`, with no `UPDATE`/`DELETE` grant at all (Part 8 §5.3 AUD-003 enforced at the DB-permission layer). SeaORM generates no `Update`/`Delete` methods for this entity by design (custom behavior override).
 
 - **DB-011 (Row-Level Security)**: All Postgres tables containing operator data implement Row-Level Security (RLS) policies as a defense-in-depth layer. Even if the application layer has an authorization bypass, the database enforces that queries can only access data belonging to the authenticated principal's operator context. RLS policies are applied at the table level and enforced by Postgres row-security policies, not application logic.
 
@@ -272,7 +241,7 @@ No column in this entity ever holds a plaintext secret, satisfying CRED-001/ENC-
 
 ---
 
-## 3. ClickHouse — Analytics Schema (Go ClickHouse Driver)
+## 3. ClickHouse — Analytics Schema (Rust ClickHouse Driver)
 
 ### 3.1 Design Approach
 
@@ -294,7 +263,7 @@ type PaymentEvent struct {
 }
 ```
 
-Note: ClickHouse uses a Go native driver (not Ent ORM) because ClickHouse is append-only analytics with no entity lifecycle management — it's a pure data sink for analytical queries. Ent ORM is used for Postgres-based services that have entity CRUD lifecycle.
+Note: ClickHouse uses a Rust native driver (e.g., `clickhouse-rs` or `clickhouse` crate) because ClickHouse is append-only analytics with no entity lifecycle management — it's a pure data sink for analytical queries. SeaORM is used for Postgres-based services that have entity CRUD lifecycle.
 
 ```sql
 CREATE TABLE payment_events (

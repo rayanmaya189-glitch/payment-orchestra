@@ -15,7 +15,7 @@
 | Part | 5 of 12 — Payment Orchestration Engine |
 | Depends On | Part 3 (BC-05 domain model, AGG-01/AGG-02), Part 4 (SVC-05 service boundary) |
 | Feeds Into | Part 7 (Connector Framework, the ACL this engine calls), Part 9 (event store schema), Part 10 (gRPC contracts), Part 11 (performance/latency NFRs, TDD standards) |
-| Scope of This Part | Full internal design of `orchestration-service`: command handling, state machine, routing algorithm, failover mechanics, idempotency guarantees, concurrency control, and the marketplace-split addendum. |
+| Scope of This Part | Full internal design of `orchestration-service`: command handling, state machine, routing algorithm, failover mechanics, idempotency guarantees, concurrency control, and business logic gap fixes. |
 
 ---
 

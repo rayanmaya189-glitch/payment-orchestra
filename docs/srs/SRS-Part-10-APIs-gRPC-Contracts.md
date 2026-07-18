@@ -55,14 +55,21 @@
 
 ## 2. gRPC Design Conventions (Internal Surface)
 
-### 2.1 Language-to-Protocol Mapping
+### 2.1 Service-to-Protocol Mapping
 
-| From → To | Protocol | Rationale |
+| Interaction | Protocol | Rationale |
 |---|---|---|
-| Go service → Rust service | gRPC (Protobuf) | Cross-language interop; both Ent (Go) and SeaORM (Rust) services generate clients from `.proto` files |
-| Rust service → Go service | gRPC (Protobuf) | Same as above |
 | Any service → Any service (sync) | gRPC (Protobuf) | Type-safe, observable, traceable (Part 4 RULE-001) |
 | Any service → Any service (async events) | NATS JetStream | Fan-out, decoupled, durable (Part 4 RULE-002) |
+
+### 2.2 Schema Registry
+
+- **SCHEMA-REG-001**: A centralized schema registry manages all `.proto` files used for gRPC contracts. The registry is a Git repository with CI validation that ensures:
+  - All `.proto` files compile without errors
+  - Breaking changes (field removal, type change) are detected automatically
+  - Schema versions follow semantic versioning (GRPC-VER-001)
+
+- **SCHEMA-REG-002**: Services generate their gRPC clients and servers from the shared schema registry, ensuring type safety across the entire service mesh. The registry is the single source of truth for all inter-service contracts.
 
 ### 2.2 Representative Proto — Payment Orchestration Service (Rust/SeaORM)
 
@@ -176,7 +183,7 @@ message PaymentAuthorizedV1 {
 ## 4. SDK Strategy
 
 - **SDK-001**: Server-side SDKs generated substantially from the OpenAPI spec (derived from the same source-of-truth REST contract as API-001–008) for at least three languages at GA-plus (per Part 1 GOAL-011) — candidates: Node.js/TypeScript, Python, PHP, given regional e-commerce platform prevalence (WooCommerce/Magento-adjacent PHP shops are common among UAE SMB merchants) — final language priority to be confirmed with Product against actual pilot-merchant tech stacks.
-- **SDK-002**: SDKs wrap idempotency-key generation (API-004) by default (auto-generating a UUIDv7 per logical operation unless the caller supplies their own), so merchant developers get safe-by-default retry behavior without needing to understand the full idempotency mechanism up front — this directly serves Persona "Rashid" (Part 1 §9) who needs to integrate quickly without becoming a payments-idempotency expert on day one.
+- **SDK-002**: SDKs wrap idempotency-key generation (API-004) by default (auto-generating a UUIDv7 per logical operation unless the caller supplies their own), so merchant developers get safe-by-default retry behavior without needing to understand the full idempotency mechanism up front.
 - **SDK-003**: A client-side (browser/mobile) SDK for hosted-checkout/payment-link embedding (PROC-04) is a separate, thinner SDK — it never handles raw card data (tokenization happens via the acquirer/PSP's own client-side tokenization library, wrapped behind a consistent platform-provided interface) to preserve PCI scope minimization (Part 8 §4.3).
 
 ---

@@ -1,5 +1,5 @@
 # Software Requirements Specification
-## Multi-Tenant AI-Native Payment Orchestration Platform (UAE-First, Multi-Country Ready)
+## AI-Native Payment Orchestration Platform (UAE-First, Multi-Country Ready)
 
 **Document Series:** 12-Part Enterprise SRS
 **Part 1 of 12:** Vision, Business Requirements, Scope & Stakeholders
@@ -20,8 +20,8 @@
 | Custody Model | **No payment custody** — software orchestration, routing, and reconciliation only. All funds flow between licensed acquirers, PSPs, and banks; the platform never becomes a holder of client/merchant funds. |
 | Tenancy Model | Single-tenant deployment (one merchant/operator per deployment) |
 | Architecture Style | API-first, Domain-Driven Design, Microservices, Event-Driven (NATS JetStream), CQRS |
-| Core Languages | Rust (payment-critical services: orchestration, connectors, AI) + Go (infrastructure services: tenant, IAM, compliance, notifications, analytics) |
-| ORM Layer | SeaORM (Rust services) + Ent ORM (Go services) — no raw SQL in application code |
+| Core Language/Runtime | Rust (all backend services) |
+| ORM Layer | SeaORM (all services) — no raw SQL in application code |
 | AI Stack | Ollama-hosted Qwen3 32B (reasoning), Qwen3-VL 8B (vision/OCR), BGE-M3 (embeddings) + reranker (RAG) |
 | Related Documents | Part 2 (Use Cases), Part 3 (DDD), Part 4 (Microservices), Part 5 (Orchestration Engine), Part 6 (AI Assistant/RAG), Part 7 (Gateway Connectors), Part 8 (Security/Compliance), Part 9 (Database Design), Part 10 (APIs/gRPC), Part 11 (Testing/DevOps), Part 12 (Appendices/Roadmap) |
 
@@ -167,10 +167,13 @@ Business requirements are the "why" that drives functional requirements in later
 
 | ID | Requirement | Priority | Horizon |
 |---|---|---|---|
-| BIZ-040 | The platform must maintain immutable audit logs of all configuration changes, routing decisions, and money-movement-relevant events, retained per UAE regulatory retention expectations (see Part 8 for specifics). | Must | H1 |
-| BIZ-041 | The platform must support data residency controls appropriate to UAE data protection expectations (PDPL) and, where applicable, sector-specific guidance for payment data. | Must | H1 |
-| BIZ-042 | The platform must support attribute-based access control so that sensitive operations (e.g., changing settlement bank details) require elevated permissions and produce audit trail entries. | Must | H1 |
-| BIZ-043 | The platform must support KYC/KYB evidence storage and status tracking for merchants (evidence storage and workflow only; the platform does not perform its own regulated KYC/KYB decisioning — this is delegated to a licensed partner or the tenant's own compliance process, unless/until the platform itself is licensed). | Must | H1 |
+| BIZ-051 | The platform must support data retention automation: scheduled jobs to archive/purge data exceeding configured retention periods, with audit logging of all retention actions. | Must | H1 |
+| BIZ-052 | The platform must support graceful shutdown for all services: stop accepting new requests, complete in-flight requests, flush event store writes, and deregister from service discovery before termination. | Must | H1 |
+| BIZ-053 | The platform must support health check endpoints for all services: liveness, readiness, startup, and deep health checks for Kubernetes orchestration. | Must | H1 |
+| BIZ-054 | The platform must support leader election for scheduled jobs to prevent duplicate execution when multiple service replicas are running. | Must | H1 |
+| BIZ-055 | The platform must support event replay capability: ability to replay events for a specific aggregate, rebuild read models from scratch, and handle event store corruption recovery. | Must | H1 |
+| BIZ-056 | The platform must support webhook delivery status tracking: record delivery attempts, successes, failures, and provide a dashboard for manual replay of failed deliveries. | Must | H1 |
+| BIZ-057 | The platform must support model version pinning: hash verification of AI model weights, version tracking, and rollback procedure for bad model updates. | Must | H1 |
 
 ### 4.5 Business Requirements Traceability Note
 
@@ -327,7 +330,7 @@ Brief personas are introduced here because they justify business requirements; f
 
 ### 10.3 Constraints
 
-- **CONS-001**: Payment-critical services (orchestration, connector-gateway, AI assistant) must be implemented in Rust for performance and memory safety. Infrastructure services (tenant, IAM, compliance, notifications, analytics, document management) must be implemented in Go for development velocity and ecosystem maturity. No plain SQL in application code — all database access through ORMs (SeaORM for Rust, Ent for Go).
+- **CONS-001**: All backend services must be implemented in Rust (organizational technology constraint) for performance, memory safety, and consistency. No plain SQL in application code — all database access through SeaORM.
 - **CONS-002**: All domain logic must be developed test-first (TDD) — see Part 11 for standards; this is a process constraint that affects estimation and delivery cadence, recorded here because it is a business decision (quality/maintainability trade-off), not merely a technical preference.
 - **CONS-003**: The platform must not, in its base architecture, require a payment institution license for the platform operator (see §6, §6.4) — all fund movement must route through licensed partners rather than internal pooled accounts.
 - **CONS-004**: Primary data residency is UAE; architecture must not assume a single global region deployment (Part 9/11 will define region-aware deployment topology).

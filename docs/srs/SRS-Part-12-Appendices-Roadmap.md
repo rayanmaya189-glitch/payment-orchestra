@@ -22,15 +22,15 @@
 
 | Part | Title | Core Contribution |
 |---|---|---|
-| 1 | Vision, Business Requirements, Scope, Stakeholders | Why the product exists; BIZ-xxx register; the no-custody constraint; single-tenant deployment model; Go+Rust language split |
+| 1 | Vision, Business Requirements, Scope, Stakeholders | Why the product exists; BIZ-xxx register; the no-custody constraint; single-tenant deployment model; Rust-only with SeaORM |
 | 2 | Business Processes & Use Cases | UC-xxx catalog with full flows, tied to BIZ-xxx; operator onboarding lifecycle |
-| 3 | DDD & Bounded Contexts | 15 bounded contexts + Saga Coordinator (BC-17), SeaORM entities (Rust) + Ent schemas (Go), domain event catalog + outbox pattern |
+| 3 | DDD & Bounded Contexts | 15 bounded contexts + Saga Coordinator (BC-17), SeaORM entities (Rust), domain event catalog + outbox pattern |
 | 4 | Microservice Architecture | 18-service catalog with Go/Rust language split, API/AI Gateway, gRPC vs NATS decision rules, versioned NATS subjects, outbox relay, circuit breakers, feature flags, graceful degradation framework |
 | 5 | Payment Orchestration Engine | State machine, routing algorithm, idempotency, partial auth handling, currency precision, subscription pause/resume (all SeaORM entities) |
 | 6 | AI Payment Assistant & RAG | Model routing, RAG pipeline, guardrails, evaluation harness, production quality monitoring, tool use (H2), multi-step reasoning (H2), enhanced prompt injection defense |
 | 7 | Gateway Connector Framework | ACL trait design, capability flags, decline normalization, settlement formats, circuit breakers, bulkhead isolation, per-connector retry config |
 | 8 | Identity, Security & Compliance | ABAC, secrets/encryption (HSM-backed, AES-256, TLS 1.3), audit framework, UAE regulatory mapping, threat model (STRIDE + abuse cases), OWASP Top 10 controls, PCI-DSS scope minimization, AML/CFT monitoring, fraud scoring, security headers, container hardening, SSRF prevention, PAM, data classification, supply chain security |
-| 9 | Database Design | Postgres (SeaORM entities for Rust, Ent schemas for Go), Redis, ClickHouse (Go driver), OpenSearch, MinIO; outbox table, event store archival, connection pooling, RLS policies |
+| 9 | Database Design | Postgres (SeaORM entities for Rust), Redis, ClickHouse (Rust driver), OpenSearch, MinIO; outbox table, event store archival, connection pooling, RLS policies |
 | 10 | APIs & gRPC Contracts | REST conventions, proto contracts (cross-language gRPC), webhook contract, SDK strategy, gRPC service versioning, webhook replay protection, SDK deprecation/migration, API security, NATS subject versioning |
 | 11 | Testing, DevOps & Deployment | TDD standards, CI/CD, K8s topology, observability, DR, load testing, chaos engineering, canary deployment, expand-contract migrations, security testing pipeline, penetration testing, PCI-DSS compliance gates |
 | 12 | Appendices & Roadmap | This document |
@@ -68,16 +68,16 @@
 | Checker | The second authorized principal who reviews and approves a change initiated by the Maker. Must be a different person than the Maker (dual-control). |
 | CQRS | Command Query Responsibility Segregation — separating the write model (commands/aggregates) from the read model (queries/projections). |
 | Custody | Legal/economic control over funds; this platform is architected to never hold it (Part 1 §6). |
-| Ent ORM | Go-native ORM for entity lifecycle management (schema generation, migrations, querying) used by Go services. |
+| Graceful Shutdown | Service lifecycle pattern: stop accepting requests, complete in-flight, flush writes, release locks, close connections before termination. |
 | Event Sourcing | Persisting state as an ordered sequence of immutable domain events, with current state derived by replay/fold. |
-| gRPC | Google Remote Procedure Call — cross-language RPC framework using Protobuf serialization, used for synchronous service-to-service communication. |
+| gRPC | Google Remote Procedure Call — RPC framework using Protobuf serialization, used for synchronous service-to-service communication. |
 | Idempotency Key | A caller-supplied token ensuring a repeated request produces the original result rather than a duplicate effect. |
 | Maker | The first authorized principal who initiates a change. The Maker cannot also be the Checker for the same change. |
 | Maker/Checker | A dual-control approval workflow where the Maker initiates a change and a Checker (a different authorized principal) reviews and approves it before the change takes effect. Used for financial, security, and configuration changes. |
 | NATS JetStream | Durable, at-least-once message streaming platform used for asynchronous domain event distribution with versioned subjects. |
 | RAG (Retrieval-Augmented Generation) | Grounding an LLM's answer in retrieved, tenant-specific data rather than relying solely on parametric model knowledge. |
 | Routing Policy | The operator-configured, versioned rule set determining acquirer selection and failover order. |
-| SeaORM | Rust-native ORM for entity lifecycle management (schema generation, migrations, querying) used by Rust services. |
+| SeaORM | Rust-native ORM for entity lifecycle management (schema generation, migrations, querying) used by all services. |
 | Settlement Batch | An ingested set of settlement records from an acquirer/bank, matched against internal payment records. |
 | Timestamp (3-digit ms) | ISO 8601 format with 3-digit millisecond precision: `YYYY-MM-DDTHH:MM:SS.mmmZ`. Used for all timestamps across the system — domain events, audit logs, API responses, database columns, webhook payloads. Enforced at the type level (Rust `DateTimeWithTimeZone`, Go `time.Time`). |
 | UUIDv7 | Time-ordered UUID (RFC 9562) used as the primary identifier for all aggregates, entities, and domain events. Provides sequential insert performance on B-tree indexes while retaining distributed-generation benefits. |
@@ -146,7 +146,7 @@
 | OQ-058 (Part 11) | Confirm PCI-DSS ASV scan provider and schedule | Compliance | Part 11 §7.4 PCI-002 |
 | OQ-059 (Part 1) | Finalize AML transaction monitoring rule set | Compliance/Legal | Part 8 §11.1 AML-001 |
 | OQ-060 (Part 4) | Finalize gRPC vs NATS decision for compliance-service → orchestration-service (KYB approval notification) | Architecture | Part 4 §4.1 RULE-001/002 |
-| OQ-061 (Part 9) | Confirm ClickHouse driver choice for Go (entgo/clickhouse vs native driver) — Ent ORM doesn't support ClickHouse natively | Engineering | Part 9 §3 ClickHouse schema |
+| OQ-061 (Part 9) | Confirm ClickHouse Rust driver choice (clickhouse-rs vs clickhouse crate) | Engineering | Part 9 §3 ClickHouse schema |
 | OQ-062 (Part 4) | Finalize NATS subject version deprecation window (default 30 days, NATS-VER-003) | Architecture | Part 4 §4.3 NATS-VER-003 |
 | OQ-063 (Part 9) | Confirm SeaORM migration strategy for event-sourced services — forward-only vs reversible migrations | Engineering | Part 9 §1.1 DB migration approach |
 

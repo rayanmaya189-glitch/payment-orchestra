@@ -25,23 +25,23 @@
 
 | Service ID | Service Name | Bounded Context(s) | Language/Runtime | ORM | Primary Datastore |
 |---|---|---|---|---|---|
-| SVC-01 | `operator-service` | BC-01 Operator Management | Go (Ent) | Ent ORM | PostgreSQL |
-| SVC-02 | `iam-service` | BC-02 Identity & Access | Go (Ent) | Ent ORM | PostgreSQL + Redis (session/token cache) |
-| SVC-03 | `compliance-service` | BC-03 Merchant Compliance (KYB) | Go (Ent) | Ent ORM | PostgreSQL |
+| SVC-01 | `operator-service` | BC-01 Operator Management | Rust (SeaORM) | SeaORM | PostgreSQL |
+| SVC-02 | `iam-service` | BC-02 Identity & Access | Rust (SeaORM) | SeaORM | PostgreSQL + Redis (session/token cache) |
+| SVC-03 | `compliance-service` | BC-03 Merchant Compliance (KYB) | Rust (SeaORM) | SeaORM | PostgreSQL |
 | SVC-04 | `connector-gateway` | BC-04 Gateway Connector Framework | Rust (SeaORM) | SeaORM | PostgreSQL (connector config only; no transaction data) |
 | SVC-05 | `orchestration-service` | BC-05 Payment Orchestration | Rust (SeaORM) | SeaORM | PostgreSQL (event store) + Redis (idempotency cache, hot routing config) |
-| SVC-06 | `invoice-service` | BC-06 Invoice Service | Go (Ent) | Ent ORM | PostgreSQL |
-| SVC-07 | `payment-link-service` | BC-07 Payment Link Service | Go (Ent) | Ent ORM | PostgreSQL |
+| SVC-06 | `invoice-service` | BC-06 Invoice Service | Rust (SeaORM) | SeaORM | PostgreSQL |
+| SVC-07 | `payment-link-service` | BC-07 Payment Link Service | Rust (SeaORM) | SeaORM | PostgreSQL |
 | SVC-08 | `subscription-service` | BC-08 Subscription Billing | Rust (SeaORM) | SeaORM | PostgreSQL (event store) |
 | SVC-09 | `reconciliation-service` | BC-09 Settlement & Reconciliation | Rust (SeaORM) | SeaORM | PostgreSQL (event store) |
 | SVC-10 | `dispute-service` | BC-10 Dispute Management | Rust (SeaORM) | SeaORM | PostgreSQL (event store) |
 | SVC-11 | `risk-service` | BC-11 Fraud & Risk Scoring | Rust (SeaORM) | SeaORM | PostgreSQL + Redis (hot scoring cache) |
 | SVC-12 | `ai-assistant-service` | BC-12 AI Payment Assistant | Rust (SeaORM) | SeaORM | OpenSearch (vectors) + Postgres (conversation/citation metadata) |
-| SVC-13 | `document-service` | BC-13 Document Management | Go (Ent) | Ent ORM | PostgreSQL (metadata) + MinIO (blobs) |
-| SVC-14 | `notification-service` | BC-14 Notification Service | Go (Ent) | Ent ORM | PostgreSQL + Redis (delivery dedup) |
-| SVC-15 | `analytics-service` | BC-15 Analytics & Reporting | Go | ClickHouse driver | ClickHouse |
-| SVC-17 | `api-gateway` | Cross-cutting (not a bounded context) | Go (Ent) | Ent ORM | Redis (rate-limit counters only) |
-| SVC-18 | `ai-gateway` | Cross-cutting routing/guardrail layer in front of SVC-12 | Go (Ent) | Ent ORM | Redis (rate limits), Postgres (guardrail audit log) |
+| SVC-13 | `document-service` | BC-13 Document Management | Rust (SeaORM) | SeaORM | PostgreSQL (metadata) + MinIO (blobs) |
+| SVC-14 | `notification-service` | BC-14 Notification Service | Rust (SeaORM) | SeaORM | PostgreSQL + Redis (delivery dedup) |
+| SVC-15 | `analytics-service` | BC-15 Analytics & Reporting | Rust | ClickHouse driver | ClickHouse |
+| SVC-17 | `api-gateway` | Cross-cutting (not a bounded context) | Rust (Axum) | SeaORM | Redis (rate-limit counters only) |
+| SVC-18 | `ai-gateway` | Cross-cutting routing/guardrail layer in front of SVC-12 | Rust (Axum) | SeaORM | Redis (rate limits), Postgres (guardrail audit log) |
 
 ### 1.2 Deliberate Deviations from Strict 1:1 Mapping
 
@@ -106,7 +106,7 @@ The AI Gateway exists because AI-Assistant traffic has distinct requirements tha
 - **RULE-002**: Use **NATS JetStream** when the interaction is naturally asynchronous, fan-out to multiple consumers, or doesn't require the caller to wait for completion (domain event publishing, notification dispatch, analytics ingestion).
 - **RULE-003**: Never use NATS for the checkout hot path (Create/Authorize/Capture) — the latency of NATS publish-ack is unnecessary overhead when a direct gRPC call is more appropriate.
 - **RULE-004**: Never use gRPC for fan-out event distribution — the publisher would need to know and manage all consumers, defeating the decoupling benefit of event-driven architecture.
-- **RULE-005**: Service-to-service calls from Go services to Rust services (and vice versa) use gRPC with Protobuf — this is the cross-language RPC contract that both Ent ORM (Go) and SeaORM (Rust) services can generate clients for from `.proto` files.
+- **RULE-005**: All service-to-service calls use gRPC with Protobuf — SeaORM services generate clients from `.proto` files for type-safe inter-service communication.
 
 ### 4.3 NATS JetStream Subject Taxonomy (Versioned)
 
@@ -200,8 +200,68 @@ Each domain service publishes its own `.proto` service definition (full contract
 - **JOB-004**: Invoice overdue transition + reminder trigger (SVC-06).
 - **JOB-005**: AI Assistant retrieval-index refresh/compaction (SVC-12, periodic re-embedding of updated documents — detailed in Part 6).
 - **JOB-006**: Reconciliation exception aging alerts (SVC-09 → SVC-14).
+- **JOB-009**: Data retention enforcement — scheduled archival/purge of data exceeding configured retention periods (Part 8 AUD-001, Part 1 BIZ-051).
+- **JOB-010**: Outbox relay health monitoring — checks relay lag and alerts if relay falls behind (Part 3 §9.2 OUTBOX-001).
 
-For MVP, scheduling is implemented as in-process cron-style schedulers within the owning service (simplicity, avoids introducing a separate distributed scheduler service prematurely); if job volume/complexity grows past H1, a dedicated scheduling service is a candidate future extraction — explicitly flagged here as a deferred architectural decision, not a gap.
+For MVP, scheduling is implemented as in-process cron-style schedulers within the owning service; if job volume/complexity grows past H1, a dedicated scheduling service is a candidate future extraction.
+
+### 6.1 Leader Election
+
+- **LEADER-001**: All scheduled jobs (JOB-001 through JOB-010) use leader election to prevent duplicate execution when multiple service replicas are running. The leader election mechanism is built on Redis (using SETNX-based distributed locks with TTL) — no external coordination service is required for MVP.
+- **LEADER-002**: Each job type elects exactly one leader across all replicas of the owning service. The leader runs the job on its configured schedule. If the leader dies (detected via lock TTL expiry), another replica acquires leadership within one TTL cycle (default: 30 seconds for subscription renewals, 60 seconds for settlement polling).
+- **LEADER-003**: Leadership is re-acquired on a rolling basis — the same replica doesn't need to stay leader permanently. This distributes job execution across replicas over time.
+
+### 6.2 Graceful Shutdown
+
+- **SHUTDOWN-001**: Every service implements the following graceful shutdown sequence on SIGTERM:
+  1. **Stop accepting new requests** (deregister from service mesh/load balancer)
+  2. **Complete in-flight requests** (wait up to a configurable drain timeout, default: 30 seconds)
+  3. **Flush event store writes** (ensure all pending outbox entries are committed)
+  4. **Release leader election locks** (so another replica can immediately acquire leadership)
+  5. **Close database connections** (clean Postgres/Redis/ClickHouse disconnects)
+  6. **Exit** (return SIGTERM exit code 0 for clean termination)
+
+- **SHUTDOWN-002**: The drain timeout is configurable per service: checkout-critical services (`orchestration-service`, `connector-gateway`) use a shorter drain (15 seconds) to minimize user-perceived latency during deployment; non-critical services (`analytics-service`, `notification-service`) use a longer drain (60 seconds) to avoid losing in-flight event processing.
+
+- **SHUTDOWN-003**: Kubernetes pod lifecycle hooks (`preStop` hook + `terminationGracePeriodSeconds`) are configured to match the service's drain timeout, ensuring K8s doesn't force-kill pods before they've completed graceful shutdown.
+
+### 6.3 Health Check Endpoints
+
+Every service exposes the following HTTP endpoints on a dedicated health port (port 8081, distinct from the main service port):
+
+- **HEALTH-001**: `GET /healthz` (Liveness) — returns HTTP 200 if the process is alive and its event loop is running. Used by Kubernetes liveness probe to detect deadlocked processes.
+- **HEALTH-002**: `GET /readyz` (Readiness) — returns HTTP 200 only when the service can accept traffic. Checks:
+  - Database connectivity (Postgres ping)
+  - Redis connectivity (PING)
+  - Event store writable (for event-sourced services)
+  - Required dependencies healthy (for services with sync dependencies on other services)
+- **HEALTH-003**: `GET /startupz` (Startup) — returns HTTP 200 only after the service has completed initialization (model loading for AI services, schema migration check, cache warming). Used by Kubernetes startup probe with a generous timeout (120 seconds for AI services, 10 seconds for others).
+- **HEALTH-004**: `GET /healthz/deep` (Deep Health) — returns detailed health status of all subsystems (database, Redis, NATS, external acquirer connectivity). Used by operations dashboards, not by Kubernetes probes.
+
+- **HEALTH-005**: Health endpoints never expose sensitive information (no internal IPs, connection strings, or version details). They return only status codes and generic status strings.
+
+## 7. Event Replay & Recovery
+
+### 7.1 Event Replay Mechanism
+
+- **REPLAY-001**: Every event-sourced service supports replaying events for a specific aggregate from a given sequence number. This is used for:
+  - Rebuilding read models after a projection bug fix
+  - Debugging aggregate state during incident investigation
+  - Verifying event-sourcing correctness in production
+
+- **REPLAY-002**: A replay CLI tool (`event-replay-cli`) can be invoked per-service to:
+  1. Read events from the event store for a specified aggregate ID and sequence range
+  2. Rebuild the aggregate's current state by folding events
+  3. Rebuild read-model projections from the event stream
+  4. Output a diff between the current projected state and the rebuilt state
+
+- **REPLAY-003**: For full read-model rebuilds (e.g., after a ClickHouse schema change), a batch replay job processes all events in chronological order across all aggregates, rebuilding the entire projection. This is a long-running operation with progress tracking and the ability to resume from the last processed event.
+
+### 7.2 Event Store Corruption Recovery
+
+- **RECOVERY-001**: If an event is found to be corrupted (protobuf decode failure, checksum mismatch), the service marks the corrupted event with a `CORRUPTED` flag and continues processing subsequent events. A corruption alert is raised to operations (ACT-07).
+- **RECOVERY-002**: Corrupted events can be manually replaced by an authorized operator (Admin role, Maker/Checker pattern) with a corrected event payload, logged in `change_history` with before/after payloads.
+- **RECOVERY-003**: Event store integrity is verified periodically (daily) by a background job that checks protobuf decodability of all events in the event store. Any corruption is detected within 24 hours.
 
 ---
 

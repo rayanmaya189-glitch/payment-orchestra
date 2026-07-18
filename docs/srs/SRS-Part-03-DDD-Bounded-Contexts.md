@@ -21,9 +21,8 @@
 
 This platform is modeled using **strategic DDD** (context mapping, ubiquitous language per context, explicit anti-corruption layers at every external-system boundary) and **tactical DDD** (aggregates, entities, value objects, domain events, repositories) implemented via **event sourcing + CQRS** for money-movement-relevant contexts (Payment Orchestration, Settlement/Reconciliation, Dispute Management) and simpler CRUD-plus-events for lower-risk supporting contexts (Notification, Document Management metadata).
 
-**ORM Layer**: All database access is through ORMs — no raw SQL in application code:
-- **Rust services** (orchestration, connector-gateway, AI assistant, risk): SeaORM entities with derive macros
-- **Go services** (operator, IAM, compliance, notifications, analytics, document): Ent ORM schemas with generated code
+**ORM Layer**: All database access is through SeaORM — no raw SQL in application code:
+- **All services**: SeaORM entities with derive macros (single ORM across the entire platform)
 
 This distinction is deliberate — not every context needs the cost of full event sourcing, and applying it uniformly would be over-engineering exactly the contexts (e.g., Notification templates) where it adds no auditability value.
 
@@ -341,34 +340,6 @@ pub enum Relation {}
 impl ActiveModelBehavior for ActiveModel {}
 ```
 
-**Saga Instance Entity (Ent — Go):**
-
-```go
-// schema/saga_instance.go
-package schema
-
-import (
-    "entgo.io/ent"
-    "entgo.io/ent/schema/field"
-)
-
-type SagaInstance struct {
-    ent.Schema
-}
-
-func (SagaInstance) Fields() []ent.Field {
-    return []ent.Field{
-        field.UUID("id", uuid.UUID{}).Immutable(),
-        field.String("saga_type"),
-        field.UUID("aggregate_id", uuid.UUID{}),
-        field.Enum("status").Values("running", "completed", "compensating", "failed"),
-        field.String("current_step"),
-        field.Time("created_at").Default(time.Now).Immutable(),
-        field.Time("updated_at").Default(time.Now).UpdateDefault(time.Now),
-    }
-}
-```
-
 **Design Principle (SAGA-002)**: Sagas never hold custody of funds (consistent with Part 1 §6). A saga's compensation logic for payment flows is always "revert the orchestration state machine" (void, cancel), never "move funds back through a platform-controlled account."
 
 **Design Principle (SAGA-003)**: Saga steps must be idempotent — compensation actions (void, cancel) must detect and skip already-completed operations rather than failing on duplicate execution. This is enforced by checking the target aggregate's current state before executing the compensation action.
@@ -401,28 +372,6 @@ pub struct Model {
     pub reviewed_at: Option<DateTimeWithTimeZone>,
     pub expires_at: DateTimeWithTimeZone,  // auto-expire after 48 hours
     pub created_at: DateTimeWithTimeZone,
-}
-
-// Ent schema (Go)
-type PendingChange struct {
-    ent.Schema
-}
-
-func (PendingChange) Fields() []ent.Field {
-    return []ent.Field{
-        field.UUID("id", uuid.UUID{}).Immutable(),
-        field.String("change_type"),
-        field.UUID("maker_id", uuid.UUID{}),
-        field.UUID("checker_id", uuid.UUID{}).Optional().Nillable(),
-        field.Bytes("payload"),
-        field.Enum("status").Values("pending", "approved", "rejected", "expired"),
-        field.String("maker_note").Optional().Nillable(),
-        field.String("checker_note").Optional().Nillable(),
-        field.Time("requested_at").Default(time.Now).Immutable(),
-        field.Time("reviewed_at").Optional().Nillable(),
-        field.Time("expires_at"),
-        field.Time("created_at").Default(time.Now).Immutable(),
-    }
 }
 ```
 
