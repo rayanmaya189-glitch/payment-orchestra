@@ -49,7 +49,38 @@ Prior Q&A (approved only) → same pipeline
 
 ---
 
-## 4. TDD Tests
+## 4. Repository Interface
+
+```rust
+#[async_trait]
+pub trait ConversationSessionRepository: Send + Sync {
+    async fn load(&self, session_id: Uuid) -> Result<Option<ConversationSession>, PlatformError>;
+    async fn save(&self, session: &ConversationSession) -> Result<(), PlatformError>;
+    async fn find_by_user(&self, user_id: Uuid) -> Result<Vec<ConversationSession>, PlatformError>;
+}
+
+#[async_trait]
+pub trait GroundingCitationRepository: Send + Sync {
+    async fn save(&self, citation: &GroundingCitation) -> Result<(), PlatformError>;
+    async fn find_by_answer(&self, answer_id: Uuid) -> Result<Vec<GroundingCitation>, PlatformError>;
+}
+```
+
+---
+
+## 5. Error Catalog
+
+| Code | HTTP | gRPC | Description |
+|---|---|---|---|
+| `AI_UNAVAILABLE` | 503 | UNAVAILABLE | AI Assistant temporarily unavailable |
+| `INSUFFICIENT_GROUNDING` | 200 | OK | Cannot answer — insufficient data (returns partial response) |
+| `QUOTA_EXCEEDED` | 429 | RESOURCE_EXHAUSTED | AI usage quota exceeded |
+| `QUERY_TOO_BROAD` | 400 | INVALID_ARGUMENT | Query would return too many results |
+| `SESSION_NOT_FOUND` | 404 | NOT_FOUND | Conversation session does not exist |
+
+---
+
+## 6. TDD Tests
 
 ```rust
 #[tokio::test]

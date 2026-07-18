@@ -62,14 +62,40 @@ pub struct Model {
 
 ---
 
-## 4. Scheduled Jobs
+## 4. Repository Interface
+
+```rust
+#[async_trait]
+pub trait SubscriptionRepository: Send + Sync {
+    async fn load(&self, id: SubscriptionId) -> Result<Option<Subscription>, PlatformError>;
+    async fn save(&self, subscription: &Subscription) -> Result<(), PlatformError>;
+    async fn find_active_for_renewal(&self, operator_id: Uuid) -> Result<Vec<Subscription>, PlatformError>;
+    async fn find_by_customer(&self, customer_id: Uuid) -> Result<Vec<Subscription>, PlatformError>;
+}
+```
+
+---
+
+## 5. Error Catalog
+
+| Code | HTTP | gRPC | Description |
+|---|---|---|---|
+| `SUBSCRIPTION_NOT_FOUND` | 404 | NOT_FOUND | Subscription does not exist |
+| `SUBSCRIPTION_ALREADY_CANCELLED` | 409 | FAILED_PRECONDITION | Subscription already cancelled |
+| `CANNOT_CANCEL_DURING_RENEWAL` | 409 | FAILED_PRECONDITION | Renewal saga in progress |
+| `INVALID_PLAN_AMOUNT` | 400 | INVALID_ARGUMENT | Plan amount must be positive |
+| `DUNNING_EXHAUSTED` | 409 | FAILED_PRECONDITION | Max retries reached |
+
+---
+
+## 6. Scheduled Jobs
 
 - **JOB-001**: Subscription renewal trigger (per billing cycle)
 - **JOB-002**: Dunning retry execution
 
 ---
 
-## 5. TDD Tests
+## 7. TDD Tests
 
 ```rust
 #[tokio::test]

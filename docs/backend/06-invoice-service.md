@@ -66,7 +66,35 @@ pub struct CreateInvoiceCommand {
 
 ---
 
-## 3. Event Consumer: PaymentCaptured
+## 3. Repository Interface
+
+```rust
+#[async_trait]
+pub trait InvoiceRepository: Send + Sync {
+    async fn load(&self, id: InvoiceId) -> Result<Option<Invoice>, PlatformError>;
+    async fn save(&self, invoice: &Invoice) -> Result<(), PlatformError>;
+    async fn find_by_order_reference(&self, operator_id: Uuid, order_ref: &str) -> Result<Option<Invoice>, PlatformError>;
+    async fn find_by_payment_intent(&self, payment_intent_id: Uuid) -> Result<Option<Invoice>, PlatformError>;
+    async fn find_overdue(&self, operator_id: Uuid) -> Result<Vec<Invoice>, PlatformError>;
+}
+```
+
+---
+
+## 4. Error Catalog
+
+| Code | HTTP | gRPC | Description |
+|---|---|---|---|
+| `INVOICE_NOT_FOUND` | 404 | NOT_FOUND | Invoice does not exist |
+| `DUPLICATE_ORDER_INVOICE` | 409 | ALREADY_EXISTS | Invoice already exists for order reference |
+| `INVALID_INVOICE_AMOUNT` | 400 | INVALID_ARGUMENT | Invoice total must be positive |
+| `INVOICE_ALREADY_SENT` | 409 | FAILED_PRECONDITION | Invoice already sent |
+| `INVOICE_ALREADY_CANCELLED` | 409 | FAILED_PRECONDITION | Invoice already cancelled |
+| `INVOICE_NOT_PAID` | 409 | FAILED_PRECONDITION | Cannot refund non-paid invoice |
+
+---
+
+## 5. Event Consumer: PaymentCaptured
 
 ```rust
 // On receiving EVT-04 PaymentCaptured from BC-05:

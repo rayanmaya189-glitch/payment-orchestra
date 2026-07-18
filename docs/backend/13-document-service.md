@@ -58,7 +58,32 @@ Returns presigned MinIO URL (temporary, 1-hour expiry)
 
 ---
 
-## 3. TDD Tests
+## 3. Repository Interface
+
+```rust
+#[async_trait]
+pub trait DocumentRecordRepository: Send + Sync {
+    async fn load(&self, id: Uuid) -> Result<Option<DocumentRecord>, PlatformError>;
+    async fn save(&self, record: &DocumentRecord) -> Result<(), PlatformError>;
+    async fn find_by_type(&self, operator_id: Uuid, doc_type: &str) -> Result<Vec<DocumentRecord>, PlatformError>;
+}
+```
+
+---
+
+## 4. Error Catalog
+
+| Code | HTTP | gRPC | Description |
+|---|---|---|---|
+| `DOCUMENT_NOT_FOUND` | 404 | NOT_FOUND | Document does not exist |
+| `DOCUMENT_TOO_LARGE` | 413 | INVALID_ARGUMENT | File exceeds 10MB limit |
+| `UNSUPPORTED_CONTENT_TYPE` | 400 | INVALID_ARGUMENT | Content type not allowed |
+| `OCR_FAILED` | 500 | INTERNAL | OCR extraction failed |
+| `MINIO_UNAVAILABLE` | 503 | UNAVAILABLE | Object storage unavailable |
+
+---
+
+## 5. TDD Tests
 
 ```rust
 #[tokio::test]

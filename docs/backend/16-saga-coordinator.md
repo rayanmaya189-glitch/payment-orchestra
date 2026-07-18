@@ -57,7 +57,33 @@ pub struct Model {
 
 ---
 
-## 4. TDD Tests
+## 4. Repository Interface
+
+```rust
+#[async_trait]
+pub trait SagaInstanceRepository: Send + Sync {
+    async fn load(&self, id: SagaId) -> Result<Option<SagaInstance>, PlatformError>;
+    async fn save(&self, saga: &SagaInstance) -> Result<(), PlatformError>;
+    async fn find_stuck(&self, timeout: Duration) -> Result<Vec<SagaInstance>, PlatformError>;
+    async fn find_by_aggregate(&self, aggregate_id: Uuid) -> Result<Vec<SagaInstance>, PlatformError>;
+}
+```
+
+---
+
+## 5. Error Catalog
+
+| Code | HTTP | gRPC | Description |
+|---|---|---|---|
+| `SAGA_NOT_FOUND` | 404 | NOT_FOUND | Saga instance does not exist |
+| `SAGA_ALREADY_COMPLETED` | 409 | FAILED_PRECONDITION | Saga already in terminal state |
+| `SAGA_STEP_FAILED` | 500 | INTERNAL | Saga step execution failed |
+| `SAGA_COMPENSATION_FAILED` | 500 | INTERNAL | Compensation action failed after retries |
+| `SAGA_TIMEOUT` | 504 | DEADLINE_EXCEEDED | Saga step exceeded timeout |
+
+---
+
+## 6. TDD Tests
 
 ```rust
 #[tokio::test]

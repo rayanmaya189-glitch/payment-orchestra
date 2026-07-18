@@ -69,7 +69,183 @@ pub struct ReviewKybCaseCommand {
 
 ---
 
-## 3. TDD Tests
+## 3. Repository Interface
+
+```rust
+#[async_trait]
+pub trait KybCaseRepository: Send + Sync {
+    async fn load(&self, id: Uuid) -> Result<Option<KybCase>, PlatformError>;
+    async fn save(&self, case: &KybCase) -> Result<(), PlatformError>;
+    async fn find_pending_review(&self) -> Result<Vec<KybCase>, PlatformError>;
+}
+
+#[async_trait]
+pub trait AmlAlertRepository: Send + Sync {
+    async fn save(&self, alert: &AmlAlert) -> Result<(), PlatformError>;
+    async fn find_open(&self, operator_id: Uuid) -> Result<Vec<AmlAlert>, PlatformError>;
+    async fn find_by_transaction(&self, transaction_id: Uuid) -> Result<Vec<AmlAlert>, PlatformError>;
+}
+```
+
+---
+
+## 4. AML Transaction Monitoring (Part 8 §11.1)
+
+### AML Alert Entity
+
+```rust
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
+#[sea_orm(table_name = "aml_alert")]
+pub struct Model {
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub alert_id: Uuid,
+    pub operator_id: Uuid,
+    pub transaction_id: Uuid,
+    pub alert_type: String,     // 'structuring' | 'velocity' | 'amount_anomaly' | 'rapid_succession'
+    pub severity: String,       // 'low' | 'medium' | 'high' | 'critical'
+    pub rule_id: String,        // which AML rule triggered
+    pub details: String,        // JSON with rule-specific details
+    pub status: String,         // 'open' | 'under_review' | 'escalated' | 'closed'
+    pub reviewed_by: Option<Uuid>,
+    pub reviewed_at: Option<DateTimeWithTimeZone>,
+    pub created_at: DateTimeWithTimeZone,
+}
+```
+
+### AML Rules (AML-001)
+
+```rust
+pub struct AmlRule {
+    pub rule_id: String,
+    pub rule_type: AmlRuleType,
+    pub threshold: AmlThreshold,
+    pub window: Duration,
+    pub severity: String,
+}
+
+pub enum AmlRuleType {
+    /// Multiple transactions just below reporting threshold within window
+    Structuring {
+        report_threshold_minor_units: i64,
+        near_threshold_percent: f64, // e.g., 0.9 (90% of threshold)
+        min_transactions: u32,
+        window_minutes: u32,
+    },
+    /// Unusual transaction frequency or volume
+    Velocity {
+        max_count: u32,
+        max_amount_minor_units: i64,
+        window_minutes: u32,
+    },
+    /// Transactions significantly exceeding operator's average
+    AmountAnomaly {
+        multiplier: f64, // e.g., 10x average
+        min_sample_size: u32,
+    },
+    /// Multiple authorizations on same payment method in short window
+    RapidSuccession {
+        max_count: u32,
+        window_seconds: u32,
+    },
+}
+```
+
+### SAR Generation (AML-003)
+
+```rust
+pub struct SarReport {
+    pub report_id: Uuid,
+    pub operator_id: Uuid,
+    pub alert_ids: Vec<Uuid>,
+    pub transactions: Vec<SarTransaction>,
+    pub narrative: String,
+    pub generated_at: DateTime<Utc>,
+    pub status: String, // 'draft' | 'submitted' | 'filed'
+}
+
+pub struct SarTransaction {
+    pub transaction_id: Uuid,
+    pub amount: Money,
+    pub currency: CurrencyCode,
+    pub timestamp: DateTime<Utc>,
+    pub counterparty: Option<String>,
+    pub description: String,
+}
+```
+
+### Compliance Monitor (Background Job)
+
+```rust
+pub struct AmlMonitor {
+    rule_set: Vec<AmlRule>,
+    alert_repository: Box<dyn AmlAlertRepository>,
+    notification_service: NotificationClient,
+}
+
+impl AmlMonitor {
+    pub async fn scan_transaction(&self, event: &PaymentAuthorized) -> Result<Vec<AmlAlert>, PlatformError> {
+        let mut alerts = vec![];
+
+        for rule in &self.rule_set {
+            match &rule.rule_type {
+                AmlRuleType::Structuring { report_threshold_minor_units, near_threshold_percent, min_transactions, window_minutes } => {
+                    let recent = self.get_recent_transactions(event.operator_id, *window_minutes).await?;
+                    let near_threshold = recent.iter()
+                        .filter(|t| t.amount_minor_units >= (report_threshold_minor_units as f64 * near_threshold_percent) as i64
+                            && t.amount_minor_units < *report_threshold_minor_units)
+                        .count();
+                    if near_threshold >= *min_transactions as usize {
+                        alerts.push(self.create_alert(event, rule, "structuring"));
+                    }
+                }
+                AmlRuleType::Velocity { max_count, max_amount_minor_units, window_minutes } => {
+                    let recent = self.get_recent_transactions(event.operator_id, *window_minutes).await?;
+                    if recent.len() >= *max_count as usize {
+                        alerts.push(self.create_alert(event, rule, "velocity"));
+                    }
+                }
+                AmlRuleType::AmountAnomaly { multiplier, min_sample_size } => {
+                    let avg = self.get_average_transaction_amount(event.operator_id, *min_sample_size).await?;
+                    if event.amount.amount_minor_units > (avg as f64 * multiplier) as i64 {
+                        alerts.push(self.create_alert(event, rule, "amount_anomaly"));
+                    }
+                }
+                AmlRuleType::RapidSuccession { max_count, window_seconds } => {
+                    let recent = self.get_recent_by_payment_method(event.payment_method_id, *window_seconds).await?;
+                    if recent.len() >= *max_count as usize {
+                        alerts.push(self.create_alert(event, rule, "rapid_succession"));
+                    }
+                }
+            }
+        }
+
+        for alert in &alerts {
+            self.alert_repository.save(alert).await?;
+            self.notification_service.send_aml_alert(alert).await?;
+        }
+
+        Ok(alerts)
+    }
+}
+```
+
+---
+
+## 5. Error Catalog
+
+| Code | HTTP | gRPC | Description |
+|---|---|---|---|
+| `KYB_CASE_NOT_FOUND` | 404 | NOT_FOUND | KYB case does not exist |
+| `KYB_CASE_ALREADY_RESOLVED` | 409 | FAILED_PRECONDITION | Case already approved/rejected |
+| `KYB_NO_DOCUMENTS` | 400 | INVALID_ARGUMENT | At least one document required |
+| `AML_ALERT_NOT_FOUND` | 404 | NOT_FOUND | AML alert does not exist |
+| `AML_ALERT_ALREADY_REVIEWED` | 409 | FAILED_PRECONDITION | Alert already reviewed |
+| `SAR_GENERATION_FAILED` | 500 | INTERNAL | SAR report generation failed |
+| `PARTNER_API_UNAVAILABLE` | 503 | UNAVAILABLE | KYB partner API down |
+
+---
+
+## 6. TDD Tests
 
 ```rust
 #[tokio::test]

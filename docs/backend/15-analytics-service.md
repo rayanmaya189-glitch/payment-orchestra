@@ -52,7 +52,33 @@ GROUP BY acquirer_id, card_scheme, hour;
 
 ---
 
-## 4. TDD Tests
+## 4. Read Endpoints (Complete)
+
+| Endpoint | Method | Description |
+|---|---|---|
+| `/v1/analytics/authorization-rates` | GET | Hourly rates per acquirer/scheme |
+| `/v1/analytics/decline-reasons` | GET | Decline reason breakdown |
+| `/v1/analytics/settlement-status` | GET | Matched/unmatched counts |
+| `/v1/analytics/fee-analysis` | GET | Fees per acquirer (from ledger_entry) |
+| `/v1/analytics/chargeback-trends` | GET | Chargeback rate by scheme (30/90 day) |
+| `/v1/analytics/scheme-compliance` | GET | Visa/Mastercard threshold monitoring |
+| `/v1/analytics/fraud-analysis` | GET | Fraud rate by BIN, geography, amount |
+| `/v1/analytics/revenue-recovery` | GET | Revenue recovered via failover (GOAL-002) |
+
+---
+
+## 5. Error Catalog
+
+| Code | HTTP | gRPC | Description |
+|---|---|---|---|
+| `ANALYTICS_UNAVAILABLE` | 503 | UNAVAILABLE | ClickHouse down |
+| `STALE_DATA` | 503 | UNAVAILABLE | Data exceeds staleness threshold |
+| `INVALID_DATE_RANGE` | 400 | INVALID_ARGUMENT | Date range validation failed |
+| `QUERY_TIMEOUT` | 504 | DEADLINE_EXCEEDED | Query exceeded time limit |
+
+---
+
+## 6. TDD Tests
 
 ```rust
 #[tokio::test]

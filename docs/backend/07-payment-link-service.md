@@ -63,7 +63,32 @@ When `GET /pay/{token}` is accessed:
 
 ---
 
-## 3. TDD Tests
+## 3. Repository Interface
+
+```rust
+#[async_trait]
+pub trait PaymentLinkRepository: Send + Sync {
+    async fn load(&self, id: Uuid) -> Result<Option<PaymentLink>, PlatformError>;
+    async fn load_by_token(&self, token: &str) -> Result<Option<PaymentLink>, PlatformError>;
+    async fn save(&self, link: &PaymentLink) -> Result<(), PlatformError>;
+    async fn find_expired(&self) -> Result<Vec<PaymentLink>, PlatformError>;
+}
+```
+
+---
+
+## 4. Error Catalog
+
+| Code | HTTP | gRPC | Description |
+|---|---|---|---|
+| `PAYMENT_LINK_NOT_FOUND` | 404 | NOT_FOUND | Payment link does not exist |
+| `PAYMENT_LINK_EXPIRED` | 410 | FAILED_PRECONDITION | Payment link has expired |
+| `PAYMENT_LINK_ALREADY_USED` | 409 | FAILED_PRECONDITION | Payment link already used |
+| `INVALID_LINK_AMOUNT` | 400 | INVALID_ARGUMENT | Amount must be positive |
+
+---
+
+## 5. TDD Tests
 
 ```rust
 #[tokio::test]

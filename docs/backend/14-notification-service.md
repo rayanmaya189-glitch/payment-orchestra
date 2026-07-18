@@ -53,7 +53,33 @@ pub struct Model {
 
 ---
 
-## 4. TDD Tests
+## 4. Repository Interface
+
+```rust
+#[async_trait]
+pub trait NotificationRequestRepository: Send + Sync {
+    async fn load(&self, id: Uuid) -> Result<Option<NotificationRequest>, PlatformError>;
+    async fn save(&self, request: &NotificationRequest) -> Result<(), PlatformError>;
+    async fn find_pending(&self) -> Result<Vec<NotificationRequest>, PlatformError>;
+    async fn find_dead_letter(&self) -> Result<Vec<NotificationRequest>, PlatformError>;
+}
+```
+
+---
+
+## 5. Error Catalog
+
+| Code | HTTP | gRPC | Description |
+|---|---|---|---|
+| `NOTIFICATION_NOT_FOUND` | 404 | NOT_FOUND | Notification does not exist |
+| `NOTIFICATION_TEMPLATE_MISSING` | 500 | INTERNAL | Template not found |
+| `EMAIL_PROVIDER_UNAVAILABLE` | 503 | UNAVAILABLE | Email provider down |
+| `SMS_PROVIDER_UNAVAILABLE` | 503 | UNAVAILABLE | SMS provider down |
+| `NOTIFICATION_ALREADY_SENT` | 409 | FAILED_PRECONDITION | Duplicate notification (dedup) |
+
+---
+
+## 6. TDD Tests
 
 ```rust
 #[tokio::test]

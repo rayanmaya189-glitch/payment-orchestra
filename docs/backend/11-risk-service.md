@@ -69,7 +69,30 @@ pub struct AssessRiskQuery {
 
 ---
 
-## 4. TDD Tests
+## 4. Repository Interface
+
+```rust
+#[async_trait]
+pub trait RiskAssessmentRepository: Send + Sync {
+    async fn load_by_payment_intent(&self, payment_intent_id: Uuid) -> Result<Option<RiskAssessment>, PlatformError>;
+    async fn save(&self, assessment: &RiskAssessment) -> Result<(), PlatformError>;
+    async fn find_high_risk(&self, operator_id: Uuid, since: DateTime<Utc>) -> Result<Vec<RiskAssessment>, PlatformError>;
+}
+```
+
+---
+
+## 5. Error Catalog
+
+| Code | HTTP | gRPC | Description |
+|---|---|---|---|
+| `RISK_ASSESSMENT_NOT_FOUND` | 404 | NOT_FOUND | Risk assessment does not exist |
+| `INVALID_CARD_BIN` | 400 | INVALID_ARGUMENT | Card BIN must be 6 digits |
+| `UNSUPPORTED_CURRENCY` | 400 | INVALID_ARGUMENT | Currency not in supported list |
+
+---
+
+## 6. TDD Tests
 
 ```rust
 #[tokio::test]

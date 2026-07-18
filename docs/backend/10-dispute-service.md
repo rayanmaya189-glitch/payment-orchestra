@@ -67,7 +67,33 @@ pub struct RecordChargebackCommand {
 
 ---
 
-## 3. TDD Tests
+## 3. Repository Interface
+
+```rust
+#[async_trait]
+pub trait ChargebackCaseRepository: Send + Sync {
+    async fn load(&self, id: ChargebackId) -> Result<Option<ChargebackCase>, PlatformError>;
+    async fn save(&self, case: &ChargebackCase) -> Result<(), PlatformError>;
+    async fn find_by_payment_intent(&self, payment_intent_id: Uuid) -> Result<Option<ChargebackCase>, PlatformError>;
+    async fn find_open_cases(&self, operator_id: Uuid) -> Result<Vec<ChargebackCase>, PlatformError>;
+}
+```
+
+---
+
+## 4. Error Catalog
+
+| Code | HTTP | gRPC | Description |
+|---|---|---|---|
+| `CHARGEBACK_NOT_FOUND` | 404 | NOT_FOUND | Chargeback case does not exist |
+| `PAYMENT_INTENT_NOT_CAPTURED` | 409 | FAILED_PRECONDITION | Cannot create chargeback for non-captured intent |
+| `CHARGEBACK_ALREADY_RESOLVED` | 409 | FAILED_PRECONDITION | Chargeback already resolved |
+| `CHARGEBACK_ALREADY_DISPUTED` | 409 | FAILED_PRECONDITION | Representment already submitted |
+| `INVALID_REPRESENTMENT_EVIDENCE` | 400 | INVALID_ARGUMENT | Missing required evidence fields |
+
+---
+
+## 5. TDD Tests
 
 ```rust
 #[tokio::test]

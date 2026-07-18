@@ -87,7 +87,35 @@ pub struct UpdateOperatorStatusCommand {
 
 ---
 
-## 4. TDD Tests
+## 4. Repository Interface
+
+```rust
+#[async_trait]
+pub trait OperatorRepository: Send + Sync {
+    async fn load(&self, id: OperatorId) -> Result<Option<Operator>, PlatformError>;
+    async fn save(&self, operator: &Operator) -> Result<(), PlatformError>;
+    async fn find_by_trade_license(&self, license: &str) -> Result<Option<Operator>, PlatformError>;
+    async fn find_by_email(&self, email: &str) -> Result<Option<Operator>, PlatformError>;
+}
+```
+
+---
+
+## 5. Error Catalog
+
+| Code | HTTP | gRPC | Description |
+|---|---|---|---|
+| `OPERATOR_NOT_FOUND` | 404 | NOT_FOUND | Operator does not exist |
+| `DUPLICATE_TRADE_LICENSE` | 409 | ALREADY_EXISTS | Trade license already registered |
+| `DUPLICATE_SUBDOMAIN` | 409 | ALREADY_EXISTS | Subdomain already taken |
+| `INVALID_TRADE_LICENSE_FORMAT` | 400 | INVALID_ARGUMENT | Trade license fails format validation |
+| `EMAIL_NOT_VERIFIED` | 403 | FAILED_PRECONDITION | Email verification pending |
+| `KYB_NOT_APPROVED` | 403 | FAILED_PRECONDITION | KYB not yet approved |
+| `OPERATOR_SUSPENDED` | 403 | FAILED_PRECONDITION | Operator account suspended |
+
+---
+
+## 6. TDD Tests
 
 ```rust
 #[tokio::test]

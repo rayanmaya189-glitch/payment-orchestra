@@ -2,7 +2,7 @@
 
 ## Overview
 
-This directory contains implementation-ready DDD + TDD specifications for all 18 microservices plus cross-cutting infrastructure of the AI-Native Payment Orchestration Platform. Each file provides:
+This directory contains implementation-ready DDD + TDD specifications for all 18 microservices plus cross-cutting infrastructure and gRPC contracts of the AI-Native Payment Orchestration Platform. Each file provides:
 
 - **Domain Model**: Aggregates, entities, value objects, invariants
 - **Commands**: Every mutating operation with preconditions and postconditions
@@ -43,6 +43,7 @@ Rust + SeaORM + NATS JetStream + PostgreSQL + Redis + ClickHouse + OpenSearch + 
 | `17-api-gateway.md` | `api-gateway` | Cross-cutting | REST ingress |
 | `18-ai-gateway.md` | `ai-gateway` | Cross-cutting | AI guardrails |
 | `19-infrastructure-cross-cutting.md` | Cross-cutting | Infrastructure | Outbox, health checks, shutdown, leader election, feature flags, logging, pools, degraded modes, secrets, encryption, audit, SSRF, operational hardening |
+| `20-grpc-proto-definitions.md` | Cross-cutting | gRPC Contracts | All 15 service proto definitions, shared types, compilation config |
 
 ## Implementation Order (Milestone-Aligned)
 
