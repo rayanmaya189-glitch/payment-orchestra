@@ -306,6 +306,33 @@ This same `auth_rate_hourly_mv`-style rollup is exactly the "summary document" s
 
 ## 4. OpenSearch — Vector & Text Retrieval Index Design
 
+### 4.1 Index Lifecycle Management
+
+- **OS-ILM-001**: OpenSearch indices follow an Index Lifecycle Management (ILM) policy:
+  - **Hot phase**: Active writes and searches. Shard count sized for expected query volume.
+  - **Warm phase**: After 30 days, indices are force-merged to reduce segment count and improve search performance. No new writes.
+  - **Cold phase**: After 90 days, indices are moved to cold storage (cheaper SSD/HDD) for historical queries.
+  - **Delete phase**: After 365 days, indices are deleted (unless compliance retention requires longer).
+
+- **OS-ILM-002**: Shard allocation strategy: each index has a configurable number of primary shards (default: 1 for small indices, 3 for large indices) and replica shards (default: 1 for production, 0 for development). Replica shards provide read scaling and fault tolerance.
+
+- **OS-ILM-003**: Index optimization: warm-phase indices are force-merged to a single segment per shard to reduce file descriptor usage and improve query performance. This is a read-only operation that improves search speed at the cost of write capability.
+
+## 5. ClickHouse — Replication Strategy
+
+### 5.1 Replication
+
+- **CH-REP-001**: ClickHouse tables use `ReplicatedMergeTree` engine family for high availability. Each table has at least 2 replicas across different availability zones.
+- **CH-REP-002**: Replication is asynchronous — writes are acknowledged to the writer before replicas are updated. This provides eventual consistency for analytics queries but ensures no data loss on single-replica failure.
+- **CH-REP-003**: Materialized views (Part 9 §3.1 CH-002) are also replicated, ensuring consistent aggregated data across replicas.
+
+### 5.2 Backup and Restore
+
+- **CH-BACK-001**: ClickHouse backups are performed daily using `clickhouse-backup` tool, storing backups to MinIO (S3-compatible) with 30-day retention.
+- **CH-BACK-002**: Restore procedure: restore from backup into a fresh ClickHouse cluster, then replay NATS JetStream retained events to rebuild the projection from the last consistent state.
+
+## 6. MinIO — Object Storage Lifecycle Policies
+
 ### 4.1 Index Strategy
 
 - **OS-001**: A single OpenSearch index (`rag_index`) is used for the RAG retrieval. The index is designed with strong field-level access control to ensure the operator can only query their own data.
@@ -345,13 +372,59 @@ This same `auth_rate_hourly_mv`-style rollup is exactly the "summary document" s
 
 - **MINIO-001**: Single-bucket design with path-based organization (e.g., `kyb-evidence/license-001.pdf`) is simpler for single-tenant deployment. Access control is enforced at the application layer.
 
----
+### 5.1 Bucket Lifecycle Policies
 
-## 6. Outbox Table Schema (Transactional Outbox)
+- **MINIO-LC-001**: Each bucket has lifecycle rules:
+  - **`kyb-evidence`**: Objects transition to IA (infrequent access) storage class after 90 days. Objects are retained for 7 years minimum (compliance, Part 8 AUD-001). No automatic deletion.
+  - **`settlement-files`**: Objects transition to IA after 30 days. Retained for 5 years minimum (financial record retention). Automatic deletion after retention expires.
+  - **`exported-reports`**: Objects transition to IA after 30 days. Retained for 2 years minimum (audit reproducibility, BR-071-1).
+  - **`document-uploads`**: Temporary uploads expire after 7 days unless linked to a compliance/financial record. Linked documents follow the compliance retention schedule.
+
+- **MINIO-LC-002**: Bucket versioning is enabled for `kyb-evidence` and `settlement-files` buckets to prevent accidental overwrites and enable point-in-time recovery. Versioning is not enabled for `document-uploads` (temporary data).
+
+- **MINIO-LC-003**: Cross-region replication is configured for `kyb-evidence` and `settlement-files` buckets to a secondary MinIO cluster in a different availability zone, providing disaster recovery for compliance-critical documents.
+
+## 7. Redis — High Availability Strategy
+
+### 7.1 Redis HA Configuration
+
+- **REDIS-HA-001**: Redis is deployed in Redis Sentinel mode (not Redis Cluster for MVP) with:
+  - 1 primary instance (handles all writes)
+  - 2 sentinel instances (monitor primary health, coordinate failover)
+  - Automatic failover: if primary fails, sentinel promotes a replica within 10 seconds
+  - Persistence: AOF (Append-Only File) with `everysec` fsync for data durability
+
+- **REDIS-HA-002**: Redis memory management:
+  - Max memory: configurable per deployment (default: 2GB)
+  - Eviction policy: `allkeys-lru` (least recently used) — since Redis is a cache layer only (REDIS-001), evicting stale entries is acceptable
+  - Memory fragmentation monitoring: alert if `mem_fragmentation_ratio` > 1.5
+
+- **REDIS-HA-003**: Connection pooling: each service maintains its own Redis connection pool (default: 10 connections, 5-second timeout, 300-second idle timeout). Connection pool exhaustion is monitored and alerts raised if pool utilization exceeds 80%.
+
+- **REDIS-HA-004**: Redis data is backed up daily via RDB snapshots to MinIO. Recovery from backup restores the cache layer — no data loss impact since Redis is not a system of record (REDIS-001).
+
+## 8. Connection Pool Management
 
 ### 6.1 Outbox Entity (SeaORM — Rust)
 
 Every event-sourced service includes an outbox entity alongside its event store entity, written within the same transaction (Part 3 §9.2):
+
+#### 6.1.1 Outbox Table Partitioning
+
+- **DB-014**: The outbox table is partitioned by `created_at` (monthly partitions) to prevent unbounded growth from degrading relay performance. Old partitions (published and older than 7 days) are dropped automatically by a background job.
+- **DB-015**: Outbox entries are purged after `published_at` + a configurable retention (default: 7 days) to prevent unbounded table growth. The retention must exceed the worst-case relay downtime window.
+- **DB-016**: Outbox relay performance is monitored: if the relay's polling interval exceeds 2x the target (default: 2 seconds), an alert is raised. The relay exposes a `/healthz` endpoint (Part 4 HEALTH-001) and a lag metric (`outbox_relay_lag`).
+
+#### 6.1.2 Outbox Relay Monitoring
+
+- **OUTBOX-MON-001**: The outbox relay exposes metrics:
+  - `outbox_relay_lag` — number of unpublished entries
+  - `outbox_relay_publish_latency_ms` — time to publish a batch
+  - `outbox_relay_errors_total` — count of failed publish attempts
+- **OUTBOX-MON-002**: Alerts are raised when:
+  - `outbox_relay_lag` > 100 (warning) or > 1000 (critical)
+  - `outbox_relay_errors_total` increases by > 10 in 5 minutes
+  - Relay is not heartbeat-positive for > 30 seconds
 
 ```rust
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
@@ -426,6 +499,13 @@ pub struct Model {
 - **POOL-002**: The connection pool is shared across all application processes (authorization is enforced at the query level via ABAC (Part 8), not at the connection level).
 
 - **POOL-003**: Read-heavy services (`analytics-service`, `ai-assistant-service`) use read-replica Postgres connections for query operations, with the primary reserved for writes. Read-replica lag is monitored as a first-class metric (Part 11 OBS-004).
+
+### 9.2 Connection Pool Sizing Guidelines
+
+- **POOL-SIZE-001**: Connection pool sizing follows the formula: `pool_size = (number_of_cpu_cores * 2) + disk_spindles`. For typical cloud instances (4 vCPU, SSD): pool size = 9 connections.
+- **POOL-SIZE-002**: Event-sourced services (orchestration, reconciliation, subscription, dispute) use larger pools (20 connections) due to higher write throughput during peak checkout periods.
+- **POOL-SIZE-003**: Connection pool exhaustion is monitored via PgBouncer stats (`cl_active`, `cl_waiting`). When `cl_waiting` > 0 for more than 5 seconds, an alert is raised. When `cl_waiting` > 10, the service is flagged as degraded.
+- **POOL-SIZE-004**: Connection pool metrics are exported to Prometheus and included in the service's RED metrics (Part 11 OBS-003).
 
 ---
 

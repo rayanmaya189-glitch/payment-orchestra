@@ -135,7 +135,70 @@ Default roles (extensible per operator, Part 2 UC-001 step 5) serve as attribute
 
 ---
 
-## 6. UAE Regulatory & Data Residency Compliance Mapping
+## 6. Compliance Framework Alignment
+
+### 6.1 SWIFT Customer Security Programme (CSP) Alignment
+
+The SWIFT CSP defines mandatory security controls for payment platform participants. While the platform is not a direct SWIFT participant, aligning with CSP controls demonstrates payment industry security maturity:
+
+| CSP Control | Category | Platform Implementation |
+|---|---|---|
+| 1.1 Restrict Internet Access | Network Security | NetworkPolicies (Part 11 K8S-005), mTLS (Part 4 §8) |
+| 1.2 Restrict Key Management System Access | Access Control | HSM-backed KEK (§3 SEC-001), PAM (§7.7) |
+| 1.3 Manage Windows Privileged Account | Privileged Access | PAM (§7.7), JIT access, session recording |
+| 1.4 Manage Unix/Linux Privileged Account | Privileged Access | PAM (§7.7), bastion host, no standing access |
+| 2.1 Protections of Security Infrastructure | Network Security | Container hardening (Part 11 HARD-001), security headers (§7.2) |
+| 2.2 Reduce Attack Surface | Network Security | NetworkPolicies (Part 11 K8S-005), distroless containers (Part 11 HARD-001) |
+| 2.3 Secure Configuration | Network Security | CIS benchmark compliance, secure defaults |
+| 2.4 Ensure Integrity of Custom Software | Application Security | TDD (Part 11 §1), code review, SAST (Part 11 SECPIPE-001) |
+| 2.5 Securely Transfer Sensitive Data | Data Protection | TLS 1.3 (§4 ENC-001), mTLS (Part 4 §8) |
+| 3.1 Segregation of Duties | Access Control | ABAC (§2), Maker/Checker (Part 3 §9.2) |
+| 3.2 Least Privilege | Access Control | ABAC (§2), API key scoping (§11) |
+| 3.3 Physical Security | Physical Security | Cloud provider responsibility (documented) |
+| 3.4 System Hardening | System Security | Container hardening (Part 11 HARD-001), CIS benchmarks |
+
+### 6.2 ISO 27001 Annex A Alignment
+
+| Annex A Control | Category | Platform Implementation |
+|---|---|---|
+| A.5.1 Policies for information security | Organizational | Information Security Policy (Part 11 COMPLDOC-001) |
+| A.5.2 Information security roles and responsibilities | Organizational | ABAC roles (§2.1), RACI matrix (Part 1 §8.3) |
+| A.5.3 Information security awareness, education and training | Organizational | Security Awareness Training Program (Part 11 COMPLDOC-001) |
+| A.6.1 Screening | People | KYB evidence workflow (Part 2 UC-002) |
+| A.6.2 Terms and conditions of employment | People | Acceptable Use Policy (Part 11 COMPLDOC-001) |
+| A.6.3 Information security awareness, education and training | People | Security Awareness Training Program |
+| A.7.1 Physical security perimeters | Physical | Cloud provider responsibility |
+| A.7.2 Physical entry | Physical | Cloud provider responsibility |
+| A.8.1 User endpoint devices | Technological | Dashboard security headers (§7.2), CSP |
+| A.8.2 Privileged access rights | Technological | PAM (§7.7), ABAC (§2) |
+| A.8.3 Information access restriction | Technological | ABAC (§2), RLS (SECTEST-004) |
+| A.8.4 Access to source code | Technological | Git access controls, code review |
+| A.8.5 Secure authentication | Technological | MFA (§1.1 AUTH-001), API keys (§1.2) |
+| A.8.6 Capacity management | Technological | Connection pooling (Part 9 §9), rate limiting (Part 10 §5) |
+| A.8.7 Protection against malware | Technological | Container scanning (Part 11 SECPIPE-001), dependency scanning |
+| A.8.8 Management of technical vulnerabilities | Technological | CVE SLA (§7.6 SUPPLY-004), dependency scanning |
+| A.8.9 Configuration management | Technological | Hardened containers (Part 11 HARD-001), K8s NetworkPolicies |
+
+### 6.3 NIST Cybersecurity Framework Alignment
+
+| CSF Function | Category | Platform Implementation |
+|---|---|---|
+| **Identify** | Asset Management | Data classification (§4.4 ENC-009), SBOM (§7.6 SUPPLY-001) |
+| **Identify** | Risk Assessment | Threat model (§10), abuse cases (§10.5) |
+| **Protect** | Access Control | ABAC (§2), MFA (§1.1), PAM (§7.7) |
+| **Protect** | Data Security | Encryption (§4), tokenization (§4.3), key management (§13) |
+| **Protect** | Protective Technology | Container hardening (Part 11), security headers (§7.2) |
+| **Detect** | Anomalies and Events | SIEM (§7.5), alerting (LOGSEC-003), audit logs (§5) |
+| **Detect** | Security Continuous Monitoring | Pen testing (§7.2), vulnerability scanning (§7.1) |
+| **Respond** | Response Planning | Incident response runbook (§9.3), communication plan (§9.2) |
+| **Respond** | Communications | Incident communication plan (§9.2) |
+| **Respond** | Analysis | Incident post-mortem (§9.2 IR-COMM-003) |
+| **Respond** | Mitigation | Incident response runbook playbooks (§9.3) |
+| **Recover** | Recovery Planning | DR plan (Part 11 §8), BCP (Part 11 §8.1) |
+| **Recover** | Improvements | Post-mortem remediation tracking (§9.2 IR-COMM-003) |
+| **Recover** | Communications | Incident communication plan (§9.2) |
+
+### 6.4 UAE Regulatory & Data Residency Compliance Mapping
 
 *(This section maps architectural controls to regulatory expectation categories; it is not itself a legal opinion — final compliance posture requires UAE legal counsel sign-off per Part 1 §6.4/ASSUMP-001.)*
 
@@ -157,6 +220,25 @@ Default roles (extensible per operator, Part 2 UC-001 step 5) serve as attribute
 
 - **SECTEST-001**: A dedicated security isolation test suite must run against every release: automated attempts to access unauthorized data via every API surface, using role-violation test fixtures to catch authorization bypass (e.g., a Read-Only user attempting mutating operations, a Developer role attempting acquirer credential changes).
 - **SECTEST-002**: Periodic third-party penetration testing (quarterly) covering the API Gateway, AI Gateway, and connector webhook endpoints specifically, given their exposure to untrusted/external input. Findings with CVSS >= 7.0 must be remediated within 30 days.
+
+#### 7.2 Penetration Testing Scope
+
+- **PENTEST-SCOPE-001**: Scope boundaries:
+  - **In-scope**: API Gateway (REST/gRPC-Web), AI Gateway, connector webhook endpoints, payment link hosted pages, admin dashboard, all domain service APIs accessible through the API Gateway
+  - **Out-of-scope**: Internal service-to-service gRPC (protected by mTLS), database direct access, infrastructure layer (cloud provider responsibility), third-party acquirer systems
+
+- **PENTEST-SCOPE-002**: Testing methodology:
+  - **Black-box**: External tester with no prior knowledge (simulates external attacker)
+  - **Grey-box**: Tester with limited knowledge (API docs, user credentials) (simulates malicious insider with limited access)
+  - **White-box**: Full system access (architecture diagrams, source code) (simulates comprehensive security review)
+  - Quarterly rotations alternate between black-box and grey-box; white-box is performed annually.
+
+- **PENTEST-SCOPE-003**: Reporting format:
+  - Executive summary (business risk)
+  - Findings with CVSS score, affected endpoint, reproduction steps
+  - Remediation recommendations with priority
+  - Timeline for remediation (Critical: 24h, High: 7d, Medium: 30d, Low: 90d)
+  - Verification of prior finding remediation
 - **SECTEST-003**: Static analysis (Clippy with security lints, `cargo-audit`, `cargo-deny`) and dependency vulnerability scanning integrated into CI/CD (Part 11) — Rust's memory-safety guarantees reduce but do not eliminate the need for this (logic-level vulnerabilities, e.g., authorization bypass, are not caught by memory safety).
 - **SECTEST-004**: Row-Level Security (RLS) policies enforced at the Postgres database layer for all tables containing operator data — provides defense-in-depth against application-layer authorization bypass. RLS policies are tested as part of SECTEST-001.
 - **SECTEST-005**: Annual PCI-DSS assessment (SAQ-A or SAQ-A-EP depending on final scoping) by a Qualified Security Assessor (QSA). Internal quarterly vulnerability scans by an Approved Scanning Vendor (ASV).
@@ -241,10 +323,50 @@ This Part is the authoritative home for the *security/compliance framing* of con
 
 ---
 
-## 9. Incident Response Posture (Preview)
+## 9. Incident Response & Communication
+
+### 9.1 Incident Response Posture
 
 - **IR-001**: A documented incident response runbook (finalized in Part 11 operationally, but its existence is a compliance requirement recorded here) must cover: suspected credential compromise (platform-level), suspected data exposure, AI guardrail bypass patterns, and acquirer-side outage handling.
 - **IR-002**: Any confirmed data exposure or credential compromise affecting live payment credentials triggers a defined notification process to the affected operator and, where required by UAE regulatory/data-protection obligations, to relevant authorities.
+
+### 9.2 Incident Communication Plan
+
+- **IR-COMM-001**: Incident severity classification:
+
+| Severity | Definition | Response Time | Communication |
+|---|---|---|---|
+| SEV-1 (Critical) | Payment processing down, data breach, regulatory violation | 15 minutes | Status page + email + SMS to all operators |
+| SEV-2 (High) | Degraded payment processing, partial data exposure | 1 hour | Status page + email to affected operators |
+| SEV-3 (Medium) | Non-critical feature degradation, minor security finding | 4 hours | Email to affected operators |
+| SEV-4 (Low) | Cosmetic issues, minor bugs | 24 hours | Dashboard notification |
+
+- **IR-COMM-002**: Communication channels:
+  - **Status page**: Public status page (e.g., statuspage.io) showing system health for all services
+  - **Email**: Automated email notifications for SEV-1/SEV-2 incidents
+  - **SMS**: SMS alerts for SEV-1 incidents to on-call engineers
+  - **Slack/Teams**: Internal real-time communication channel for incident response
+
+- **IR-COMM-003**: Incident timeline documentation:
+  - **Detection**: When was the incident detected? By what mechanism?
+  - **Triage**: Who was notified? When did they acknowledge?
+  - **Mitigation**: What actions were taken to mitigate impact?
+  - **Resolution**: When was the incident resolved? What was the root cause?
+  - **Post-mortem**: Within 48 hours of resolution, a post-mortem document is created covering timeline, root cause, impact, and remediation actions.
+
+### 9.3 Incident Response Runbook
+
+- **IR-004**: The incident response runbook includes specific playbooks for:
+  - **Acquirer outage**: How to detect, how to failover, how to notify operators
+  - **Database failure**: How to failover to replica, how to validate data consistency
+  - **Redis failure**: How to handle cache misses, how to restore from backup
+  - **NATS failure**: How to detect consumer lag, how to replay missed events
+  - **AI model degradation**: How to detect, how to fallback to raw data, how to notify operators
+  - **Certificate expiration**: How to detect impending expiration, how to rotate
+  - **Secret compromise**: How to revoke, how to rotate, how to notify affected parties
+  - **Data breach**: How to contain, how to assess scope, how to notify regulators
+
+- **IR-005**: Each playbook includes: detection criteria, escalation path, mitigation steps, validation steps, and rollback procedures.
 
 ---
 
@@ -385,6 +507,25 @@ This Part is the authoritative home for the *security/compliance framing* of con
 - **KMP-002**: Key Rotation Schedule: KEK rotated every 90 days (configurable, SEC-ROT-001). DEKs rotated on-demand (compromise) or annually. API keys rotated every 90 days (configurable, AUTH-004).
 - **KMP-003**: Key Destruction: When keys are retired, the old key material is cryptographically destroyed (overwritten in HSM) after ensuring all data encrypted under it has been re-encrypted or archived. Destruction is logged.
 - **KMP-004**: Emergency Key Revocation: In case of suspected key compromise, an emergency revocation procedure allows immediate KEK rotation (bypassing normal change management) with mandatory post-incident review within 48 hours.
+
+### 13.1 Key Ceremony Procedures
+
+- **CEREMONY-001**: KEK ceremonies (initial creation and rotation) follow a formal procedure:
+  1. **Pre-ceremony**: Ceremony script reviewed and approved by Security Admin and Compliance Reviewer (Maker/Checker). All participants confirmed. HSM initialized and verified.
+  2. **Ceremony execution**: Minimum 3 participants required (Security Admin, Compliance Reviewer, DevOps Engineer). Each participant authenticates to the HSM independently. Key material generated within HSM boundary (never exported in plaintext).
+  3. **Split knowledge**: KEK is split into 3 key shares (using Shamir's Secret Sharing or HSM-native split). Each participant holds one share. No single participant can reconstruct the complete key.
+  4. **Post-ceremony**: All participants sign the ceremony log. HSM audit trail verified. Key shares stored in separate secure locations. Old KEK cryptographically destroyed.
+
+- **CEREMONY-002**: Ceremony documentation includes:
+  - Date, time, location
+  - Participants (names, roles, authentication method)
+  - HSM serial number and firmware version
+  - Key generation parameters
+  - Key share distribution record
+  - Verification steps performed
+  - Signatures of all participants
+
+- **CEREMONY-003**: Key ceremony logs are retained permanently (compliance requirement). They are stored in append-only audit log (§5.3 AUD-003) and backed up to a separate, isolated storage system.
 
 ---
 

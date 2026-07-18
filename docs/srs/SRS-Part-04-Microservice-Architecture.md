@@ -242,7 +242,60 @@ Every service exposes the following HTTP endpoints on a dedicated health port (p
 
 ## 7. Event Replay & Recovery
 
-### 7.1 Event Replay Mechanism
+### 6.4 DLQ (Dead Letter Queue) Pattern
+
+- **DLQ-001**: Every NATS consumer that fails to process an event after a configurable maximum retry count (default: 5 retries) moves the event to a dedicated DLQ subject (`<stream_name>.DLQ`). The DLQ event retains the original event payload plus failure metadata (error message, retry count, timestamps).
+- **DLQ-002**: DLQ events are stored in a dedicated `dlq_events` table (SeaORM entity) per service:
+
+```rust
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
+#[sea_orm(table_name = "dlq_events")]
+pub struct DlqEventModel {
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub event_id: Uuid,
+    pub stream_name: String,
+    pub original_subject: String,
+    pub payload: Vec<u8>,
+    pub error_message: String,
+    pub retry_count: i32,
+    pub first_failed_at: DateTimeWithTimeZone,
+    pub last_attempt_at: DateTimeWithTimeZone,
+    pub status: String,           // 'pending' | 'resolved' | 'discarded'
+    pub resolved_by: Option<String>,
+    pub resolved_at: Option<DateTimeWithTimeZone>,
+}
+```
+
+- **DLQ-003**: DLQ depth is monitored as a first-class metric. When DLQ depth exceeds a configurable threshold (default: 10 events), an alert is raised to operations (ACT-07). When DLQ depth exceeds a critical threshold (default: 100 events), the service is flagged as degraded.
+- **DLQ-004**: DLQ events can be manually replayed via a dashboard (Admin role, Maker/Checker pattern) after the root cause is fixed. Replay is idempotent — replaying an already-processed event is a no-op.
+- **DLQ-005**: DLQ events are retained for 30 days, then automatically discarded. This retention must exceed the maximum time to diagnose and fix a consumer bug.
+
+### 6.5 Poison Pill Handling
+
+- **POISON-001**: A poison pill is an event that causes a consumer to crash or fail on every processing attempt. Detection: if an event reaches the maximum retry count (DLQ-001) without successful processing, it is quarantined in the DLQ.
+- **POISON-002**: The consumer continues processing subsequent events after quarantining a poison pill — it does not block the entire consumer. This is achieved by processing events individually (not batch-committing) and catching per-event exceptions.
+- **POISON-003**: When a poison pill is detected, the consumer logs a `PoisonPillDetected` event with the original event ID, error details, and affected aggregate. This event is surfaced to the operational alert channel (ACT-07).
+- **POISON-004**: Poison pill resolution requires a Developer or Admin to investigate the root cause, fix the consumer code (if it's a consumer bug) or the event payload (if it's a publisher bug), and then manually replay the quarantined event from the DLQ.
+
+### 6.6 Consumer Backpressure Management
+
+- **BACKPRESSURE-001**: Every NATS consumer monitors its processing lag (how far behind the consumer is relative to the publisher). Lag is exposed as a metric (e.g., `nats_consumer_lag{consumer="analytics-service", stream="orchestration"}`).
+- **BACKPRESSURE-002**: When lag exceeds a configurable warning threshold (default: 10,000 events), the consumer logs a warning and raises an alert. When lag exceeds a critical threshold (default: 100,000 events), the consumer enters backpressure mode: it pauses consuming new events until lag drops below the warning threshold, preventing memory exhaustion.
+- **BACKPRESSURE-003**: In backpressure mode, the consumer does NOT acknowledge events it hasn't processed — NATS redelivers them when the consumer resumes. This ensures no events are lost during backpressure.
+
+### 6.7 gRPC Deadline Propagation
+
+- **DEADLINE-001**: Every gRPC call propagates the deadline from the caller to the callee. The API Gateway sets the initial deadline based on the endpoint's latency budget (Part 10 APISEC-002).
+- **DEADLINE-002**: When a service makes a downstream gRPC call, it derives the downstream deadline from its own remaining deadline minus a processing buffer (default: 100ms). If the remaining deadline is less than the buffer, the call is rejected immediately with `DEADLINE_EXCEEDED`.
+- **DEADLINE-003**: The checkout hot path (API Gateway → orchestration-service → connector-gateway → acquirer) has a total deadline of 10 seconds (Part 10 APISEC-002). Each service in the chain uses at most 80% of its remaining deadline for downstream calls, reserving 20% for its own processing.
+- **DEADLINE-004**: When a deadline expires, the service returns a gRPC `DEADLINE_EXCEEDED` status with a structured error (Part 10 API-005 format). The error is logged with the full call chain (correlation_id) for debugging.
+
+### 6.8 Event Schema Registry
+
+- **SCHEMA-REG-001**: A centralized schema registry (Git repository) manages all event schemas (protobuf definitions). The registry is the single source of truth for event payload formats.
+- **SCHEMA-REG-002**: Every event type has a canonical schema file in the registry (e.g., `events/orchestration/payment_intent/PaymentAuthorizedV1.proto`). The schema version matches the NATS subject version suffix (v1, v2, etc.).
+- **SCHEMA-REG-003**: CI validation ensures all schema files compile without errors and that backward-compatibility rules (additive fields only within a version) are enforced automatically.
+- **SCHEMA-REG-004**: Publishers generate event payloads from the registry schemas; consumers generate deserialization code from the same schemas. This ensures type safety across the entire event-driven architecture.
 
 - **REPLAY-001**: Every event-sourced service supports replaying events for a specific aggregate from a given sequence number. This is used for:
   - Rebuilding read models after a projection bug fix

@@ -163,6 +163,34 @@ message PaymentAuthorizedV1 {
 - **WEBHOOK-003**: At-least-once delivery with exponential backoff retry (a bounded number of attempts over a bounded window, e.g., up to 24 hours) and a dead-letter surface in the dashboard showing failed deliveries for manual replay — mirrors the internal NATS at-least-once philosophy (Part 4 §4.2) extended to the merchant-facing boundary.
 - **WEBHOOK-004**: Webhook payload bodies carry a stable `event_id` (matching the internal domain event's `event_id` where directly derived) so merchant-side consumers can perform their own idempotent-processing dedup, exactly mirroring the discipline the platform demands of its own NATS consumers (Part 4 §4.2).
 
+### 3.2 Webhook Delivery Tracking
+
+- **WH-TRACK-001**: Every webhook delivery attempt is recorded in a `webhook_delivery_log` table (SeaORM entity):
+
+```rust
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
+#[sea_orm(table_name = "webhook_delivery_log")]
+pub struct WebhookDeliveryLogModel {
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub delivery_id: Uuid,
+    pub endpoint_id: Uuid,          // references webhook endpoint config
+    pub event_id: Uuid,             // the event being delivered
+    pub event_type: String,
+    pub attempt_number: i32,
+    pub status: String,             // 'pending' | 'success' | 'failed' | 'dead_letter'
+    pub http_status_code: Option<i32>,
+    pub error_message: Option<String>,
+    pub request_timestamp: DateTimeWithTimeZone,
+    pub response_timestamp: Option<DateTimeWithTimeZone>,
+    pub next_retry_at: Option<DateTimeWithTimeZone>,
+    pub total_retries: i32,
+}
+```
+
+- **WH-TRACK-002**: Merchants can query their webhook delivery history via `GET /v1/webhook-deliveries` with filters for event type, status, and date range. The response includes delivery status, attempt count, and failure reasons.
+- **WH-TRACK-003**: Failed deliveries in the dead-letter state can be manually replayed via `POST /v1/webhook-deliveries/{delivery_id}/replay` (Admin role, Maker/Checker pattern). Replay is idempotent — replaying an already-successful delivery is a no-op.
+- **WH-TRACK-004**: Webhook delivery metrics are exported: delivery success rate, average delivery latency, retry count distribution, dead-letter depth. These metrics feed into the operator dashboard (UC-070).
+
 ### 3.2 Representative Payload
 
 ```json
@@ -194,6 +222,31 @@ message PaymentAuthorizedV1 {
 - **RL-002**: AI Assistant endpoints (routed via `ai-gateway`, Part 4 §3) have a *separate* quota dimension from general API rate limits (Part 9 §2 `ai_quota:*` keys).
 - **RL-003**: Per-endpoint rate limits: checkout endpoints (`/v1/payment-intents`) have higher limits than admin endpoints (`/v1/routing-policies`). Login endpoints have strict limits (10 per IP per minute).
 - **RL-004**: Rate limit response includes `Retry-After` header when rate-limited (429 response), indicating when the client can retry.
+
+### 5.2 Rate Limit 429 Response Format
+
+When a request is rate-limited, the API returns HTTP 429 with the following body:
+
+```json
+{
+  "error": {
+    "code": "RATE_LIMITED",
+    "message": "Rate limit exceeded. Please retry after the specified time.",
+    "request_id": "01HZ...",
+    "details": {
+      "retry_after_seconds": 30,
+      "limit": 100,
+      "remaining": 0,
+      "reset_at": "2026-07-16T10:15:30Z",
+      "window": "60s"
+    }
+  }
+}
+```
+
+- **RL-RESP-001**: The `retry_after_seconds` field indicates the minimum time the client should wait before retrying. This value is also available via the `Retry-After` response header.
+- **RL-RESP-002**: The `reset_at` field indicates when the rate limit window resets and the full quota becomes available again.
+- **RL-RESP-003**: The `details` object is included only in 429 responses; successful responses include rate limit information only in headers (RL-001).
 
 ---
 

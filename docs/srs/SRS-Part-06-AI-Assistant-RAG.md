@@ -29,7 +29,48 @@
 
 ---
 
-## 2. Model Roles & Routing
+## 2. Model Version Management
+
+### 2.1 Model Version Pinning
+
+- **MODEL-PIN-001**: Every deployed model is pinned to a specific version with a cryptographic hash for integrity verification:
+  - Qwen3 32B: pinned to specific model revision (e.g., `qwen3-32b-instruct-v1.0`)
+  - Qwen3-VL 8B: pinned to specific model revision (e.g., `qwen3-vl-8b-instruct-v1.0`)
+  - BGE-M3: pinned to specific model revision (e.g., `bge-m3-v1.0`)
+  - Cross-encoder reranker: pinned to specific model revision
+
+- **MODEL-PIN-002**: Model files are verified against a SHA-256 hash stored in a `model_versions` table (SeaORM entity):
+
+```rust
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
+#[sea_orm(table_name = "model_versions")]
+pub struct ModelVersionModel {
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub model_id: String,           // e.g., "qwen3-32b"
+    pub version: String,            // e.g., "v1.0"
+    pub file_path: String,
+    pub sha256_hash: String,
+    pub deployed_at: DateTimeWithTimeZone,
+    pub deployed_by: String,
+    pub status: String,             // 'active' | 'deprecated' | 'rolled_back'
+}
+```
+
+- **MODEL-PIN-003**: On Ollama startup, the `ai-assistant-service` verifies the loaded model's hash against the `model_versions` table. If the hash doesn't match, the service refuses to start and raises a critical alert (model integrity violation).
+
+### 2.2 Model Rollback
+
+- **MODEL-ROLLBACK-001**: Model updates are performed by:
+  1. Deploying the new model version alongside the current version
+  2. Running the evaluation suite (Part 6 §6) against the new version
+  3. If evaluation passes, switching traffic to the new version
+  4. If evaluation fails or quality degrades, rolling back to the previous version
+
+- **MODEL-ROLLBACK-002**: Rollback is performed by updating the `model_versions` table to mark the current version as `rolled_back` and the previous version as `active`, then restarting the Ollama inference pool. Rollback takes effect within the restart window (typically < 30 seconds for model loading).
+
+- **MODEL-ROLLBACK-003**: All model version changes (deployments, rollbacks) are logged in `change_history` (Part 3 §9.2 MKCK-004) with before/after version information.
+
+## 3. Model Roles & Routing
 
 | Model | Role | Invoked For | Typical Input |
 |---|---|---|---|

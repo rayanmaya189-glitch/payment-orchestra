@@ -280,6 +280,76 @@ Total checkout latency budget (target, tenant-perceived)
 - **DR-003**: MinIO: cross-region or cross-AZ replication for KYB evidence and financial-record-linked buckets specifically (§5, Part 9), given their compliance retention obligations (Part 8 §5.2 AUD-001).
 - **DR-004**: Regular (at minimum quarterly) DR drills restoring from backups into an isolated environment and validating application-level correctness (not just "the restore command succeeded") — a backup that has never been test-restored is not a verified backup.
 
+### 9.1 Business Continuity Plan
+
+- **BCP-001**: Business Impact Analysis (BIA):
+
+| Service | RTO Target | RPO Target | Impact of Downtime |
+|---|---|---|---|
+| `orchestration-service` | 5 minutes | 0 (event store) | Payment processing halted — revenue loss |
+| `connector-gateway` | 5 minutes | 0 | Payment processing halted — revenue loss |
+| `iam-service` | 5 minutes | 0 | Authentication failed — all users locked out |
+| `reconciliation-service` | 4 hours | 1 hour | Reconciliation delayed — no immediate revenue impact |
+| `analytics-service` | 24 hours | 4 hours | Dashboard data stale — no immediate revenue impact |
+| `ai-assistant-service` | 1 hour | 0 | AI assistant unavailable — degraded user experience |
+| `notification-service` | 2 hours | 1 hour | Notifications delayed — no immediate revenue impact |
+| `invoice-service` | 1 hour | 0 | Invoice generation halted |
+| `subscription-service` | 4 hours | 1 hour | Subscription renewals delayed |
+| `dispute-service` | 4 hours | 1 hour | Chargeback handling delayed |
+| `risk-service` | 5 minutes | 0 | Risk scoring unavailable — transactions may be processed without risk assessment |
+
+- **BCP-002**: Manual fallback procedures:
+  - If `orchestration-service` is down, operators can process payments directly through acquirer dashboards (manual fallback) while the platform is restored.
+  - If `reconciliation-service` is down, settlement files are queued in MinIO and processed when the service is restored.
+  - If `notification-service` is down, notifications are queued in Postgres and sent when the service is restored.
+
+- **BCP-003**: Communication during outages:
+  - Status page updated within 5 minutes of detection for SEV-1 incidents
+  - Automated email/SMS notifications to affected operators (Part 8 §9.2 IR-COMM-002)
+  - Internal Slack channel updated with real-time status
+
+### 9.2 Operational Runbooks
+
+- **RUNBOOK-001**: Each service has a dedicated runbook documenting:
+  - Service purpose and dependencies
+  - Health check endpoints and expected responses (Part 4 §6.3)
+  - Common failure modes and symptoms
+  - Step-by-step troubleshooting procedures
+  - Escalation contacts and procedures
+  - Recovery procedures (restart, failover, rollback)
+
+- **RUNBOOK-002**: Specific runbooks for critical scenarios:
+  - **Acquirer outage**: How to detect (circuit breaker open, error rate spike), how to verify failover is working, how to notify operators
+  - **Database failover**: How to verify automatic failover completed, how to validate data consistency, how to check replication lag
+  - **Redis failover**: How to verify cache is warming, how to check for stale data, how to monitor performance degradation
+  - **NATS partition**: How to detect consumer lag, how to verify no events are lost, how to replay missed events
+  - **AI model degradation**: How to detect quality drop, how to fallback to raw data queries, how to notify operators
+  - **Certificate expiration**: How to detect impending expiration (monitoring), how to rotate (automated + manual procedure)
+  - **Secret compromise**: How to revoke (immediate), how to rotate (follow KMP-004), how to notify affected parties
+
+### 9.3 Monitoring & Alerting Specification
+
+- **ALERT-001**: Alert severity levels and routing:
+
+| Severity | Criteria | Notification | Response Time |
+|---|---|---|---|
+| Critical | Payment processing down, data breach, security incident | PagerDuty + SMS + email | 15 minutes |
+| High | Service degraded > 5 minutes, error rate > 1%, security finding CVSS >= 7 | PagerDuty + email | 1 hour |
+| Medium | Service degraded < 5 minutes, error rate > 0.1%, performance regression | Email | 4 hours |
+| Low | Cosmetic issues, minor bugs, information-only | Dashboard | 24 hours |
+
+- **ALERT-002**: Key alert definitions:
+  - `checkout_error_rate > 1% for 5 minutes` → Critical
+  - `acquirer_circuit_breaker_open > 5 minutes` → High
+  - `nats_consumer_lag > 10000 for 10 minutes` → High
+  - `database_connection_pool_exhausted > 5 seconds` → High
+  - `ai_model_quality_drop > 10% on regression suite` → High
+  - `dlq_depth > 100` → High
+  - `certificate_expiration < 30 days` → Medium
+  - `backup_age > 24 hours` → Medium
+
+- **ALERT-003**: On-call rotation: weekly rotation with primary and secondary on-call engineers. Escalation: primary → secondary → engineering lead → CISO (for security incidents).
+
 ---
 
 ## 11. Release & Change Management
