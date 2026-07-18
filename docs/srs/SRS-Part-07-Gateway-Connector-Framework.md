@@ -130,7 +130,45 @@ Regardless of source format, every settlement input is normalized into the same 
 
 ---
 
-## 5. Connector Conformance Testing (Preview — Full Detail in Part 11)
+## 5. Circuit Breaker and Resilience Patterns
+
+### 5.1 Per-Connector Circuit Breakers
+
+- **CB-CONN-001**: Each acquirer adapter within `connector-gateway` maintains an independent circuit breaker (per Part 3 §9.3 CB-001). The circuit breaker state machine follows the standard Closed → Open → Half-Open pattern:
+  - **Closed** (normal): All requests pass through. Error rate is tracked over a sliding window (default: 30 seconds).
+  - **Open** (failing): When error rate exceeds the threshold (default: 50%), the circuit opens for a configurable duration (default: 60 seconds). All requests to this connector fail fast with `ConnectorError::CircuitOpen`, allowing `orchestration-service` to immediately route to the next candidate.
+  - **Half-Open** (probing): After the open window, a single probe request is allowed through. If it succeeds, the circuit closes; if it fails, the circuit re-opens.
+
+- **CB-CONN-002**: Circuit breaker state is cached in Redis for cross-replica visibility — if one `connector-gateway` replica detects a failing acquirer, all replicas skip that connector without independently discovering the failure.
+
+- **CB-CONN-003**: The circuit breaker only tracks *acquirer-side* failures (timeouts, 5xx responses, authentication failures). Client-side errors (invalid requests, insufficient funds) do not trip the circuit — a high decline rate is a business condition, not a system health signal.
+
+### 5.2 Bulkhead Isolation
+
+- **BULK-CONN-001**: Each acquirer adapter has its own dedicated `reqwest::Client` connection pool with configurable pool limits and per-connection timeouts, isolated from other adapters. A slow/hanging connection to one acquirer cannot exhaust the connection pool shared with other adapters.
+- **BULK-CONN-002**: Each adapter has a per-request timeout (default: 10 seconds for authorize/capture, 30 seconds for settlement polling) that is independent of other adapters' timeouts. The total checkout-path latency budget (Part 5 RTY-002) is enforced at the `orchestration-service` level, not within individual adapters.
+
+### 5.3 Retry Configuration per Connector
+
+Each connector adapter declares its retry behavior as part of `ConnectorCapabilities`:
+
+```rust
+pub struct ConnectorRetryConfig {
+    pub max_retries: u8,                    // default: 1 (the initial attempt + 1 retry)
+    pub initial_backoff_ms: u32,            // default: 100ms
+    pub backoff_multiplier: f32,            // default: 2.0
+    pub max_backoff_ms: u32,               // default: 5000ms
+    pub jitter_percent: f32,               // default: 0.25 (±25%)
+    pub retryable_error_codes: Vec<ConnectorError>, // which errors trigger retry
+}
+```
+
+- **RETRY-CONN-001**: Connectors with native idempotency key support (`supports_native_idempotency_key = true`) can safely retry without a pre-flight status check. Connectors without native idempotency must perform a status check before retrying to avoid double-authorization (Part 5 §4.1).
+- **RETRY-CONN-002**: The retry budget is shared with `orchestration-service`'s failover retry budget (RTY-002) — a retry within a single connector counts as one of the total allowed hops.
+
+---
+
+## 6. Connector Conformance Testing (Preview — Full Detail in Part 11)
 
 - **CONF-001**: Every connector implementation must pass a shared **conformance test suite** exercising the `AcquirerConnector` trait against that connector's sandbox environment: successful authorize/capture/void/refund, each documented decline scenario, timeout handling, webhook signature verification (valid and tampered), and idempotency behavior (native or status-check-based per capability flags).
 - **CONF-002**: This conformance suite is written *before* a new connector's production code (TDD discipline, Part 11) — a connector is not considered "done" until it passes 100% of the shared conformance suite plus any connector-specific edge cases documented in its own module.
@@ -150,7 +188,7 @@ Per Part 1 OQ-003, the final MVP acquirer/PSP shortlist requires business confir
 
 ---
 
-## 7. Traceability
+## 8. Traceability
 
 | Requirement | Realized By |
 |---|---|
@@ -160,13 +198,16 @@ Per Part 1 OQ-003, the final MVP acquirer/PSP shortlist requires business confir
 | Part 5 §3.4 RTY-003 (normalized decline reasons for routing/audit) | §3 |
 | Part 3 INV-06 (settlement idempotent ingestion) | §4.1 SftpFile checksum validation |
 | Part 6 §4 (vision extraction for unstructured settlement) | §4.1 `ScannedDocument` row |
+| Circuit Breaker / Bulkhead (connector resilience) | §5 CB-CONN-001 through BULK-CONN-002 |
+| Retry configuration per connector | §5.3 RETRY-CONN-001, RETRY-CONN-002 |
 
 ---
 
-## 8. Open Items Carried Forward
+## 9. Open Items Carried Forward
 
 - **OQ-016 (= OQ-003 from Part 1, restated here for engineering visibility)**: Final MVP acquirer/PSP shortlist must be confirmed before connector implementation begins in earnest — §6's list is a planning placeholder only.
 - **OQ-017**: Confirm whether webhook endpoints (§4.1) should be per-connector-per-tenant unique URLs (simplifies signature/source attribution) or a shared per-connector URL disambiguated by payload content — a Part 9/Part 10 API design decision affecting the webhook contract.
+- **OQ-043**: Finalize circuit breaker thresholds (§5.1 CB-CONN-001) — error-rate percentage, sliding-window duration, and open-window duration — against real acquirer failure-mode data from pilot merchants.
 
 ---
 

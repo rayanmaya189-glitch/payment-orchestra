@@ -150,7 +150,55 @@ This Part is the authoritative home for the *security/compliance framing* of con
 
 ---
 
-## 10. Traceability
+## 10. Threat Model (STRIDE-Based)
+
+### 10.1 External Attacker Surface
+
+| Threat | Target | Mitigation |
+|---|---|---|
+| **Spoofing** | API Gateway endpoints, webhook ingress | TLS + JWT/API-key auth (§1), webhook signature verification (Part 7), mTLS for internal traffic (§1.3 AUTH-006) |
+| **Tampering** | Payment intent amounts, routing policies | Event-sourcing immutability (PRIN-05), optimistic concurrency (Part 5 CONC-001), idempotency keys |
+| **Repudiation** | Configuration changes, money-movement events | Two-tier audit framework (§5), immutable event stream, `PermissionDenied` logging (§2.3 AUTHZ-001) |
+| **Information Disclosure** | Cross-tenant data leakage | Tenant-scoped queries (Part 4 MT-002), structural isolation (OS-001, MINIO-001), encrypted fields (§4), SECTEST-001 cross-tenant test suite |
+| **Denial of Service** | Checkout path, AI Assistant | Rate limiting (Part 4 GW-003, Part 10 RL-001), circuit breakers (Part 3 §9.3), GPU isolation (Part 4 K8S-002) |
+| **Elevation of Privilege** | RBAC bypass, ABAC threshold bypass | Permission validation on every request (Part 4 GW-002), ABAC enforcement at aggregate command level (§2.2 ABAC-001), step-up re-auth for sensitive actions (ABAC-002) |
+
+### 10.2 Insider Threat
+
+| Threat | Target | Mitigation |
+|---|---|---|
+| **Compromised admin account** | Tenant data/config modification | MFA enforcement (§1.1 AUTH-001), step-up re-auth for acquirer credential changes (ABAC-002), audit trail of all changes (§5) |
+| **Malicious platform operator** | Cross-tenant data access | mTLS service identity + propagated tenant context (§1.3 AUTH-006), no super-admin bypass of tenant scoping, audit log of all admin actions |
+| **Compromised AI model/inference** | Data exfiltration via model output | AI Gateway guardrails (Part 6 §5), output monitoring (GRD-IN-003), no write-path tool access (AI-P-003) |
+
+### 10.3 Supply Chain
+
+| Threat | Target | Mitigation |
+|---|---|---|
+| **Compromised acquirer connector** | Malicious response injection | ACL pattern (Part 3 §8), normalized response types (Part 7 CONN-001/002), response schema validation before aggregate state mutation |
+| **Compromised Ollama model** | Prompt injection, data exfiltration | Self-hosted inference (AI-P-004), input sandboxing (GRD-IN-003), output monitoring, model integrity verification (hash checking on model load) |
+| **Compromised dependency** | Remote code execution, data theft | Dependency vulnerability scanning in CI/CD (§7 SECTEST-003), Rust's memory safety reducing attack surface, `cargo audit` in pipeline |
+| **Compromised NATS/stream** | Event injection, event loss | Outbox pattern (Part 3 §9.2) for publish reliability, durable consumers (Part 4 §4.2), event signature verification (future enhancement) |
+
+---
+
+## 11. API Key Scoping to Acquirer Links
+
+- **AUTHZ-002**: In addition to role-based and attribute-based permission scoping (§2), API keys can optionally be scoped to specific `MerchantAcquirerLink` IDs. A scoped API key can only initiate transactions against the specified acquirer(s), following the principle of least privilege.
+- **AUTHZ-003**: Unscoped API keys (no acquirer restriction) are permitted for Admin-role keys only, since Admins need full acquirer access for configuration. Developer and Finance Operator keys should be scoped to specific acquirer links where their workflow permits.
+
+---
+
+## 12. Secrets Rotation Automation
+
+- **SEC-ROT-001**: Platform-level KEK (§3 SEC-001) is rotated on a configurable schedule (default: 90 days) via the KMS component. Rotation is automatic and zero-downtime — the KMS supports both old and new KEK versions during a transition window, re-encrypting DEKs transparently.
+- **SEC-ROT-002**: Per-tenant DEKs are re-encrypted under the new KEK during rotation — no application-level re-encryption of data is needed because the DEK wrapping is transparent to the data layer.
+- **SEC-ROT-003**: When a merchant rotates acquirer credentials, the `connector-gateway` invalidates its cached credential within one cache TTL cycle (max 30 seconds) and reloads from the encrypted store on next use.
+- **SEC-ROT-004**: API key rotation (AUTH-004) supports a dual-active-key overlap period — the merchant generates a new key while the old key remains valid for a configurable grace period (default: 24 hours), allowing zero-downtime rotation.
+
+---
+
+## 13. Traceability
 
 | Requirement | Realized By |
 |---|---|
@@ -162,13 +210,18 @@ This Part is the authoritative home for the *security/compliance framing* of con
 | OQ-006 (Part 2, secondary approver threshold) | §2.2 ABAC-001 — resolved: yes, threshold-based dual control |
 | BR-031-1 (Part 2, tokenization not raw PAN) | §4.3 ENC-005 |
 | Part 6 AI-P-002/AI-P-003 | §8 AISEC-001/002 |
+| Threat model (STRIDE) | §10.1 through §10.3 |
+| API key scoping to acquirer links | §11 AUTHZ-002, AUTHZ-003 |
+| Secrets rotation automation | §12 SEC-ROT-001 through SEC-ROT-004 |
 
 ---
 
-## 11. Open Items Carried Forward
+## 14. Open Items Carried Forward
 
-- **OQ-018**: Confirm exact financial-record retention period (§5.2 AUD-001) with UAE legal counsel — this SRS records the *architectural requirement* (a configurable, enforced floor) but not the specific number of years, which is a legal input.
-- **OQ-019**: Confirm whether PDPL-style data-subject erasure requests are even applicable to platform-processed payment/financial records for individual end-customers (STK-013), and if so, how they're reconciled against AUD-001 — legal input required before Part 9 finalizes any "data deletion" API surface (recommend: no hard-delete API for financial records at all in MVP, pending this legal confirmation, to avoid building a capability that may need to be restricted or removed later).
+- **OQ-018**: Confirm exact financial-record retention period (§5.2 AUD-001) with UAE legal counsel.
+- **OQ-019**: Confirm whether PDPL-style data-subject erasure requests are applicable to platform-processed payment/financial records.
+- **OQ-044**: Finalize KEK rotation schedule (§12 SEC-ROT-001, default 90 days) against operational risk assessment — more frequent rotation increases security but adds KMS load.
+- **OQ-045**: Confirm whether API key scoping to acquirer links (§11 AUTHZ-002) is required for MVP or deferred to H2 — depends on pilot merchant integration complexity.
 
 ---
 

@@ -261,14 +261,116 @@ This same `auth_rate_hourly_mv`-style rollup is exactly the "summary document" s
 
 ---
 
-## 6. Cross-Store Consistency Notes
+## 6. Outbox Table Schema (Transactional Outbox)
+
+### 6.1 Outbox Table Pattern
+
+Every event-sourced service includes an `outbox` table alongside its `event_store` table, written within the same transaction (Part 3 §9.2):
+
+```sql
+CREATE TABLE outbox (
+    tenant_id       UUID NOT NULL,
+    outbox_id       UUID NOT NULL,
+    aggregate_type  TEXT NOT NULL,
+    aggregate_id    UUID NOT NULL,
+    event_type      TEXT NOT NULL,
+    event_version   SMALLINT NOT NULL,
+    payload         BYTEA NOT NULL,     -- same protobuf-encoded EventEnvelope as event_store
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    published_at    TIMESTAMPTZ NULL,   -- set by the relay process after NATS publish confirms
+    PRIMARY KEY (tenant_id, outbox_id)
+);
+
+CREATE INDEX outbox_unpublished_idx ON outbox (tenant_id, created_at) WHERE published_at IS NULL;
+```
+
+- **DB-005**: The outbox entry is written in the SAME Postgres transaction as the `event_store` append (Part 3 OUTBOX-001). This guarantees that if the event is committed to Postgres, it will eventually be published to NATS — no events are silently lost.
+- **DB-006**: The outbox relay process (Part 3 §9.2) marks entries as `published_at` after successful NATS publish with acknowledgment. Unpublished entries are retried with exponential backoff.
+- **DB-007**: Outbox entries are purged after `published_at` + a configurable retention (default: 7 days) to prevent unbounded table growth. The retention must exceed the worst-case relay downtime window.
+
+### 6.2 Event Store Archival
+
+- **DB-008**: Event stores for aggregates in terminal states are archived to a cold-storage table after a configurable retention period (Part 3 ARCH-001, default 90 days):
+
+```sql
+CREATE TABLE event_store_archive (
+    -- identical schema to event_store (Part 9 §1.1)
+    tenant_id           UUID        NOT NULL,
+    aggregate_type       TEXT        NOT NULL,
+    aggregate_id         UUID        NOT NULL,
+    event_sequence       BIGINT      NOT NULL,
+    event_id             UUID        NOT NULL,
+    event_type           TEXT        NOT NULL,
+    event_version        SMALLINT    NOT NULL,
+    occurred_at          TIMESTAMPTZ NOT NULL,
+    actor_type           TEXT        NOT NULL,
+    actor_id             UUID        NULL,
+    causation_id         UUID        NULL,
+    correlation_id       UUID        NOT NULL,
+    payload              BYTEA       NOT NULL,
+    archived_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (tenant_id, aggregate_type, aggregate_id, event_sequence)
+);
+```
+
+- **DB-009**: Archival is performed by a background job that moves event streams for terminal-state aggregates from `event_store` to `event_store_archive`. The job respects the legal retention floor (Part 8 AUD-001) — no events are archived or deleted before the floor expires.
+- **DB-010**: Archived event streams can be rehydrated on demand (for compliance audit or investigation) by moving them back to `event_store` and rebuilding projections.
+
+---
+
+## 8. ClickHouse — Tenant Isolation Enhancement
+
+### 8.1 Tenant Partitioning
+
+- **CH-003**: For stronger query-level tenant isolation, `tenant_id` is added as a partition key in addition to `event_date`:
+
+```sql
+-- Updated payment_events table
+CREATE TABLE payment_events (
+    tenant_id          UUID,
+    event_type          LowCardinality(String),
+    payment_intent_id   UUID,
+    acquirer_id          LowCardinality(String),
+    card_scheme          LowCardinality(String),
+    currency             LowCardinality(String),
+    amount_minor_units    Int64,
+    decline_reason        LowCardinality(String),
+    latency_ms            UInt32,
+    occurred_at            DateTime64(3),
+    event_date             Date MATERIALIZED toDate(occurred_at)
+) ENGINE = MergeTree
+PARTITION BY (toYYYYMM(event_date), tenant_id)
+ORDER BY (tenant_id, event_date, acquirer_id, card_scheme);
+```
+
+- **CH-004**: Partition-level isolation means ClickHouse physically separates tenant data at the storage layer, not just at the query layer. A query without a `tenant_id` filter scans only the metadata, not other tenants' data rows.
+
+---
+
+## 9. Connection Pool Management
+
+### 9.1 PgBouncer / Built-In Connection Pooling
+
+- **POOL-001**: Each service's Postgres connection pool is managed via PgBouncer (or the service's built-in connection pooler if using async Rust with `sqlx`) with the following configuration:
+  - Pool size per service: configurable, default 20 connections for event-sourced services, 10 for supporting services
+  - Connection timeout: 5 seconds
+  - Idle timeout: 300 seconds
+  - Max lifetime: 1800 seconds (prevents stale connections)
+
+- **POOL-002**: For multi-tenant workloads, the connection pool is shared across tenants within a service (tenant isolation is enforced at the query level via `tenant_id` in WHERE clauses, Part 4 MT-002, not at the connection level).
+
+- **POOL-003**: Read-heavy services (`analytics-service`, `ai-assistant-service`) use read-replica Postgres connections for query operations, with the primary reserved for writes. Read-replica lag is monitored as a first-class metric (Part 11 OBS-004).
+
+---
+
+## 10. Cross-Store Consistency Notes
 
 - **XSTORE-001**: Because different stores serve different consistency roles (Postgres event store = strong/source-of-truth; ClickHouse/OpenSearch = eventually consistent projections), every dashboard/report/AI answer surface must be able to express "as of" freshness (Part 3 §7) — this is a UI/API contract requirement carried into Part 10, not just an internal implementation detail to hide from users.
 - **XSTORE-002**: NATS JetStream consumer offsets (Part 4 §4.2) are the mechanism by which ClickHouse/OpenSearch projections track "how far behind" they are relative to the Postgres event stores; monitoring this lag is an operational metric (Part 11) directly tied to XSTORE-001's freshness disclosure.
 
 ---
 
-## 7. Traceability
+## 11. Traceability
 
 | Requirement | Realized By |
 |---|---|
@@ -280,14 +382,20 @@ This same `auth_rate_hourly_mv`-style rollup is exactly the "summary document" s
 | Part 7 CRED-001/002 | §1.4 encrypted config storage |
 | Part 8 SEC-001, ENC-003/004 | §1.4, §5 MinIO encryption |
 | Part 8 AUD-003 (immutability) | §1.3 DB-004 |
+| Transactional Outbox (event publish reliability) | §6.1 DB-005 through DB-007 |
+| Event Store Archival (lifecycle management) | §6.2 DB-008 through DB-010 |
+| ClickHouse tenant isolation (partition-level) | §8 CH-003, CH-004 |
+| Connection pool management | §9 POOL-001 through POOL-003 |
 
 ---
 
-## 8. Open Items Carried Forward
+## 12. Open Items Carried Forward
 
-- **OQ-020**: Confirm exact BGE-M3 embedding dimension for the deployed model variant/quantization (§4.2 OS-002 placeholder of 1024) before finalizing OpenSearch index templates.
-- **OQ-021**: Finalize event-store retention/archival policy (Part 3 OQ-008) — specifically whether older event partitions are archived to MinIO (cold storage) with snapshot-based rehydration, which affects both `event_store` partitioning strategy and the `aggregate_snapshot` cadence (§1.3 DB-003).
-- **OQ-022**: Resolve OQ-010 (Part 4) — shared vs. separate Postgres instances for `invoice-service`/`payment-link-service` — before finalizing infrastructure-as-code templates in Part 11.
+- **OQ-020**: Confirm exact BGE-M3 embedding dimension for the deployed model variant/quantization (§4.2 OS-002 placeholder of 1024).
+- **OQ-021**: Finalize event-store retention/archival policy — whether older event partitions are archived to MinIO (cold storage).
+- **OQ-022**: Resolve OQ-010 (Part 4) — shared vs. separate Postgres instances for `invoice-service`/`payment-link-service`.
+- **OQ-046**: Finalize outbox relay polling interval (§6.1 DB-006) vs. CDC (Debezium) trade-offs once event volume justifies the infrastructure complexity.
+- **OQ-047**: Confirm PgBouncer vs. built-in connection pooler choice (§9 POOL-001) against the chosen async Rust runtime and sqlx configuration.
 
 ---
 

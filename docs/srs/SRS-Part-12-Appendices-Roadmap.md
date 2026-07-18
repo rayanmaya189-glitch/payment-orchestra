@@ -24,15 +24,15 @@
 |---|---|---|
 | 1 | Vision, Business Requirements, Scope, Stakeholders | Why the product exists; BIZ-xxx register; the no-custody constraint |
 | 2 | Business Processes & Use Cases | UC-xxx catalog with full flows, tied to BIZ-xxx |
-| 3 | DDD & Bounded Contexts | 16 bounded contexts, 5 core aggregates, 22-event domain catalog |
-| 4 | Microservice Architecture | 18-service catalog, API/AI Gateway, gRPC/NATS communication matrix |
-| 5 | Payment Orchestration Engine | State machine, routing algorithm, idempotency, marketplace-split addendum |
-| 6 | AI Payment Assistant & RAG | Model routing, RAG pipeline, guardrails, evaluation harness |
-| 7 | Gateway Connector Framework | ACL trait design, capability flags, decline normalization, settlement formats |
-| 8 | Identity, Security & Compliance | RBAC/ABAC, secrets/encryption, audit framework, UAE regulatory mapping |
-| 9 | Database Design | Postgres/Redis/ClickHouse/OpenSearch/MinIO schemas |
-| 10 | APIs & gRPC Contracts | REST conventions, proto contracts, webhook contract, SDK strategy |
-| 11 | Testing, DevOps & Deployment | TDD standards, CI/CD, K8s topology, observability, DR |
+| 3 | DDD & Bounded Contexts | 16 bounded contexts + Saga Coordinator (BC-17), 5 core aggregates + saga_instances, 22-event domain catalog + outbox pattern |
+| 4 | Microservice Architecture | 18-service catalog, API/AI Gateway, gRPC/NATS communication, outbox relay, circuit breakers, feature flags, graceful degradation framework |
+| 5 | Payment Orchestration Engine | State machine, routing algorithm, idempotency, marketplace-split addendum, partial auth handling, currency precision, subscription pause/resume |
+| 6 | AI Payment Assistant & RAG | Model routing, RAG pipeline, guardrails, evaluation harness, production quality monitoring, tool use (H2), multi-step reasoning (H2), enhanced prompt injection defense |
+| 7 | Gateway Connector Framework | ACL trait design, capability flags, decline normalization, settlement formats, circuit breakers, bulkhead isolation, per-connector retry config |
+| 8 | Identity, Security & Compliance | RBAC/ABAC, secrets/encryption, audit framework, UAE regulatory mapping, threat model (STRIDE), API key acquirer scoping, secrets rotation automation |
+| 9 | Database Design | Postgres/Redis/ClickHouse/OpenSearch/MinIO schemas, outbox table, event store archival, ClickHouse tenant partitioning, connection pooling |
+| 10 | APIs & gRPC Contracts | REST conventions, proto contracts, webhook contract, SDK strategy, gRPC service versioning, webhook replay protection, SDK deprecation/migration |
+| 11 | Testing, DevOps & Deployment | TDD standards, CI/CD, K8s topology, observability, DR, load testing, chaos engineering, canary deployment, expand-contract migrations |
 | 12 | Appendices & Roadmap | This document |
 
 ---
@@ -103,8 +103,32 @@
 | OQ-026 (Part 11) | Run PERF-001 benchmarking spike | Engineering | Converts every latency/capacity placeholder across Parts 5/6/11 into committed numbers |
 | OQ-027 (Part 11) | Set RPO/RTO numeric targets | Product/Compliance/Engineering | Part 11 §7 DR runbook finalization |
 | OQ-028 (Part 11) | Duration of manual-approval-gated production releases | Engineering leadership | Part 11 §3.1 CI/CD stage 10 maturity |
+| OQ-029 (Part 3) | Finalize saga persistence strategy — same DB vs. dedicated saga DB | Architecture | Part 3 §9.1 SAGA-001 implementation |
+| OQ-030 (Part 3) | Determine outbox relay polling interval trade-offs vs. CDC (Debezium) | Engineering | Part 3 §9.2 OUTBOX-001, Part 9 §6.1 DB-006 |
+| OQ-031 (Part 3) | Finalize circuit breaker thresholds (error-rate, open-window) against real acquirer data | Engineering | Part 3 §9.3 CB-001 |
+| OQ-032 (Part 3) | Confirm archival retention period (default 90 days) against legal retention floor | Legal/Compliance | Part 3 §9.5 ARCH-001, Part 8 AUD-001 |
+| OQ-033 (Part 4) | Evaluate Debezium CDC as outbox relay alternative | Engineering | Part 4 §9.1 MOUT-001 |
+| OQ-034 (Part 4) | Finalize circuit breaker library choice for Rust | Engineering | Part 4 §9.2 |
+| OQ-035 (Part 4) | Confirm feature flag store — Redis-backed vs. off-the-shelf | Engineering/Infra | Part 4 §9.4 MFF-001 |
+| OQ-036 (Part 5) | Finalize default PartialAuthorizationPolicy | Product | Part 5 §9.1 PARTIAL-AUTH-002 |
+| OQ-037 (Part 5) | Confirm supported currencies and minor-unit precisions for MVP | Product/Engineering | Part 5 §9.2 CURRENCY-001 |
+| OQ-038 (Part 5) | Finalize subscription proration calculation method | Product | Part 5 §9.6 SUB-PAUSE-002 |
+| OQ-039 (Part 6) | Finalize feedback-loop UX design (thumbs-up/down vs. structured) | Product/UX | Part 6 §9.1 AIMON-001 |
+| OQ-040 (Part 6) | Confirm tool-use API surface for H2 | Product/Engineering | Part 6 §9.4 AITOOL-001 |
+| OQ-041 (Part 6) | Finalize multi-step reasoning step limit (default 3) | Engineering/AI | Part 6 §9.5 AICHAIN-002 |
+| OQ-042 (Part 6) | Evaluate per-tenant vs. shared OpenSearch index trade-off | Architecture | Part 6 §9.4, Part 9 OS-001 |
+| OQ-043 (Part 7) | Finalize circuit breaker thresholds for acquirer connectors | Engineering | Part 7 §5.1 CB-CONN-001 |
+| OQ-044 (Part 8) | Finalize KEK rotation schedule (default 90 days) | Security/Compliance | Part 8 §12 SEC-ROT-001 |
+| OQ-045 (Part 8) | Confirm API key acquirer scoping for MVP vs. H2 | Product | Part 8 §11 AUTHZ-002 |
+| OQ-046 (Part 9) | Finalize outbox relay polling vs. CDC trade-offs | Engineering | Part 9 §6.1 DB-006 |
+| OQ-047 (Part 9) | Confirm PgBouncer vs. built-in connection pooler | Engineering | Part 9 §9 POOL-001 |
+| OQ-048 (Part 10) | Finalize webhook replay window (default 5 minutes) | Security/Engineering | Part 10 §7 WEBHOOK-REPLAY-001 |
+| OQ-049 (Part 10) | Confirm X-SDK-Version header tracking for MVP vs. H2 | Product | Part 10 §8 SDK-DEP-003 |
+| OQ-050 (Part 11) | Finalize canary deployment thresholds against real baseline | Engineering/SRE | Part 11 §7.3 CANARY-001 |
+| OQ-051 (Part 11) | Confirm chaos engineering tooling choice | Engineering/Infra | Part 11 §7.2 CHAOS-001 |
+| OQ-052 (Part 11) | Finalize database migration tooling | Engineering | Part 11 §7.4 MIG-002 |
 
-**Program management note**: Items with a Legal owner (ASSUMP-001/OQ-001, OQ-002, OQ-018, OQ-019) are the highest-priority blockers for GA in any jurisdiction-sensitive configuration, since engineering work can proceed in parallel (feature-flagged, Part 11 REL-002) but must not go live without them resolved.
+**Program management note**: Items with a Legal owner (ASSUMP-001/OQ-001, OQ-002, OQ-018, OQ-019) are the highest-priority blockers for GA. Items from the gap analysis (OQ-029 through OQ-052) represent new engineering decisions that should be resolved during M1–M2 to avoid blocking later milestones. Priority recommendation: resolve OQ-029 (saga persistence), OQ-030 (outbox relay), and OQ-031 (circuit breaker thresholds) before M2 implementation begins, as they are foundational patterns that affect multiple services.
 
 ---
 
@@ -147,6 +171,7 @@
 
 - This series is a **living specification**. Every Part's Open Items section (consolidated in §4 above) represents known unknowns, not gaps in rigor — they are flagged precisely so they are resolved deliberately (with the right owner) rather than silently assumed away during implementation.
 - Where this SRS gives a placeholder (a latency number, a retention period, a hop-count default), it is explicitly marked as such and paired with the mechanism that will produce the real number (a benchmarking spike, a legal opinion, a Product decision) — the intent throughout has been to never present an invented figure with false confidence.
+- The gap analysis additions (Parts 3–11, new sections on sagas, outbox, circuit breakers, threat modeling, load testing, chaos engineering, etc.) address critical design patterns and cross-cutting concerns that were identified during the initial SRS review. These additions strengthen the specification's readiness for implementation without changing the fundamental architecture.
 - Recommended next step: convene STK-007 (Product), STK-008 (Engineering), STK-010 (Compliance), and STK-014 (Legal) to walk the §4 consolidated open-questions register and assign near-term resolution deadlines before M1 (§5.1) engineering work begins in earnest.
 
 ---

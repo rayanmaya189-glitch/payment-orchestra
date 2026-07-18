@@ -47,6 +47,7 @@ This platform is modeled using **strategic DDD** (context mapping, ubiquitous la
 | BC-14 | Notification Service | Generic Supporting | Eventually consistent, at-least-once delivery |
 | BC-15 | Analytics & Reporting | Generic Supporting | Eventually consistent (ClickHouse), append-only |
 | BC-16 | Marketplace / Sub-Merchant (H2) | Core Supporting | Strongly consistent, ACL to licensed partner |
+| BC-17 | Saga Coordinator | Cross-Cutting Infrastructure | Durable state machine, Postgres-backed |
 
 ### 1.2 Context Map — Relationships
 
@@ -300,7 +301,129 @@ EventEnvelope {
 
 ---
 
-## 9. Traceability to Part 1 / Part 2
+## 9. Missing Design Patterns — Gap Analysis Additions
+
+### 9.1 Saga / Process Manager Pattern
+
+The SRS describes event-driven cross-service coordination but never explicitly defines a Saga or Process Manager pattern. For a payment orchestration system, sagas are essential.
+
+**Add the following bounded context/aggregates:**
+
+#### BC-17 — Saga Coordinator (Cross-Cutting Infrastructure)
+
+**Purpose**: Orchestrate multi-step, cross-aggregate business processes that span multiple bounded contexts and require compensation logic on partial failure.
+
+**Key Sagas:**
+
+| Saga ID | Name | Trigger | Steps | Compensation |
+|---|---|---|---|---|
+| SAGA-01 | Payment Lifecycle Saga | `CreatePaymentIntent` | Authorize → Capture → Settle → Reconcile | Void on capture failure; reconcile against partial state |
+| SAGA-02 | Subscription Renewal Saga | Scheduler (JOB-01) | Create renewal intent → Authorize → Handle dunning on failure | Cancel subscription on exhausted retries |
+| SAGA-03 | Reconciliation Resolution Saga | `ResolveReconciliationException` | Match → Confirm → Update settlement status | Undo match on confirmation failure |
+| SAGA-04 | Invoice Payment Saga | `InvoiceSent` + payment completion | Create intent → Authorize → Capture → Update invoice | Void intent if invoice cancelled mid-flow |
+
+**Implementation Rule (SAGA-001)**: Each saga is modeled as a durable state machine persisted in its own Postgres `saga_instances` table, keyed by `tenant_id` + `saga_id`. Saga state transitions are recorded as events in a dedicated `saga_events` stream, providing audit trails consistent with PRIN-05. No saga relies on in-memory state — crash recovery replays the saga event stream to rebuild current state.
+
+**Saga Instance Schema:**
+
+```sql
+CREATE TABLE saga_instances (
+    tenant_id       UUID NOT NULL,
+    saga_id         UUID NOT NULL,
+    saga_type       TEXT NOT NULL,
+    aggregate_id    UUID NOT NULL,       -- the primary aggregate this saga operates on
+    status          TEXT NOT NULL,       -- 'running' | 'completed' | 'compensating' | 'failed'
+    current_step    TEXT NOT NULL,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (tenant_id, saga_id)
+);
+```
+
+**Design Principle (SAGA-002)**: Sagas never hold custody of funds (consistent with Part 1 §6). A saga's compensation logic for payment flows is always "revert the orchestration state machine" (void, cancel), never "move funds back through a platform-controlled account."
+
+### 9.2 Outbox Pattern (Transactional Outbox)
+
+Event publishing reliability requires the Transactional Outbox pattern to guarantee that domain events are published to NATS JetStream if and only if the corresponding aggregate state change commits to Postgres.
+
+**Event Store Modification**: Every event-sourced context's event append operation writes to both the `event_store` table AND an `outbox` table within the same Postgres transaction:
+
+```sql
+CREATE TABLE outbox (
+    tenant_id       UUID NOT NULL,
+    outbox_id       UUID NOT NULL,
+    aggregate_type  TEXT NOT NULL,
+    aggregate_id    UUID NOT NULL,
+    event_type      TEXT NOT NULL,
+    event_version   SMALLINT NOT NULL,
+    payload         BYTEA NOT NULL,     -- same protobuf-encoded EventEnvelope as event_store
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    published_at    TIMESTAMPTZ NULL,   -- set by the relay process after NATS publish confirms
+    PRIMARY KEY (tenant_id, outbox_id)
+);
+
+CREATE INDEX outbox_unpublished_idx ON outbox (tenant_id, created_at) WHERE published_at IS NULL;
+```
+
+**Relay Process (OUTBOX-001)**: A dedicated relay process (implemented within each event-sourced service, not a separate microservice for MVP) polls unpublished outbox entries, publishes to NATS JetStream, and marks them published. The relay runs at sub-second polling intervals to minimize propagation lag. On crash recovery, the relay resumes from the last unconfirmed publish — at-least-once delivery is guaranteed; exactly-once effect is achieved at the consumer level per Part 4 §4.2.
+
+**Why this matters for BIZ-040/PRIN-05**: Without the outbox pattern, a crash between Postgres commit and NATS publish would silently lose domain events, breaking the "event stream IS the audit log" claim. The outbox table is the durable bridge.
+
+### 9.3 Circuit Breaker Pattern
+
+**CB-001 (Acquirer Circuit Breaker)**: `connector-gateway` maintains per-connector circuit breakers. When a connector's error rate exceeds a configurable threshold (e.g., >50% error rate over a 30-second window), the circuit opens and `orchestration-service` routing logic automatically skips that connector for the duration of the open window, avoiding cascading latency degradation on the checkout path.
+
+**CB-002 (Inter-Service Circuit Breaker)**: For non-checkout-critical synchronous calls (e.g., `compliance-service` → `document-service` for OCR), circuit breakers prevent a degraded dependency from consuming connection pool resources. On circuit open, the call fails fast with a degraded-mode response rather than queueing indefinitely.
+
+**CB-003 (Bulkhead per Connector)**: Each acquirer adapter within `connector-gateway` has its own connection pool and timeout budget, isolated from other adapters. A hanging TCP connection to one acquirer cannot starve connection pool resources for other acquirers.
+
+### 9.4 Retry with Exponential Backoff + Jitter
+
+**RETRY-001**: All external-system calls (acquirer APIs, webhook delivery to merchants, settlement file polling) use exponential backoff with jitter:
+- Initial delay: configurable per integration (acquirer: 100ms, webhook delivery: 1s, settlement poll: 5min)
+- Multiplier: 2x per retry
+- Max delay: configurable cap (acquirer: 5s, webhook: 1h, settlement poll: 1h)
+- Jitter: ±25% randomization to prevent thundering herd
+- Max retries: configured per integration type
+
+**RETRY-002**: Internal service-to-service gRPC calls use a lighter retry policy (1 retry, fixed 100ms delay, only on UNAVAILABLE/DEADLINE_EXCEEDED — never on INVALID_ARGUMENT or PERMISSION_DENIED).
+
+### 9.5 Soft-Delete and Archival Strategy
+
+**ARCH-001**: Aggregates in terminal states (`PaymentIntent` in `Captured`/`Refunded`/`Voided`/`Failed`/`AuthorizationExpired`, `Invoice` in `Paid`/`Cancelled`, `Subscription` in `Cancelled`) are candidates for archival after a configurable retention period (default: 90 days in hot store). Archival moves the aggregate's event stream from `event_store` to a cold-storage table (`event_store_archive`) with the same schema but on a separate tablespace.
+
+**ARCH-002**: Snapshotting frequency (Part 9 DB-003) is adjusted for archived aggregates — no new snapshots are created after archival.
+
+**ARCH-003**: Read-model projections for archived aggregates are maintained indefinitely, but the underlying event streams are only rehydrated on demand for compliance/audit purposes.
+
+### 9.6 Tenant Provisioning Orchestration
+
+**PROV-001**: Tenant onboarding (UC-001) triggers a provisioning saga that creates all required per-tenant infrastructure: Postgres schema/role, MinIO bucket, OpenSearch index, Redis key prefix namespace, NATS stream consumer configuration.
+
+**PROV-002**: Provisioning is idempotent — re-running the provisioning saga for an already-provisioned tenant is a no-op (checked via `tenant.provisioned_at` timestamp).
+
+**PROV-003**: Tenant suspension disables live processing but retains all data for audit compliance (AUD-001). Deprovisioning (data deletion) is deferred pending OQ-019 legal confirmation.
+
+### 9.7 API Key Scoping to Acquirer Links
+
+**APIKEY-001**: In addition to role-based permission scoping (Part 8 §2.1), API keys can optionally be scoped to specific `MerchantAcquirerLink` IDs, so that a merchant integration for a specific acquirer can only interact with that acquirer's data, following the principle of least privilege.
+
+### 9.8 Global Tenant Event Ordering
+
+**EVT-ORDER-001**: For use cases requiring cross-aggregate chronological ordering (AI Assistant summary documents, analytics dashboards), a per-tenant global event sequence is assigned by a lightweight `tenant_event_counter` table incremented atomically alongside event store appends:
+
+```sql
+CREATE TABLE tenant_event_counter (
+    tenant_id       UUID PRIMARY KEY,
+    next_sequence   BIGINT NOT NULL DEFAULT 0
+);
+```
+
+This counter is NOT used for aggregate consistency (that's `event_sequence`); it's purely a read-model concern for cross-aggregate ordering.
+
+---
+
+## 10. Traceability to Part 1 / Part 2
 
 | Part 1/2 Requirement | Enforced By (this Part) |
 |---|---|
@@ -314,13 +437,25 @@ EventEnvelope {
 | BR-020-1/INV-02 (no double capture/auth) | AGG-01 invariants INV-01/INV-02 |
 | BR-022-1/INV-03 (refund same acquirer) | AGG-01 invariant INV-03 |
 | EX-080a (no fallback to platform custody on split failure) | AGG-05 invariant INV-09 |
+| Saga/Process Manager (cross-aggregate workflows) | BC-17 Saga Coordinator, SAGA-001 through SAGA-002 |
+| Transactional Outbox (event publish reliability) | §9.2 OUTBOX-001, outbox table |
+| Circuit Breaker / Bulkhead (acquirer resilience) | §9.3 CB-001 through CB-003 |
+| Retry backoff+jitter (external system calls) | §9.4 RETRY-001, RETRY-002 |
+| Soft-delete/archival (event store lifecycle) | §9.5 ARCH-001 through ARCH-003 |
+| Tenant provisioning orchestration | §9.6 PROV-001 through PROV-003 |
+| API key scoping (least privilege) | §9.7 APIKEY-001 |
+| Cross-aggregate event ordering | §9.8 EVT-ORDER-001 |
 
 ---
 
-## 10. Open Items Carried Forward
+## 11. Open Items Carried Forward
 
 - **OQ-007**: Confirm whether `RiskAssessment` (BC-11) should be its own bounded context or a value object embedded in `PaymentIntent` once ML-based scoring (H3) is designed in detail — kept separate for now to avoid coupling BC-05's release cadence to fraud-model iteration speed, but should be revisited in Part 5.
 - **OQ-008**: Confirm event retention/replay policy in NATS JetStream (how long raw event streams are retained vs. archived to object storage) — affects whether "rebuild aggregate from full event history" remains cheap indefinitely or requires snapshotting; addressed in Part 4/9.
+- **OQ-029**: Finalize saga persistence strategy — whether saga state is stored in the same Postgres database as the aggregate it orchestrates or in a dedicated saga database. Recommended: same database for MVP (simpler transactional guarantees), split later if saga volume warrants it.
+- **OQ-030**: Determine outbox relay polling interval trade-offs — sub-second polling adds Postgres load; consider CDC via Debezium for production scale. Decision deferred to Part 11 capacity planning.
+- **OQ-031**: Finalize circuit breaker thresholds (CB-001 error-rate threshold, open-window duration) against real acquirer failure-mode data from pilot merchants.
+- **OQ-032**: Confirm archival retention period (ARCH-001 default 90 days) against legal/compliance retention floor (Part 8 AUD-001, OQ-018) — archival must not move data out of reach before the retention floor expires.
 
 ---
 

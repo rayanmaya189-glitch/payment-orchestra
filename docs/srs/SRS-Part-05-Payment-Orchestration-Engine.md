@@ -192,7 +192,54 @@ When a `PaymentIntent` is flagged (at `CreatePaymentIntent` time, via a `split_c
 
 ---
 
-## 9. Traceability
+## 9. Business Logic Gap Fixes
+
+### 9.1 Partial Authorization Handling
+
+When an acquirer returns a partial authorization (approved for less than the requested amount):
+
+- **PARTIAL-AUTH-001**: The `AuthorizePaymentIntent` command handler checks whether the acquirer response indicates a partial authorization (approved amount < requested amount). If so, the engine has three options, tenant-configurable via `RoutingPolicy`:
+  1. **Accept partial**: Transition to `Authorized` with the reduced amount. The `PaymentIntent` records both `requested_amount` and `authorized_amount` for audit.
+  2. **Retry next acquirer**: Treat the partial as a retryable decline and attempt the next routing candidate for the full requested amount.
+  3. **Reject**: Transition to `Failed` with a new normalized decline reason `PartialAuthorizationRejected`.
+
+- **PARTIAL-AUTH-002**: The chosen strategy is recorded in the `RoutingPolicy` as a `PartialAuthorizationPolicy` value object within `FailoverConfig`, with a default of "retry next acquirer" (safest for revenue maximization).
+
+### 9.2 Currency Minor-Unit Precision
+
+- **CURRENCY-001**: The `Money` value object is extended to include `minor_unit_precision` (number of decimal places), derived from ISO 4217: AED/USD/SAR = 2, BHD/KWD = 3, JPY = 0.
+- **CURRENCY-002**: All `Money` arithmetic uses integer arithmetic on `amount_minor_units` with `precision` as metadata — this is already the design per PRIN-004 (Part 3), but the precision metadata makes it explicit for display and validation.
+- **CURRENCY-003**: The `CreatePaymentIntent` command validates that `amount_minor_units` is valid for the given currency's precision.
+
+### 9.3 Refund to Disabled/Disconnected Acquirer
+
+- **REFUND-EDGE-001**: If a refund is requested for a `PaymentIntent` whose original capturing `MerchantAcquirerLink` is now `Disabled` or deleted, the refund command is **rejected synchronously** with error `ACQUIRER_LINK_DISABLED`, because refunds must go to the same acquirer that captured the payment (BR-022-1).
+- **REFUND-EDGE-002**: If the original acquirer link is `Active` but the acquirer's refund API is temporarily unreachable (circuit breaker open), the refund command is accepted and queued as a `RefundPending` state, retried once the circuit closes.
+
+### 9.4 Zero-Amount Authorization (Card Verification)
+
+- **ZERO-AUTH-001**: The engine supports zero-amount authorization for card verification/tokenization flows. `CreatePaymentIntent` accepts `amount_minor_units = 0` when `purpose = CardVerification`.
+- **ZERO-AUTH-002**: Zero-amount authorizations are excluded from authorization-rate analytics and failover-recovery metrics (GOAL-002).
+
+### 9.5 Maximum Transaction Amount Validation
+
+- **MAX-AMT-001**: Each `RoutingPolicy` can define a `max_transaction_amount` per acquirer. The routing algorithm filters candidates whose max amount is less than the transaction amount.
+- **MAX-AMT-002**: A platform-wide maximum transaction amount is configurable per deployment as a hard ceiling.
+
+### 9.6 Subscription Pause/Resume and Proration
+
+- **SUB-PAUSE-001**: Subscriptions support `Paused` state (distinct from `PastDue` or `Cancelled`). While paused, the scheduler skips renewal attempts. Resume reactivates the billing cycle.
+- **SUB-PAUSE-002**: Mid-cycle plan changes trigger proration: unused portion of current billing period is credited toward the new plan's first period.
+- **SUB-PAUSE-003**: Trial period logic is fully configurable: duration, trial amount, automatic conversion, and notification timing.
+
+### 9.7 Marketplace-Split Failure Mode Refinement
+
+- **MKT-SPLIT-003**: When the licensed partner rejects a split configuration, the engine logs a `SplitPaymentRejected` event with the normalized rejection reason for analytics.
+- **MKT-SPLIT-004**: The tenant-configured fallback behavior for split rejection is cached in Redis by `marketplace-service` to avoid synchronous lookup on every payment attempt.
+
+---
+
+## 10. Traceability
 
 | Requirement | Realized By |
 |---|---|
@@ -204,13 +251,23 @@ When a `PaymentIntent` is flagged (at `CreatePaymentIntent` time, via a `split_c
 | BR-022-1 / INV-03 (refund same acquirer) | §1 `RefundPaymentIntent` guard |
 | EX-080a / INV-09 (no custody fallback on split failure) | §6 MKT-SPLIT-002 |
 | GOAL-009 (H3 smart routing) | §3.3 |
+| Partial authorization handling | §9.1 PARTIAL-AUTH-001, PARTIAL-AUTH-002 |
+| Currency precision (multi-decimal) | §9.2 CURRENCY-001 through CURRENCY-003 |
+| Refund to disabled acquirer (edge case) | §9.3 REFUND-EDGE-001, REFUND-EDGE-002 |
+| Zero-amount authorization | §9.4 ZERO-AUTH-001, ZERO-AUTH-002 |
+| Max transaction amount validation | §9.5 MAX-AMT-001, MAX-AMT-002 |
+| Subscription pause/resume/proration | §9.6 SUB-PAUSE-001 through SUB-PAUSE-003 |
+| Marketplace split failure refinement | §9.7 MKT-SPLIT-003, MKT-SPLIT-004 |
 
 ---
 
-## 10. Open Items Carried Forward
+## 11. Open Items Carried Forward
 
 - **OQ-011**: Finalize default and configurable-range values for RTY-002's hard hop ceiling — placeholder "3" used above pending a latency-budget modeling exercise in Part 11.
 - **OQ-012**: Confirm which MVP acquirer partners support native idempotency tokens (§4.1) vs. require status-check-before-retry — depends on OQ-003 (Part 1) acquirer shortlist; must be resolved before Part 7 finalizes per-connector capability flags.
+- **OQ-036**: Finalize the default `PartialAuthorizationPolicy` (§9.1) — "retry next acquirer" is recommended as the default but must be validated against pilot merchant preferences.
+- **OQ-037**: Confirm the maximum number of supported currencies and their minor-unit precisions for MVP (§9.2) — BHD/KWD (3 decimal) support adds validation complexity; consider limiting MVP to 2-decimal currencies.
+- **OQ-038**: Finalize subscription proration calculation method (§9.6 SUB-PAUSE-002) — full-day granularity vs. hour-based vs. calendar-month pro-rata — requires Product sign-off.
 
 ---
 

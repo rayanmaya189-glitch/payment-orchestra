@@ -166,7 +166,66 @@ Each question in the final list is paired with a **ground-truth answer** (valida
 
 ---
 
-## 9. Traceability
+## 9. AI-Specific Gap Fixes
+
+### 9.1 Production Model Quality Monitoring
+
+- **AIMON-001**: A lightweight feedback loop is integrated into the Assistant UI: every answer includes a thumbs-up/thumbs-down feedback button. Feedback is stored per `(query, answer, session_id, tenant_id)` with timestamp, and aggregated daily into a quality-score dashboard accessible to the AI/ML team (STK-009).
+- **AIMON-002**: A daily automated drift-detection job compares the current model's answer quality against the ground-truth "top 50" regression suite (§6.1). If factual accuracy drops below the EVAL-001 threshold, an alert is raised before any production degradation impacts merchants.
+- **AIMON-003**: Retrieval quality metrics (average relevance score of top-K results, citation hit rate) are logged per query and aggregated into hourly rollups in ClickHouse, enabling trend analysis of retrieval pipeline health.
+
+### 9.2 Prompt A/B Testing Framework
+
+- **AIPROMPT-001**: A/B testing of system prompts and retrieval parameters is supported via a `prompt_variant` field on the `ConversationSession` aggregate. A configurable percentage of traffic is routed to the variant; quality metrics are tracked separately in ClickHouse.
+- **AIPROMPT-002**: No prompt variant is promoted to 100% traffic unless it demonstrates statistically significant improvement over the baseline on the evaluation suite (§6.3 EVAL-001 gate applies to variants).
+
+### 9.3 Conversation History Persistence and Export
+
+- **AISESS-001**: Conversation sessions are persisted indefinitely (beyond the bounded prompt window, §3.3 SESS-001) in a `conversation_history` table, enabling search across past Q&A pairs, export/transcript capability for compliance review, and audit trail of AI interactions.
+
+```sql
+CREATE TABLE conversation_history (
+    tenant_id       UUID NOT NULL,
+    session_id      UUID NOT NULL,
+    message_seq     INT NOT NULL,
+    role            TEXT NOT NULL,       -- 'user' | 'assistant'
+    content         TEXT NOT NULL,
+    citations       JSONB NULL,
+    feedback        TEXT NULL,           -- 'positive' | 'negative' | NULL
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (tenant_id, session_id, message_seq)
+);
+```
+
+- **AISESS-002**: The bounded prompt window (SESS-001) is a *prompt-construction* concern only — the full history is always stored, but only the most recent N messages are included in the LLM prompt.
+
+### 9.4 Tool Use / Function Calling (H2 Enhancement)
+
+- **AITOOL-001**: The Assistant is extended with tool-use capability so it can invoke read-only API endpoints of other services to answer questions requiring fresh data:
+  - `GetReconciliationExceptions(tenant_id, date_range)`
+  - `GetPaymentIntentStatus(tenant_id, payment_intent_id)`
+  - `GetAuthorizationRateStats(tenant_id, acquirer, scheme, period)`
+
+- **AITOOL-002**: Tool calls are bounded to read-only endpoints — the Assistant has no write-path tool access, preserving AI-P-003 (no autonomous money movement).
+- **AITOOL-003**: Tool call results are included in the RAG context and cited like any other retrieved source.
+- **AITOOL-004**: Tool calls are gated by the same RBAC/ABAC rules as direct API calls.
+
+### 9.5 Multi-Step Reasoning Chains (H2 Enhancement)
+
+- **AICHAIN-001**: For complex questions requiring multiple retrieval rounds, the Assistant supports a multi-step reasoning chain: initial retrieval → self-evaluation → refined retrieval → final answer assembly.
+- **AICHAIN-002**: The maximum number of reasoning steps is bounded (default: 3) to prevent unbounded latency growth. Each step's latency is tracked for NFR-AI-001 budget compliance.
+
+### 9.6 Enhanced Prompt Injection Mitigation
+
+- **GRD-IN-003**: The prompt-injection screening is formalized as a multi-layer defense:
+  1. **Pattern blocklist**: Known injection patterns are blocked before entering the prompt context.
+  2. **Content sandboxing**: Externally-sourced text is wrapped in `<external_content>` XML tags with instructions to treat as data, not instructions.
+  3. **Output monitoring**: Post-generation classifier checks for leaked system prompt content.
+  4. **Escalation**: Repeated injection attempts (≥3 per session or ≥5 per tenant per hour) are logged and the tenant's AI usage may be temporarily suspended.
+
+---
+
+## 10. Traceability
 
 | Requirement | Realized By |
 |---|---|
@@ -178,14 +237,24 @@ Each question in the final list is paired with a **ground-truth answer** (valida
 | GOAL-004 (top-50 baseline) | §6.1 |
 | GOAL-010 / SCOPE-016 (proactive anomaly, H3) | §7 |
 | Part 1 §7.3 scope boundary (not financial advice) | §1 AI-P-005, §5.2 GRD-OUT-002 |
+| Production model quality monitoring | §9.1 AIMON-001 through AIMON-003 |
+| Prompt A/B testing | §9.2 AIPROMPT-001, AIPROMPT-002 |
+| Conversation history persistence/export | §9.3 AISESS-001, AISESS-002 |
+| Tool use / function calling (H2) | §9.4 AITOOL-001 through AITOOL-004 |
+| Multi-step reasoning chains (H2) | §9.5 AICHAIN-001, AICHAIN-002 |
+| Enhanced prompt injection mitigation | §9.6 GRD-IN-003 (layers 1–4) |
 
 ---
 
-## 10. Open Items Carried Forward
+## 11. Open Items Carried Forward
 
-- **OQ-013**: Finalize the exact top-50 question list (§6.1) with Product/Finance-Ops persona input — this SRS defines the *mechanism* (evaluation harness, regression gate) but not the final question set, which is a product-content task, not an architecture task.
-- **OQ-014**: Confirm GPU hardware specification/quantity (ties to Part 1 DEP-003 and Part 4 §8) before Part 11 finalizes NFR-AI-001's numeric latency targets — targets cannot be responsibly set before capacity is known.
-- **OQ-015**: Decide the bounded conversation-history window size (§3.3 SESS-001) — a Product/UX decision balancing follow-up-question continuity against prompt cost/latency, to be finalized alongside OQ-013.
+- **OQ-013**: Finalize the exact top-50 question list (§6.1) with Product/Finance-Ops persona input.
+- **OQ-014**: Confirm GPU hardware specification/quantity (ties to Part 1 DEP-003 and Part 4 §8) before Part 11 finalizes NFR-AI-001 numeric latency targets.
+- **OQ-015**: Decide the bounded conversation-history window size (§3.3 SESS-001).
+- **OQ-039**: Finalize the feedback-loop UX design (§9.1 AIMON-001) — simple thumbs-up/down vs. structured feedback categories — affects quality dashboard granularity.
+- **OQ-040**: Confirm tool-use API surface for H2 (§9.4 AITOOL-001) — which read-only endpoints to expose, and whether tool results should be cached.
+- **OQ-041**: Finalize multi-step reasoning step limit (§9.5 AICHAIN-002, default 3) based on latency benchmarks.
+- **OQ-042**: Evaluate the trade-off between per-tenant OpenSearch indices (Part 9 OS-001) and a shared index with strong tenant-scoped query filtering — per-tenant provides stronger isolation but creates operational overhead at scale.
 
 ---
 

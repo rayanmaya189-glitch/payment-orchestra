@@ -178,12 +178,39 @@ message PaymentAuthorizedV1 {
 
 ## 5. Rate Limiting Contract
 
-- **RL-001**: Rate limits are tiered by commercial plan (BIZ-032) and disclosed via standard headers (`X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`) on every response, not just on 429s, so integrators can proactively pace requests rather than discovering limits only by hitting them.
-- **RL-002**: AI Assistant endpoints (routed via `ai-gateway`, Part 4 §3) have a *separate* quota dimension from general API rate limits (Part 9 §2 `ai_quota:*` keys), reflecting their distinct cost/commercial structure (BIZ-032) — a tenant exhausting general API rate limits does not automatically block their AI Assistant usage, and vice versa.
+- **RL-001**: Rate limits are tiered by commercial plan (BIZ-032) and disclosed via standard headers (`X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`) on every response, not just on 429s, so integrators can proactively pace requests.
+- **RL-002**: AI Assistant endpoints (routed via `ai-gateway`, Part 4 §3) have a *separate* quota dimension from general API rate limits (Part 9 §2 `ai_quota:*` keys).
 
 ---
 
-## 6. Traceability
+## 6. gRPC Service Versioning (Internal)
+
+- **GRPC-VER-001**: Internal gRPC services use package-level versioning: `orchestration.v1`, `orchestration.v2`, etc. Breaking changes to internal gRPC contracts require a new package version.
+- **GRPC-VER-002**: During a version transition, the old version remains available for at least one release cycle (N-1 compatibility) to allow dependent services to upgrade gracefully. The old version is marked as deprecated in the proto definition.
+- **GRPC-VER-003**: Event schema versioning (Part 3 §4, Part 10 §2.2 GRPC-003) is independent of gRPC service versioning — event payloads evolve via `event_version` within the same service version.
+
+---
+
+## 7. Webhook Replay Protection
+
+- **WEBHOOK-REPLAY-001**: Outbound webhook payloads include a `timestamp` field (UTC ISO 8601) and a nonce (`event_id`). Merchants should reject webhooks with timestamps older than a configurable window (default: 5 minutes) to prevent replay attacks.
+- **WEBHOOK-REPLAY-002**: The HMAC-SHA256 signature (WEBHOOK-002) is computed over `timestamp + "." + event_id + "." + body` rather than body alone, binding the signature to a specific time window and event instance.
+- **WEBHOOK-REPLAY-003**: Merchants are documented (SDK/docs) to maintain a set of recently-processed `event_id` values and reject duplicates within a configurable dedup window (default: 24 hours), complementing the platform's own at-least-once delivery semantics.
+
+---
+
+## 8. SDK Deprecation and Migration
+
+- **SDK-DEP-001**: When a breaking API change is introduced (API-001/002), the SDK changelog includes:
+  - The deprecated API method/field with a removal timeline
+  - The replacement method/field
+  - A migration guide (code examples showing before/after)
+- **SDK-DEP-002**: Deprecated SDK methods emit compile-time warnings (via `#[deprecated]` attributes in Rust/TypeScript, `@deprecated` JSDoc in JavaScript) rather than runtime warnings, catching issues at build time.
+- **SDK-DEP-003**: SDK version detection: the SDK sends an `X-SDK-Version` header with every request, allowing the API Gateway to track which SDK versions are still in active use and plan deprecation timelines based on real adoption data.
+
+---
+
+## 9. Traceability
 
 | Requirement | Realized By |
 |---|---|
@@ -194,14 +221,19 @@ message PaymentAuthorizedV1 {
 | Part 3 §4 event envelope | §2.2 protobuf `EventEnvelope` |
 | GOAL-011 (SDK ecosystem) | §4 |
 | BIZ-032 (tiered commercial model) | §5 RL-001/002 |
+| gRPC service versioning (internal) | §6 GRPC-VER-001 through GRPC-VER-003 |
+| Webhook replay protection | §7 WEBHOOK-REPLAY-001 through WEBHOOK-REPLAY-003 |
+| SDK deprecation and migration | §8 SDK-DEP-001 through SDK-DEP-003 |
 
 ---
 
-## 7. Open Items Carried Forward
+## 10. Open Items Carried Forward
 
-- **OQ-023**: Confirm final API-002 deprecation-window duration with Product/Legal (contractual implications for enterprise merchant agreements).
+- **OQ-023**: Confirm final API-002 deprecation-window duration with Product/Legal.
 - **OQ-024**: Confirm final SDK language priority order (§4 SDK-001) against actual pilot-merchant technology stack survey results.
-- **OQ-025**: Confirm authentication header scheme for machine clients (§1.3 API-008 — Basic vs. custom header pair) against chosen API gateway technology's native support, to avoid fighting the infrastructure's conventions.
+- **OQ-025**: Confirm authentication header scheme for machine clients (§1.3 API-008).
+- **OQ-048**: Finalize webhook replay window (§7 WEBHOOK-REPLAY-001, default 5 minutes) — too short causes legitimate delayed webhooks to be rejected; too long increases replay attack surface.
+- **OQ-049**: Confirm whether `X-SDK-Version` header tracking (§8 SDK-DEP-003) is required for MVP or deferred to H2 SDK ecosystem maturity.
 
 ---
 

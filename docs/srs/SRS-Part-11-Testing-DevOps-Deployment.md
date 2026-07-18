@@ -153,7 +153,61 @@ Total checkout latency budget (target, tenant-perceived)
 
 ---
 
-## 7. Disaster Recovery & Backup
+## 7. Load Testing & Chaos Engineering
+
+### 7.1 Load Testing Strategy
+
+- **LT-001**: A load testing suite is maintained alongside the application code, using a framework such as `k6` or `Locust`, targeting the following scenarios:
+  - **Checkout hot path**: `CreatePaymentIntent` + `AuthorizePaymentIntent` at target TPS (transactions per second), measuring p50/p95/p99 latency.
+  - **Failover under load**: Inject primary-acquirer failure during load test, validate that failover completes within latency budget (Part 5 RTY-002).
+  - **Settlement ingestion burst**: Simulate month-end settlement file ingestion at 10x normal volume.
+  - **AI Assistant concurrent queries**: Sustained concurrent Q&A load against the Ollama inference pool.
+
+- **LT-002**: Load tests run against staging environment with realistic data volumes (synthetic tenant data seeded to represent pilot-merchant scale). Results are compared against latency budgets (Part 5 NFR-ORC-001, Part 6 NFR-AI-001) as a CI gate for performance-sensitive services.
+
+- **LT-003**: Performance regression detection: load test results are stored historically; a CI step compares current-run latency metrics against the baseline and fails the build if p99 latency regresses by more than a configurable threshold (default: 15%).
+
+### 7.2 Chaos Engineering
+
+- **CHAOS-001**: A chaos engineering test suite injects controlled failures in staging:
+  - **Acquirer timeout/failure**: Simulate one acquirer returning 500s or timing out; validate failover routing (CB-CONN-001, Part 7).
+  - **Postgres failover**: Kill the primary Postgres; validate that the service degrades gracefully (write-path fails fast, read-path serves from replica).
+  - **Redis eviction**: Simulate Redis memory pressure; validate that cache misses fall through to Postgres (REDIS-001, Part 9).
+  - **NATS partition**: Simulate NATS connectivity loss; validate that outbox relay retries and no events are lost.
+  - **MinIO unavailability**: Simulate object storage failure; validate that document uploads queue and retry (MDEG-001, Part 4).
+  - **GPU pool saturation**: Simulate Ollama inference overload; validate that AI Gateway circuit-breaks (AIGW-005, Part 4).
+
+- **CHAOS-002**: Chaos tests are run quarterly against staging (not production) as a scheduled pipeline job. Results are documented and shared with STK-011 (DevOps/SRE) and STK-008 (Engineering).
+
+- **CHAOS-003**: Chaos engineering findings feed back into circuit breaker thresholds (Part 3 §9.3), retry configurations (Part 3 §9.4), and graceful degradation modes (Part 4 §9.6) — the chaos suite validates the *configured* resilience, not just the *coded* resilience.
+
+### 7.3 Canary Deployment Specification
+
+- **CANARY-001**: Production deployments use canary rollout: a small percentage of traffic (default: 5%) is routed to the new version while the rest remains on the old version. The canary is monitored for:
+  - Error rate increase (threshold: >0.5% increase over baseline)
+  - p99 latency increase (threshold: >20% increase over baseline)
+  - Business metric anomalies (authorization rate drop, reconciliation failure rate increase)
+
+- **CANARY-002**: If any canary health check fails, the deployment is automatically rolled back (traffic shifts 100% to the old version). The rollback is logged as an incident (Part 8 IR-001 pattern).
+
+- **CANARY-003**: For event-sourced services, canary deployment requires special care: the canary and old version must be able to read each other's event format during the transition window (Part 10 GRPC-003 schema evolution rules). Breaking event schema changes use the versioned subject pattern (Part 4 §4.2, `...v2`) and are deployed as a two-phase rollout (deploy consumers first, then publishers).
+
+- **CANARY-004**: Blue-green deployment is available as an alternative for non-event-sourced services (e.g., `notification-service`, `analytics-service`) where the database schema doesn't require gradual migration.
+
+### 7.4 Database Migration Strategy
+
+- **MIG-001**: All Postgres schema changes use expand-contract migration pattern:
+  1. **Expand**: Add new columns/tables (backward-compatible with old application code)
+  2. **Deploy**: New application code that writes to and reads from the new schema
+  3. **Contract**: Remove old columns/tables (only after old code is fully retired)
+
+- **MIG-002**: Migrations are managed via a migration tool (e.g., `refinery`, `sqlx migrate`) and run as part of the CI/CD pipeline, not manually. Migration scripts are version-controlled and tested in CI against a disposable Postgres instance.
+
+- **MIG-003**: Event store schema changes are additive only (new fields in protobuf payloads, GRPC-003). Breaking changes to event schemas use the versioned subject pattern and are never applied retroactively to existing events in the store.
+
+---
+
+## 8. Disaster Recovery & Backup
 
 - **DR-001**: Postgres: continuous WAL archiving + periodic base backups, point-in-time-recovery capable, cross-availability-zone replication at minimum, with the specific Recovery Point Objective (RPO)/Recovery Time Objective (RTO) targets to be set jointly by Engineering and Product against acceptable business risk (a near-zero RPO is expected for the event-store databases specifically, given BIZ-040's audit-completeness requirement — losing even a small window of committed financial events is a compliance issue, not just a data-loss inconvenience).
 - **DR-002**: ClickHouse/OpenSearch: since these are rebuildable projections (Part 3 §7, Part 9 §6) from the Postgres event stores and NATS JetStream retained streams, their DR strategy can tolerate a coarser RTO (rebuild-from-source is an acceptable recovery path) provided NATS retention (Part 3 OQ-008, Part 9 OQ-021) is sufficient to cover the realistic rebuild window — this is exactly why those two open items must be resolved before DR runbooks can be finalized.
@@ -162,7 +216,7 @@ Total checkout latency budget (target, tenant-perceived)
 
 ---
 
-## 8. Release & Change Management
+## 10. Release & Change Management
 
 - **REL-001**: Semantic versioning for external API surfaces (Part 10 §1.1); internal service versions tracked independently since internal services can be deployed more frequently than the public API surface changes.
 - **REL-002**: Feature flags for any H2/H3-scoped capability (Part 1 §7.1) being developed incrementally ahead of its full business/legal readiness (e.g., marketplace splits, Part 1 §6.4 OQ-002) — code can exist and be tested in staging well before it is enabled for any real tenant, decoupling "engineering done" from "legally/commercially launched."
@@ -170,7 +224,7 @@ Total checkout latency budget (target, tenant-perceived)
 
 ---
 
-## 9. Traceability
+## 11. Traceability
 
 | Requirement | Realized By |
 |---|---|
@@ -181,15 +235,22 @@ Total checkout latency budget (target, tenant-perceived)
 | BR-020-2 (Part 2, bounded failover latency) | §6.2 methodology |
 | Part 5 OQ-011 | §6.2 PERF-002 (resolution mechanism defined, number pending benchmark) |
 | Part 6 OQ-014 | §6 methodology applies equally to GPU capacity planning |
-| Part 3 OQ-008 / Part 9 OQ-021 | §7 DR-002 (explicitly blocked on their resolution) |
+| Part 3 OQ-008 / Part 9 OQ-021 | §8 DR-002 (explicitly blocked on their resolution) |
+| Load testing strategy | §7.1 LT-001 through LT-003 |
+| Chaos engineering | §7.2 CHAOS-001 through CHAOS-003 |
+| Canary/blue-green deployment | §7.3 CANARY-001 through CANARY-004 |
+| Database migration strategy (expand-contract) | §7.4 MIG-001 through MIG-003 |
 
 ---
 
-## 10. Open Items Carried Forward
+## 12. Open Items Carried Forward
 
-- **OQ-026**: Run the PERF-001 benchmarking spike against provisioned staging infrastructure and real sandbox acquirer latencies to convert every "target to be finalized" placeholder in this Part (and in Parts 5, 6) into a committed number.
-- **OQ-027**: Set specific RPO/RTO numeric targets (§7 DR-001) jointly with Product/Compliance once business risk tolerance is agreed — this SRS establishes the *mechanism* (continuous WAL archiving, cross-AZ replication, quarterly drills) but intentionally does not invent the specific hour/minute figures without that input.
-- **OQ-028**: Finalize CI/CD blocking-gate stringency for stage 10 (production deploy manual approval, §3.1) — how long manual-approval-gated releases continue before moving to fully automated promotion is an organizational-maturity/risk-appetite decision, not a purely technical one.
+- **OQ-026**: Run the PERF-001 benchmarking spike against provisioned staging infrastructure.
+- **OQ-027**: Set specific RPO/RTO numeric targets (§8 DR-001) jointly with Product/Compliance.
+- **OQ-028**: Finalize CI/CD blocking-gate stringency for production deploy manual approval.
+- **OQ-050**: Finalize canary deployment thresholds (§7.3 CANARY-001) — error-rate and latency thresholds need to be tuned against real production baseline metrics after pilot launch.
+- **OQ-051**: Confirm chaos engineering tooling choice (§7.2 CHAOS-001) — Litmus Chaos vs. custom scripts vs. a managed chaos platform — against operational maturity and budget.
+- **OQ-052**: Finalize expand-contract migration tooling (§7.4 MIG-002) — `refinery` vs. `sqlx migrate` vs. another migration framework — compatible with the async Rust stack.
 
 ---
 
