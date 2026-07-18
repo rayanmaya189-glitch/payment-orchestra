@@ -422,9 +422,31 @@ pub struct Model {
 
 ---
 
-## 8. Connection Pool Management
+## 8. Schema Migration — Maker/Checker
 
-### 9.1 PgBouncer / Built-In Connection Pooling
+- **MIG-MKCK-001**: All database schema migrations follow the Maker/Checker pattern:
+  - **Maker**: Developer creates a migration file (forward + rollback) in a feature branch
+  - **Checker 1**: Tech Lead reviews the migration for correctness, data integrity, and business logic
+  - **Checker 2**: DBA reviews the migration for performance impact, locking behavior, and index strategy
+  - Both Checkers must approve before the migration is merged and executed in production
+
+- **MIG-MKCK-002**: Migration execution in production requires:
+  1. Migration file approved by both Checkers (recorded in `change_history`)
+  2. Migration tested against a staging database clone
+  3. Migration executed during a maintenance window (for breaking changes) or online (for backward-compatible changes)
+  4. Post-migration verification (automated health checks + manual spot-check)
+  5. Rollback procedure documented and tested before execution
+
+- **MIG-MKCK-003**: Migration history is tracked in a dedicated `migration_history` table (auto-managed by SeaORM/Ent migration framework):
+  - Migration version number
+  - Status (pending → applied → verified → rolled_back)
+  - Maker (who created)
+  - Checker(s) (who approved)
+  - Applied at timestamp
+  - Rollback available (boolean)
+  - Duration (how long the migration took)
+
+### 9.1 Connection Pool Management
 
 - **POOL-001**: Each service's Postgres connection pool is managed via PgBouncer (or the service's built-in connection pooler if using async Rust with `sqlx`) with the following configuration:
   - Pool size per service: configurable, default 20 connections for event-sourced services, 10 for supporting services

@@ -23,14 +23,14 @@
 
 Every mutation to `PaymentIntent` (AGG-01, Part 3) or `RoutingPolicy` (AGG-02) is expressed as one of the following commands. Each command is validated against current aggregate state (loaded by folding its event stream) before producing zero or more events.
 
-| Command | Preconditions | Produces (on success) | Produces (on rejection) |
-|---|---|---|---|
-| `CreatePaymentIntent` | Valid `Money`, valid tenant, idempotency key not previously used for a *different* payload | `PaymentIntentCreated` (EVT-01) | Command rejected synchronously (no event) — duplicate idempotency key with identical payload returns the original result instead of erroring (idempotent replay, not an error) |
-| `AuthorizePaymentIntent` | `PaymentIntent` in `Created` or `Failed` (mid-retry) state; active `RoutingPolicy` exists | `PaymentAuthorizationAttempted` (EVT-02), then `PaymentAuthorized` (EVT-03) or `PaymentFailed` (EVT-06) | N/A — always produces at least an attempt event; "rejection" here means a failed attempt, not a no-op |
-| `CapturePaymentIntent` | `PaymentIntent` in `Authorized` state; requested amount ≤ remaining authorized amount (INV-01) | `PaymentCaptured` (EVT-04) or `PaymentPartiallyCaptured` (EVT-05) | Command rejected synchronously if amount exceeds authorized remainder |
-| `VoidPaymentIntent` | `PaymentIntent` in `Authorized` state, not yet captured | `PaymentVoided` (EVT-08) | Rejected if already captured |
-| `RefundPaymentIntent` | `PaymentIntent` in `Captured`/`PartiallyCaptured` state; amount ≤ remaining refundable balance (BR-022-1) | `PaymentRefunded` (EVT-09) or `PaymentPartiallyRefunded` (EVT-10) | Rejected synchronously if amount exceeds refundable balance |
-| `ActivateRoutingPolicy` | New policy passes validation (Part 3 INV-05: no circular refs, all referenced acquirer links `Active`) | `RoutingPolicyActivated` (EVT-11), previous policy's `RoutingPolicyDeactivated` (EVT-12) | Rejected synchronously with validation error |
+| Command | Preconditions | Produces (on success) | Produces (on rejection) | Maker/Checker |
+|---|---|---|---|---|
+| `CreatePaymentIntent` | Valid `Money`, valid operator, idempotency key not previously used for a *different* payload | `PaymentIntentCreated` (EVT-01) | Command rejected synchronously (no event) — duplicate idempotency key with identical payload returns the original result instead of erroring (idempotent replay, not an error) | No (automated) |
+| `AuthorizePaymentIntent` | `PaymentIntent` in `Created` or `Failed` (mid-retry) state; active `RoutingPolicy` exists | `PaymentAuthorizationAttempted` (EVT-02), then `PaymentAuthorized` (EVT-03) or `PaymentFailed` (EVT-06) | N/A — always produces at least an attempt event; "rejection" here means a failed attempt, not a no-op | No (automated) |
+| `CapturePaymentIntent` | `PaymentIntent` in `Authorized` state; requested amount ≤ remaining authorized amount (INV-01) | `PaymentCaptured` (EVT-04) or `PaymentPartiallyCaptured` (EVT-05) | Command rejected synchronously if amount exceeds authorized remainder | No (automated) |
+| `VoidPaymentIntent` | `PaymentIntent` in `Authorized` state, not yet captured | `PaymentVoided` (EVT-08) | Rejected if already captured | No (automated) |
+| `RefundPaymentIntent` | `PaymentIntent` in `Captured`/`PartiallyCaptured` state; amount ≤ remaining refundable balance (BR-022-1) | `PaymentRefunded` (EVT-09) or `PaymentPartiallyRefunded` (EVT-10) | Rejected synchronously if amount exceeds refundable balance | **Yes** — above configurable threshold (Part 3 MKCK-001) |
+| `ActivateRoutingPolicy` | New policy passes validation (Part 3 INV-05: no circular refs, all referenced acquirer links `Active`) | `RoutingPolicyActivated` (EVT-11), previous policy's `RoutingPolicyDeactivated` (EVT-12) | Rejected synchronously with validation error | **Yes** — always (Part 3 MKCK-001) |
 
 **Design rule (CMD-001)**: Commands that can be meaningfully retried by a caller without side effects (e.g., `CreatePaymentIntent`) are idempotent by construction using a caller-supplied `IdempotencyKey`. Commands that represent "try to move money" (`AuthorizePaymentIntent`) are *not* silently idempotent in the same way — they always attempt the next routing hop — but the underlying acquirer call within them is protected by a separate acquirer-level idempotency key (§4) to prevent duplicate authorizations at the external system.
 

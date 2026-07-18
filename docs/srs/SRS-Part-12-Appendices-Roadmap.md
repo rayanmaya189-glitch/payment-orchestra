@@ -65,12 +65,15 @@
 | ACL (Anti-Corruption Layer) | A translation boundary preventing an external system's model/vocabulary from leaking into the core domain model. |
 | Aggregate | A DDD consistency boundary; the unit of transactional state change. |
 | Bounded Context | A DDD strategic-design boundary within which a specific model and ubiquitous language apply consistently. |
+| Checker | The second authorized principal who reviews and approves a change initiated by the Maker. Must be a different person than the Maker (dual-control). |
 | CQRS | Command Query Responsibility Segregation — separating the write model (commands/aggregates) from the read model (queries/projections). |
 | Custody | Legal/economic control over funds; this platform is architected to never hold it (Part 1 §6). |
 | Ent ORM | Go-native ORM for entity lifecycle management (schema generation, migrations, querying) used by Go services. |
 | Event Sourcing | Persisting state as an ordered sequence of immutable domain events, with current state derived by replay/fold. |
 | gRPC | Google Remote Procedure Call — cross-language RPC framework using Protobuf serialization, used for synchronous service-to-service communication. |
 | Idempotency Key | A caller-supplied token ensuring a repeated request produces the original result rather than a duplicate effect. |
+| Maker | The first authorized principal who initiates a change. The Maker cannot also be the Checker for the same change. |
+| Maker/Checker | A dual-control approval workflow where the Maker initiates a change and a Checker (a different authorized principal) reviews and approves it before the change takes effect. Used for financial, security, and configuration changes. |
 | NATS JetStream | Durable, at-least-once message streaming platform used for asynchronous domain event distribution with versioned subjects. |
 | RAG (Retrieval-Augmented Generation) | Grounding an LLM's answer in retrieved, tenant-specific data rather than relying solely on parametric model knowledge. |
 | Routing Policy | The operator-configured, versioned rule set determining acquirer selection and failover order. |

@@ -276,6 +276,27 @@ message PaymentAuthorizedV1 {
 
 ## 8. SDK Deprecation and Migration
 
+### 8.1 API Key Management — Maker/Checker
+
+- **APIKEY-MKCK-001**: API key generation follows the Maker/Checker pattern:
+  - **Maker**: Developer or Finance Operator requests a new API key via the dashboard or API
+  - **Checker**: Admin approves the key request (different principal than the Maker, per MKCK-002)
+  - Key is not active until Checker approves — pending keys are visible in the dashboard but cannot authenticate
+
+- **APIKEY-MKCK-002**: API key rotation follows the same Maker/Checker pattern:
+  - **Maker**: Developer or Finance Operator requests key rotation
+  - **Checker**: Admin approves the rotation
+  - Old key remains active for the grace period (24 hours) after new key is approved
+
+- **APIKEY-MKCK-003**: API key revocation can be performed by Admin without Maker/Checker (emergency action), but all revocations are logged in `change_history` with the revocation reason.
+
+- **APIKEY-MKCK-004**: API key scoping changes (Part 8 §11 AUTHZ-002) require Maker/Checker:
+  - **Maker**: Developer or Finance Operator requests scope change
+  - **Checker**: Admin approves the scope change
+  - Scope changes are logged with before/after scope comparison
+
+### 8.2 SDK Deprecation and Migration
+
 - **SDK-DEP-001**: When a breaking API change is introduced (API-001/002), the SDK changelog includes:
   - The deprecated API method/field with a removal timeline
   - The replacement method/field

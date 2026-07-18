@@ -376,6 +376,95 @@ func (SagaInstance) Fields() []ent.Field {
 
 **Design Principle (SAGA-005)**: Concurrent sagas operating on the same aggregate are detected via optimistic concurrency control (Part 5 CONC-001) — if two sagas attempt to mutate the same PaymentIntent, one will fail the concurrency check and must retry after reloading the aggregate state.
 
+### 9.9 Maker/Checker Pattern (Dual-Control Approval)
+
+For bank-grade operational safety, the following operations require a Maker/Checker workflow — a two-person approval process where the Maker initiates a change and a Checker (a different authorized principal) reviews and approves it before the change takes effect.
+
+**Implementation Rule (MKCK-001)**: Every Maker/Checker workflow is modeled as a `PendingChange` aggregate:
+
+```rust
+// SeaORM entity (Rust)
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
+#[sea_orm(table_name = "pending_changes")]
+pub struct Model {
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub change_id: Uuid,           // UUIDv7
+    pub change_type: String,       // e.g., 'routing_policy', 'acquirer_credential', 'refund'
+    pub maker_id: Uuid,            // principal who initiated
+    pub checker_id: Option<Uuid>,  // principal who approved (null until approved)
+    pub payload: Vec<u8>,          // protobuf-encoded proposed change
+    pub status: String,            // 'pending' | 'approved' | 'rejected' | 'expired'
+    pub maker_note: Option<String>,
+    pub checker_note: Option<String>,
+    pub requested_at: DateTimeWithTimeZone,
+    pub reviewed_at: Option<DateTimeWithTimeZone>,
+    pub expires_at: DateTimeWithTimeZone,  // auto-expire after 48 hours
+    pub created_at: DateTimeWithTimeZone,
+}
+
+// Ent schema (Go)
+type PendingChange struct {
+    ent.Schema
+}
+
+func (PendingChange) Fields() []ent.Field {
+    return []ent.Field{
+        field.UUID("id", uuid.UUID{}).Immutable(),
+        field.String("change_type"),
+        field.UUID("maker_id", uuid.UUID{}),
+        field.UUID("checker_id", uuid.UUID{}).Optional().Nillable(),
+        field.Bytes("payload"),
+        field.Enum("status").Values("pending", "approved", "rejected", "expired"),
+        field.String("maker_note").Optional().Nillable(),
+        field.String("checker_note").Optional().Nillable(),
+        field.Time("requested_at").Default(time.Now).Immutable(),
+        field.Time("reviewed_at").Optional().Nillable(),
+        field.Time("expires_at"),
+        field.Time("created_at").Default(time.Now).Immutable(),
+    }
+}
+```
+
+**Maker/Checker History Entity:**
+
+```rust
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
+#[sea_orm(table_name = "change_history")]
+pub struct Model {
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub history_id: Uuid,          // UUIDv7
+    pub change_id: Uuid,           // references pending_changes.change_id
+    pub action: String,            // 'created' | 'approved' | 'rejected' | 'expired' | 'executed'
+    pub actor_id: Uuid,
+    pub note: Option<String>,
+    pub timestamp: DateTimeWithTimeZone,
+    pub snapshot_before: Option<Vec<u8>>,  // protobuf-encoded state before change
+    pub snapshot_after: Option<Vec<u8>>,   // protobuf-encoded state after change
+}
+```
+
+**Operations requiring Maker/Checker:**
+
+| Operation | Change Type | Checker Role | Timeout |
+|---|---|---|---|
+| Routing Policy activation | `routing_policy` | Admin | 48 hours |
+| Acquirer credential changes | `acquirer_credential` | Admin | 24 hours |
+| Refund above threshold | `refund` | Finance Operator (dual-control) | 12 hours |
+| Settlement exception resolution | `settlement_resolution` | Finance Operator | 24 hours |
+| API key generation (Admin role) | `api_key` | Admin (self-approval not allowed) | 48 hours |
+| User role elevation | `role_assignment` | Admin | 24 hours |
+| KEK/secret rotation | `secret_rotation` | Security Admin | 12 hours |
+| AML alert resolution | `aml_resolution` | Compliance Reviewer | 24 hours |
+| Subscription plan changes | `subscription_plan` | Admin | 48 hours |
+
+**Design Principle (MKCK-002)**: The Maker and Checker must be different principals — self-approval is never allowed. This is enforced at the command-validation layer: the `ApprovePendingChange` command validates that `checker_id != maker_id`.
+
+**Design Principle (MKCK-003)**: Pending changes auto-expire after their configured timeout if not reviewed. Expired changes are logged in `change_history` with action `'expired'` and must be re-initiated by a Maker.
+
+**Design Principle (MKCK-004)**: Every approval, rejection, and expiry is recorded in `change_history` with full before/after state snapshots (for the aggregate being modified), providing a complete audit trail of who changed what, when, and why — satisfying BIZ-040's immutable audit requirement.
+
+**Design Principle (MKCK-005)**: The Maker/Checker pattern applies to the *configuration/command* layer only, not to runtime event-driven state transitions. For example, a routing policy change goes through Maker/Checker, but the PaymentIntent state transitions (authorize → capture → settle) follow the normal event-sourced state machine without approval gates — those are automated business processes, not human-initiated configuration changes.
+
 ### 9.2 Outbox Pattern (Transactional Outbox)
 
 Event publishing reliability requires the Transactional Outbox pattern to guarantee that domain events are published to NATS JetStream if and only if the corresponding aggregate state change commits to Postgres.

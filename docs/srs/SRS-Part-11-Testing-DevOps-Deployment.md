@@ -284,9 +284,46 @@ Total checkout latency budget (target, tenant-perceived)
 
 ## 11. Release & Change Management
 
-- **REL-001**: Semantic versioning for external API surfaces (Part 10 §1.1); internal service versions tracked independently since internal services can be deployed more frequently than the public API surface changes.
-- **REL-002**: Feature flags for any H2/H3-scoped capability (Part 1 §7.1) being developed incrementally ahead of its full business/legal readiness (e.g., marketplace splits, Part 1 §6.4 OQ-002) — code can exist and be tested in staging well before it is enabled for any real tenant, decoupling "engineering done" from "legally/commercially launched."
-- **REL-003**: Every production deployment is correlated to a change record (what changed, which use cases/requirements it affects per the traceability tables in each Part) — supports both incident post-mortems and the compliance expectation of change auditability (Part 8 §5, extended to infrastructure/code changes, not only domain-data changes).
+### 11.1 Maker/Checker for Production Changes
+
+All production-affecting changes follow the Maker/Checker pattern (Part 3 MKCK-001):
+
+| Change Type | Maker | Checker | Timeout | History Tracked |
+|---|---|---|---|---|
+| Production deployment | CI/CD pipeline (automated) | Senior Engineer (manual approval) | 4 hours | Deployment log with commit SHA, diff, approver |
+| Database migration | Developer (via PR) | Tech Lead + DBA review | 24 hours | Migration log with before/after schema |
+| Infrastructure change (Terraform/IaC) | Developer (via PR) | Platform Engineer | 24 hours | Change log with resource diff |
+| Secret/credential rotation | Security tool (automated) | Security Admin (manual confirmation) | 12 hours | Rotation log with old/new key references |
+| Feature flag activation | Developer | Product Owner | 48 hours | Flag change log with before/after state |
+| Hotfix deployment | On-call Engineer | Engineering Lead | 2 hours | Hotfix log with incident reference |
+
+### 11.2 Change History
+
+- **CHG-001**: Every production change is recorded in a `change_history` table (Part 3 MKCK-001) with:
+  - Change ID (UUIDv7)
+  - Change type (deployment, migration, secret rotation, etc.)
+  - Maker (who initiated)
+  - Checker (who approved)
+  - Status (pending → approved → executed → verified)
+  - Diff/snapshot of what changed
+  - Timestamp of each status transition
+  - Incident correlation (if hotfix)
+
+- **CHG-002**: Change history is immutable — no updates or deletes permitted (append-only, Part 8 AUD-003). Retained for 7 years (financial compliance).
+
+- **CHG-003**: Change history is queryable by: change ID, date range, change type, actor (Maker/Checker), and status — supporting both operational debugging and compliance audit.
+
+### 11.3 Approval Workflow
+
+- **APPROVE-001**: Production deployments require explicit approval in the CI/CD pipeline (Part 11 §3.1 stage 10). The approver must be a different person than the committer (Maker/Checker segregation, Part 3 MKCK-002).
+- **APPROVE-002**: Database migrations require both Tech Lead approval (schema correctness) and DBA review (performance, locking, rollback safety). Both must approve before migration runs.
+- **APPROVE-003**: Emergency hotfixes follow expedited approval: on-call Engineer can deploy with Engineering Lead approval within 2 hours, with mandatory post-incident review within 48 hours.
+
+### 11.4 Rollback Procedures
+
+- **ROLLBACK-001**: Every production deployment has a documented rollback procedure. Rollback is treated as a new deployment (not an undo) — the rollback is a forward-deploy of the previous version.
+- **ROLLBACK-002**: Database migrations must be reversible (expand-contract pattern, Part 11 §8.4 MIG-001). If a migration is not reversible, it must be flagged during the approval process and a manual rollback procedure documented.
+- **ROLLBACK-003**: Rollback decisions follow the same Maker/Checker pattern as forward deployments — the on-call Engineer proposes, Engineering Lead approves.
 
 ---
 

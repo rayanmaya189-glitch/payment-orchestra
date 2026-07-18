@@ -46,21 +46,23 @@
 
 ### 2.1 RBAC (Role-Based, Coarse-Grained)
 
-Default roles (extensible per tenant, Part 2 UC-001 step 5):
+Default roles (extensible per operator, Part 2 UC-001 step 5):
 
-| Role | Typical Permissions |
-|---|---|
-| Admin | Full tenant configuration, acquirer connection, routing policy, user management |
-| Finance Operator | Reconciliation, refunds/voids, invoice/subscription management, reporting — no acquirer credential management |
-| Developer | API key management, sandbox access, webhook configuration — no live refund/void authority by default |
-| Read-Only | Dashboard/report viewing, AI Assistant Q&A — no mutating actions |
-| Compliance Reviewer (internal, platform-operator side) | KYB case review (ACT-06) — scoped to compliance-service only |
+| Role | Typical Permissions | Maker/Checker Eligibility |
+|---|---|---|
+| Admin | Full operator configuration, acquirer connection, routing policy, user management | Maker: all operations. Checker: all operations EXCEPT self-approved changes (MKCK-002) |
+| Finance Operator | Reconciliation, refunds/voids, invoice/subscription management, reporting — no acquirer credential management | Maker: refunds (below threshold), reconciliation. Checker: refunds (below threshold) |
+| Developer | API key management, sandbox access, webhook configuration — no live refund/void authority by default | Maker: API key generation (limited). Checker: none (cannot approve changes) |
+| Read-Only | Dashboard/report viewing, AI Assistant Q&A — no mutating actions | Neither Maker nor Checker for any operation |
+| Compliance Reviewer (internal, platform-operator side) | KYB case review (ACT-06) — scoped to compliance-service only | Maker: KYB approvals, AML alert resolution. Checker: AML alert resolution |
 
 ### 2.2 ABAC (Attribute-Based, Fine-Grained Overlay)
 
-- **ABAC-001**: Amount-threshold conditions — e.g., a Finance Operator role may be permitted to approve reconciliation-exception resolutions or refunds only up to a configured amount; above threshold requires a second approver (dual-control) — directly resolves OQ-006 (Part 2): yes, a secondary approver is required above a tenant-configurable threshold, enforced at the command-validation layer in the relevant aggregate's command handler (Part 3/5), not merely a UI-level restriction.
+- **ABAC-001**: Amount-threshold conditions — e.g., a Finance Operator role may be permitted to approve reconciliation-exception resolutions or refunds only up to a configured amount; above threshold requires a second approver (dual-control) — directly resolves OQ-006 (Part 2): yes, a secondary approver is required above a configurable threshold, enforced at the command-validation layer in the relevant aggregate's command handler (Part 3/5), not merely a UI-level restriction.
 - **ABAC-002**: Time/context conditions — e.g., acquirer credential changes may require step-up re-authentication (fresh MFA challenge) regardless of existing session validity, given the sensitivity of that action (BR-010-2 adjacent).
-- **ABAC-003**: AI Assistant data-scope conditions — a Read-Only role can query the Assistant but the Assistant's retrieval (Part 6 §3.2) is itself still bounded by the same tenant/role data-access rules as any other read path (e.g., if a future fine-grained role restricts a user to a single acquirer's data, the Assistant's retrieval must respect that same restriction, not have implicit broader access).
+- **ABAC-003**: AI Assistant data-scope conditions — a Read-Only role can query the Assistant but the Assistant's retrieval (Part 6 §3.2) is itself still bounded by the same role data-access rules as any other read path.
+- **ABAC-004**: Maker/Checker segregation — no principal may serve as both Maker and Checker on the same pending change (MKCK-002, Part 3). The system enforces this at the command layer: `ApprovePendingChange` rejects if `checker_id == maker_id`.
+- **ABAC-005**: Checker eligibility is scoped by role — only Admin and Compliance Reviewer roles can serve as Checkers for financial/compliance operations. Developers cannot approve financial changes even if they have Maker access to initiate them.
 
 ### 2.3 Permission Denial Auditing
 
