@@ -225,11 +225,9 @@ impl AuthServiceImpl {
     }
 
     /// Compute a simple client fingerprint from IP + User-Agent.
+    /// Uses the shared implementation from platform_middleware.
     fn client_fingerprint(ip: &str, user_agent: &str) -> String {
-        use sha2::{Sha256, Digest};
-        let mut hasher = Sha256::new();
-        hasher.update(format!("{}|{}", ip, user_agent).as_bytes());
-        hex::encode(hasher.finalize())
+        platform_middleware::auth::client_fingerprint(ip, user_agent)
     }
 }
 
