@@ -55,6 +55,25 @@ impl PaymentStatus {
             Self::PartiallyRefunded => "partially_refunded",
         }
     }
+
+    pub fn from_str(s: &str) -> Self {
+        match s {
+            "created" => Self::Created,
+            "authorizing" => Self::Authorizing,
+            "authorized" => Self::Authorized,
+            "capturing" => Self::Capturing,
+            "captured" => Self::Captured,
+            "partially_captured" => Self::PartiallyCaptured,
+            "voided" => Self::Voided,
+            "authorization_expired" => Self::AuthorizationExpired,
+            "failed" => Self::Failed,
+            "failed_all_routes" => Self::FailedAllRoutes,
+            "refunding" => Self::Refunding,
+            "refunded" => Self::Refunded,
+            "partially_refunded" => Self::PartiallyRefunded,
+            _ => Self::Created,
+        }
+    }
 }
 
 impl std::fmt::Display for PaymentStatus {

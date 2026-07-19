@@ -1,1 +1,2 @@
-// NATS publishers and subscribers
+// NATS JetStream messaging
+// TODO: Implement event publishing
