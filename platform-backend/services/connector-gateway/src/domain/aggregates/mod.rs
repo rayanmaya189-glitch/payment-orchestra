@@ -29,6 +29,7 @@ pub struct GatewayProfile {
 
     // Routing
     pub routing_priority: i32,
+    pub base_url: String,
     pub enabled_card_schemes: Vec<CardScheme>,
     pub enabled_currencies: Vec<CurrencyCode>,
     pub enabled_countries: Vec<String>,

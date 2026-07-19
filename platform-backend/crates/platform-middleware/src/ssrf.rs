@@ -42,7 +42,9 @@ pub enum SsrfCheckResult {
     Blocked(String),
 }
 
-/// Validate a URL for SSRF safety per SRS SSRF-001/002.
+/// Validate a URL for SSRF safety per SRS SSRF-001/002 (synchronous).
+///
+/// Uses blocking DNS resolution. For async contexts, use `validate_url_async`.
 pub fn validate_url(url_str: &str) -> SsrfCheckResult {
     let url = match url::Url::parse(url_str) {
         Ok(u) => u,
@@ -82,5 +84,17 @@ pub fn validate_url(url_str: &str) -> SsrfCheckResult {
             SsrfCheckResult::Allowed
         }
         Err(e) => SsrfCheckResult::Blocked(format!("DNS resolution failed: {e}")),
+    }
+}
+
+/// Async version of validate_url — wraps blocking DNS resolution in spawn_blocking.
+///
+/// Per SRS SSRF-001/002: validates outbound URLs against private/reserved IP ranges.
+/// Uses tokio::task::spawn_blocking to avoid blocking the async runtime during DNS lookups.
+pub async fn validate_url_async(url_str: &str) -> SsrfCheckResult {
+    let url_str = url_str.to_string();
+    match tokio::task::spawn_blocking(move || validate_url(&url_str)).await {
+        Ok(result) => result,
+        Err(e) => SsrfCheckResult::Blocked(format!("SSRF validation task failed: {e}")),
     }
 }

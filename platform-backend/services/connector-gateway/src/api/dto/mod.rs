@@ -69,6 +69,19 @@ pub struct GatewaySelectionResponse {
     pub estimated_fee: Money,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct ValidateWebhookUrlRequest {
+    /// The webhook/callback URL to validate per SRS SSRF-001/002
+    pub url: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ValidateWebhookUrlResponse {
+    pub valid: bool,
+    pub url: String,
+    pub error: Option<String>,
+}
+
 #[derive(Debug, Serialize)]
 pub struct ErrorResponse {
     pub error: String,

@@ -1,6 +1,8 @@
 #![allow(clippy::should_implement_trait)]
+pub mod connector_url;
 use serde::{Deserialize, Serialize};
 use shared_types::{CurrencyCode, Money};
+
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TransactionLimits {

@@ -5,6 +5,7 @@ use crate::domain::aggregates::GatewayProfile;
 use crate::domain::value_objects::GatewayProfileStatus;
 use crate::infrastructure::repository::GatewayProfileRepository;
 use platform_error::PlatformError;
+use platform_middleware::ssrf::{validate_url_async, SsrfCheckResult};
 use shared_types::{CardScheme, CurrencyCode, Money};
 
 #[async_trait]
@@ -15,6 +16,9 @@ pub trait GatewayService: Send + Sync {
     async fn list_profiles(&self, operator_id: Uuid) -> Result<Vec<GatewayProfileResponse>, PlatformError>;
     async fn validate_transaction(&self, cmd: ValidateTransactionCommand) -> Result<ValidationResult, PlatformError>;
     async fn select_gateway(&self, cmd: SelectGatewayCommand) -> Result<GatewaySelection, PlatformError>;
+    /// Validate a webhook/callback URL per SRS SSRF-001/002.
+    /// Checks: HTTPS-only, no private/reserved IPs, DNS rebinding protection.
+    async fn validate_webhook_url(&self, url: &str) -> Result<WebhookUrlValidation, PlatformError>;
 }
 
 pub struct GatewayServiceImpl {
@@ -41,6 +45,7 @@ pub struct CreateGatewayProfileCommand {
     pub enabled_card_schemes: Vec<CardScheme>,
     pub enabled_currencies: Vec<CurrencyCode>,
     pub routing_priority: i32,
+    pub base_url: String,
 }
 
 #[derive(Debug, Clone)]
@@ -76,6 +81,7 @@ pub struct GatewayProfileResponse {
     pub connector_id: String,
     pub status: String,
     pub routing_priority: i32,
+    pub base_url: String,
     pub min_amount: i64,
     pub max_amount: i64,
     pub daily_volume_limit: i64,
@@ -95,6 +101,13 @@ pub struct GatewaySelection {
     pub profile_id: Uuid,
     pub connector_id: String,
     pub estimated_fee: Money,
+}
+
+#[derive(Debug, Clone)]
+pub struct WebhookUrlValidation {
+    pub valid: bool,
+    pub url: String,
+    pub error: Option<String>,
 }
 
 #[async_trait]
@@ -226,6 +239,23 @@ impl GatewayService for GatewayServiceImpl {
             connector_id: selected.connector_id.clone(),
             estimated_fee: fee,
         })
+    }
+
+    /// SRS SSRF-001/002: Validate a webhook/callback URL using async DNS resolution.
+    /// Uses validate_url_async to avoid blocking the Tokio runtime during DNS lookups.
+    async fn validate_webhook_url(&self, url: &str) -> Result<WebhookUrlValidation, PlatformError> {
+        match validate_url_async(url).await {
+            SsrfCheckResult::Allowed => Ok(WebhookUrlValidation {
+                valid: true,
+                url: url.to_string(),
+                error: None,
+            }),
+            SsrfCheckResult::Blocked(reason) => Ok(WebhookUrlValidation {
+                valid: false,
+                url: url.to_string(),
+                error: Some(reason),
+            }),
+        }
     }
 }
 

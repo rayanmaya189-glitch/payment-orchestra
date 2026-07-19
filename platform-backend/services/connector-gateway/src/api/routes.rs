@@ -17,6 +17,8 @@ pub fn router(state: AppState) -> Router {
         .route("/operators/{operator_id}/gateway-profiles", axum::routing::get(list_profiles))
         .route("/gateway-profiles/{profile_id}/validate", axum::routing::post(validate_transaction))
         .route("/operators/{operator_id}/select-gateway", axum::routing::post(select_gateway))
+        // SRS SSRF-001/002: Validate outbound webhook/callback URLs
+        .route("/webhooks/validate", axum::routing::post(validate_webhook_url))
         .with_state(state)
 }
 
@@ -155,6 +157,22 @@ async fn select_gateway(
             profile_id: selection.profile_id,
             connector_id: selection.connector_id,
             estimated_fee: selection.estimated_fee,
+        })),
+        Err(e) => Err(error_to_response(e)),
+    }
+}
+
+/// SRS SSRF-001/002: Validate a webhook/callback URL before registration.
+/// Checks: HTTPS-only, no private/reserved IPs, DNS rebinding protection.
+async fn validate_webhook_url(
+    State(state): State<AppState>,
+    Json(req): Json<ValidateWebhookUrlRequest>,
+) -> Result<Json<ValidateWebhookUrlResponse>, (StatusCode, Json<ErrorResponse>)> {
+    match state.service.validate_webhook_url(&req.url).await {
+        Ok(result) => Ok(Json(ValidateWebhookUrlResponse {
+            valid: result.valid,
+            url: result.url,
+            error: result.error,
         })),
         Err(e) => Err(error_to_response(e)),
     }
