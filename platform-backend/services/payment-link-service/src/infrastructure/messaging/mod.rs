@@ -1,1 +1,1 @@
-// NATS publishers and subscribers
+// NATS JetStream messaging

@@ -1,3 +1,3 @@
-pub mod http;
-pub mod grpc;
-pub mod dto;
+pub mod dto; pub mod routes;
+use std::sync::Arc; use crate::application::services::RiskServiceImpl;
+#[derive(Clone)] pub struct AppState { pub service: Arc<RiskServiceImpl> }
