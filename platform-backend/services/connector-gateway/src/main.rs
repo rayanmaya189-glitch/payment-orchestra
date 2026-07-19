@@ -17,9 +17,11 @@ use crate::infrastructure::adapters::PostgresGatewayProfileRepository;
 async fn main() {
     ServiceLogger::init("connector-gateway");
 
-    let config = AppConfig::from_env("connector-gateway").unwrap_or_default();
+    let config = AppConfig::from_env_or_panic("connector-gateway");
 
     let db = infrastructure::database::connect(&config.database).await;
+    let redis = infrastructure::cache::connect(&config.redis).await;
+
     let repo = PostgresGatewayProfileRepository::new(db.clone());
     let service = GatewayServiceImpl::new(Box::new(repo));
 
@@ -27,23 +29,36 @@ async fn main() {
         service: Arc::new(service),
     };
 
-    let app = Router::new()
-        .route("/healthz", get(healthz))
-        .route("/readyz", get(healthz))
-        .nest("/v1", api::routes::router(app_state))
-        .layer(TraceLayer::new_for_http());
-
-    let addr = SocketAddr::new(
-        config.server.host.parse().unwrap(),
-        config.server.port,
+    let cors = platform_middleware::cors_layer(&config.cors);
+    let rate_limit = platform_middleware::RateLimitLayer::new(
+        redis,
+        platform_middleware::RateLimitLayerConfig {
+            login_per_ip_per_minute: config.rate_limit.login_per_ip_per_minute,
+            api_per_principal_per_second: config.rate_limit.api_per_principal_per_second,
+        },
     );
 
+    let app = Router::new()
+        .route("/healthz", get(healthz))
+        .route("/readyz", get(readyz))
+        .nest("/v1", api::routes::router(app_state))
+        .layer(platform_middleware::SecurityHeadersLayer)
+        .layer(platform_middleware::RequestIdLayer)
+        .layer(rate_limit)
+        .layer(cors)
+        .layer(TraceLayer::new_for_http());
+
+    let addr = SocketAddr::new(config.server.host.parse().unwrap(), config.server.port);
     tracing::info!("Connector gateway listening on {addr}");
 
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
-    axum::serve(listener, app).await.unwrap();
+    let shutdown_signal = async {
+        tokio::signal::ctrl_c().await.expect("Failed to install Ctrl+C handler");
+        tracing::info!("Shutdown signal received...");
+    };
+    axum::serve(listener, app).with_graceful_shutdown(shutdown_signal).await.unwrap();
+    tracing::info!("Connector gateway shut down gracefully");
 }
 
-async fn healthz() -> &'static str {
-    "ok"
-}
+async fn healthz() -> &'static str { "ok" }
+async fn readyz() -> &'static str { "ok" }

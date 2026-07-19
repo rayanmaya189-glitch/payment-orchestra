@@ -1,9 +1,8 @@
 use async_trait::async_trait;
 use uuid::Uuid;
-use chrono::Utc;
 
 use crate::domain::aggregates::{LedgerEntry, SettlementBatch};
-use crate::domain::value_objects::{SettlementBatchStatus, SettlementRecord};
+use crate::domain::value_objects::SettlementRecord;
 use crate::infrastructure::repository::{LedgerRepository, SettlementBatchRepository};
 use platform_error::PlatformError;
 
@@ -57,7 +56,7 @@ impl ReconciliationService for ReconciliationServiceImpl {
         let checksum = format!("{:x}", hasher.finalize());
 
         // Check for duplicate (INV-006)
-        if let Some(_) = self.batch_repo.find_by_checksum(&checksum).await? {
+        if self.batch_repo.find_by_checksum(&checksum).await?.is_some() {
             return Err(PlatformError::Conflict(
                 platform_error::ConflictError::IdempotencyKeyConflict
             ));

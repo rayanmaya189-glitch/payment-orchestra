@@ -4,6 +4,10 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
+platform-db.workspace = true
+platform-middleware.workspace = true
+validator.workspace = true
+http.workspace = true
 shared-types.workspace = true
 platform-error.workspace = true
 platform-config.workspace = true

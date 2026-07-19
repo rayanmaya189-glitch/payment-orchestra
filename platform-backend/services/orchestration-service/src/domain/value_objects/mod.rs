@@ -1,3 +1,4 @@
+#![allow(clippy::should_implement_trait)]
 use serde::{Deserialize, Serialize};
 use shared_types::{CardScheme, CurrencyCode, Money};
 

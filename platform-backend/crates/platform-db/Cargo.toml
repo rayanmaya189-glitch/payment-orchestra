@@ -1,0 +1,11 @@
+[package]
+name = "platform-db"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+platform-config.workspace = true
+sea-orm.workspace = true
+redis.workspace = true
+tokio.workspace = true
+tracing.workspace = true

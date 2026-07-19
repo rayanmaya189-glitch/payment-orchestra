@@ -69,7 +69,7 @@ pub struct InvoiceResponse {
 impl InvoiceService for InvoiceServiceImpl {
     async fn create_invoice(&self, cmd: CreateInvoiceCommand) -> Result<InvoiceResponse, PlatformError> {
         // Check duplicate (INV-INV-01)
-        if let Some(_) = self.repo.find_by_order_reference(cmd.operator_id, &cmd.order_reference).await? {
+        if self.repo.find_by_order_reference(cmd.operator_id, &cmd.order_reference).await?.is_some() {
             return Err(PlatformError::Conflict(ConflictError::DuplicateOrderInvoice));
         }
 

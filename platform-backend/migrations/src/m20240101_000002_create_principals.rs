@@ -1,3 +1,4 @@
+#![allow(clippy::enum_variant_names)]
 use sea_orm_migration::{prelude::*, schema::*};
 
 #[derive(DeriveMigrationName)]

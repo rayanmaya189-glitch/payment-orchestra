@@ -1,4 +1,3 @@
-use chrono::{DateTime, Utc};
 use sea_orm::entity::prelude::*;
 use uuid::Uuid;
 
@@ -38,6 +37,7 @@ impl Related<super::principal_entity::Entity> for Entity {
 impl ActiveModelBehavior for ActiveModel {}
 
 impl Model {
+    #[allow(dead_code)]
     pub fn to_domain(&self) -> ApiKey {
         let scopes: Vec<String> = serde_json::from_value(self.scopes.clone())
             .unwrap_or_default();

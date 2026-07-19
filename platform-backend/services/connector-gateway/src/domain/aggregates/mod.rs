@@ -2,7 +2,7 @@ use chrono::{DateTime, Utc};
 use uuid::Uuid;
 
 use crate::domain::value_objects::{
-    FeeStructure, GatewayProfileStatus, MonitoringThresholds, RateLimitConfig, TransactionLimits,
+    FeeStructure, GatewayProfileStatus,
 };
 use shared_types::{CardScheme, CurrencyCode, Money};
 
@@ -60,10 +60,10 @@ impl GatewayProfile {
             merchant_acquirer_link_id,
             status: GatewayProfileStatus::Active,
             min_transaction_amount_minor: 100, // 1.00 AED
-            max_transaction_amount_minor: 500_000_00, // 500,000 AED
-            daily_volume_limit_minor: 50_000_000_00, // 50M AED
-            monthly_volume_limit_minor: 500_000_000_00, // 500M AED
-            max_refund_amount_minor: 500_000_00,
+            max_transaction_amount_minor: 50_000_000, // 500,000 AED
+            daily_volume_limit_minor: 5_000_000_000, // 50M AED
+            monthly_volume_limit_minor: 50_000_000_000, // 500M AED
+            max_refund_amount_minor: 50_000_000,
             fixed_fee_minor: 100, // 1.00 AED
             percentage_fee_bps: 250, // 2.50%
             cross_border_fee_bps: 0,

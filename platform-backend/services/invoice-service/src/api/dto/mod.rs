@@ -1,7 +1,6 @@
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use shared_types::Money;
 
 #[derive(Debug, Deserialize)]
 pub struct CreateInvoiceRequest {

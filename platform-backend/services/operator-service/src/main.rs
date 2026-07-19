@@ -17,10 +17,13 @@ use crate::infrastructure::messaging::EventPublisher;
 async fn main() {
     ServiceLogger::init("operator-service");
 
-    let config = AppConfig::from_env("operator-service").unwrap_or_default();
+    let config = AppConfig::from_env_or_panic("operator-service");
 
-    // Connect to Postgres
+    // Connect to Postgres with retry
     let db = infrastructure::database::connect(&config.database).await;
+
+    // Connect to Redis with retry
+    let redis = infrastructure::cache::connect(&config.redis).await;
 
     // Connect to NATS JetStream
     let event_publisher = EventPublisher::new(&config.nats.url, "operator-events")
@@ -31,19 +34,29 @@ async fn main() {
     let repo = PostgresOperatorRepository::new(db.clone());
 
     // Create service
-    let service = OperatorServiceImpl::new(
-        Box::new(repo),
-        event_publisher,
-        db.clone(),
-    );
+    let service = OperatorServiceImpl::new(Box::new(repo), event_publisher, db.clone());
 
     // Create app state
     let app_state = api::AppState::new(db, service);
+
+    // Build shared middleware stack
+    let cors = platform_middleware::cors_layer(&config.cors);
+    let rate_limit = platform_middleware::RateLimitLayer::new(
+        redis,
+        platform_middleware::RateLimitLayerConfig {
+            login_per_ip_per_minute: config.rate_limit.login_per_ip_per_minute,
+            api_per_principal_per_second: config.rate_limit.api_per_principal_per_second,
+        },
+    );
 
     let app = Router::new()
         .route("/healthz", get(healthz))
         .route("/readyz", get(readyz))
         .nest("/v1", api::routes::router(app_state))
+        .layer(platform_middleware::SecurityHeadersLayer)
+        .layer(platform_middleware::RequestIdLayer)
+        .layer(rate_limit)
+        .layer(cors)
         .layer(TraceLayer::new_for_http());
 
     let addr = SocketAddr::new(
@@ -54,7 +67,21 @@ async fn main() {
     tracing::info!("Operator service listening on {addr}");
 
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
-    axum::serve(listener, app).await.unwrap();
+
+    // Graceful shutdown
+    let shutdown_signal = async {
+        tokio::signal::ctrl_c()
+            .await
+            .expect("Failed to install Ctrl+C handler");
+        tracing::info!("Shutdown signal received, starting graceful shutdown...");
+    };
+
+    axum::serve(listener, app)
+        .with_graceful_shutdown(shutdown_signal)
+        .await
+        .unwrap();
+
+    tracing::info!("Operator service shut down gracefully");
 }
 
 async fn healthz() -> &'static str {

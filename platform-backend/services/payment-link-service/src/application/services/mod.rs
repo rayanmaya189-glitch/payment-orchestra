@@ -1,8 +1,6 @@
 use async_trait::async_trait;
 use uuid::Uuid;
-use chrono::Utc;
 use crate::domain::aggregates::PaymentLink;
-use crate::domain::value_objects::PaymentLinkStatus;
 use platform_error::PlatformError;
 
 #[async_trait]

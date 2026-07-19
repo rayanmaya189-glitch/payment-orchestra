@@ -2,7 +2,6 @@ use chrono::{DateTime, Utc};
 use uuid::Uuid;
 
 use crate::domain::value_objects::{SettlementBatchStatus, SettlementMatchOutcome, SettlementRecord};
-use shared_types::Money;
 
 #[derive(Debug, Clone)]
 pub struct SettlementBatch {
@@ -98,6 +97,12 @@ impl LedgerEntry {
 pub struct ReconciliationMatcher {
     pub auto_confirm_threshold: f64,
     pub review_threshold: f64,
+}
+
+impl Default for ReconciliationMatcher {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl ReconciliationMatcher {

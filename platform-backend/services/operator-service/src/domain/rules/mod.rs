@@ -1,5 +1,4 @@
 use platform_error::PlatformError;
-use uuid::Uuid;
 
 use crate::domain::aggregates::Operator;
 

@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use platform_error::PlatformError;
 
 use crate::domain::aggregates::Principal;

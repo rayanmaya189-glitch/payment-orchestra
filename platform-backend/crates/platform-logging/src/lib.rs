@@ -44,6 +44,7 @@ impl ServiceLogger {
     }
 
     pub fn structured(
+    #[allow(clippy::too_many_arguments)]
         &self,
         level: &str,
         correlation_id: Option<Uuid>,

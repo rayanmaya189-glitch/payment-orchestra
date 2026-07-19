@@ -17,20 +17,25 @@ use crate::infrastructure::adapters::{PostgresApiKeyRepository, PostgresPrincipa
 async fn main() {
     ServiceLogger::init("iam-service");
 
-    let config = AppConfig::from_env("iam-service").unwrap_or_default();
+    let config = AppConfig::from_env_or_panic("iam-service");
 
-    // Connect to Postgres
+    // Connect to Postgres with retry
     let db = infrastructure::database::connect(&config.database).await;
+
+    // Connect to Redis with retry (for refresh tokens + rate limiting)
+    let redis = infrastructure::cache::connect(&config.redis).await;
 
     // Create repositories
     let principal_repo = PostgresPrincipalRepository::new(db.clone());
     let api_key_repo = PostgresApiKeyRepository::new(db.clone());
 
-    // Create service
+    // Create service with AuthConfig (JWT secret from environment, NOT hardcoded)
     let service = AuthServiceImpl::new(
         Box::new(principal_repo),
         Box::new(api_key_repo),
         db.clone(),
+        redis.clone(),
+        config.auth.clone(),
     );
 
     // Create app state
@@ -38,10 +43,24 @@ async fn main() {
         service: Arc::new(service),
     };
 
+    // Build shared middleware stack
+    let cors = platform_middleware::cors_layer(&config.cors);
+    let rate_limit = platform_middleware::RateLimitLayer::new(
+        redis.clone(),
+        platform_middleware::RateLimitLayerConfig {
+            login_per_ip_per_minute: config.rate_limit.login_per_ip_per_minute,
+            api_per_principal_per_second: config.rate_limit.api_per_principal_per_second,
+        },
+    );
+
     let app = Router::new()
         .route("/healthz", get(healthz))
-        .route("/readyz", get(healthz))
+        .route("/readyz", get(readyz))
         .nest("/v1", api::routes::router(app_state))
+        .layer(platform_middleware::SecurityHeadersLayer)
+        .layer(platform_middleware::RequestIdLayer)
+        .layer(rate_limit)
+        .layer(cors)
         .layer(TraceLayer::new_for_http());
 
     let addr = SocketAddr::new(
@@ -52,9 +71,27 @@ async fn main() {
     tracing::info!("IAM service listening on {addr}");
 
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
-    axum::serve(listener, app).await.unwrap();
+
+    // Graceful shutdown
+    let shutdown_signal = async {
+        tokio::signal::ctrl_c()
+            .await
+            .expect("Failed to install Ctrl+C handler");
+        tracing::info!("Shutdown signal received, starting graceful shutdown...");
+    };
+
+    axum::serve(listener, app)
+        .with_graceful_shutdown(shutdown_signal)
+        .await
+        .unwrap();
+
+    tracing::info!("IAM service shut down gracefully");
 }
 
 async fn healthz() -> &'static str {
+    "ok"
+}
+
+async fn readyz() -> &'static str {
     "ok"
 }

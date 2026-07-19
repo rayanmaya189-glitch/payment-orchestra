@@ -66,6 +66,9 @@ hex = "0.4"
 # Validation
 validator = { version = "0.19", features = ["derive"] }
 
+# HTTP
+http = "1"
+
 # IP parsing
 ipnet = "2"
 
@@ -80,10 +83,10 @@ platform-error = { path = "crates/platform-error" }
 shared-types = { path = "crates/shared-types" }
 platform-logging = { path = "crates/platform-logging" }
 platform-config = { path = "crates/platform-config" }
+platform-db = { path = "crates/platform-db" }
+platform-middleware = { path = "crates/platform-middleware" }
 
-[workspace.dependencies.sqlx]
-version = "0.8"
-features = ["runtime-tokio-rustls", "postgres", "uuid", "chrono", "json"]
+# sqlx removed — SeaORM uses its own sqlx-postgres adapter internally
 
 [profile.release]
 lto = true

@@ -4,4 +4,3 @@ pub mod routing_policy;
 
 pub use payment_intent as payment_intent_entity;
 pub use routing_attempt as routing_attempt_entity;
-pub use routing_policy as routing_policy_entity;

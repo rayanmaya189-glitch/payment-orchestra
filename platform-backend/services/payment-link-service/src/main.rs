@@ -4,20 +4,80 @@ use platform_logging::ServiceLogger;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tower_http::trace::TraceLayer;
-mod api; mod application; mod domain; mod infrastructure;
+
+mod api;
+mod application;
+mod domain;
+mod infrastructure;
+
 use crate::application::services::PaymentLinkServiceImpl;
 
 #[tokio::main]
 async fn main() {
     ServiceLogger::init("payment-link-service");
-    let config = AppConfig::from_env("payment-link-service").unwrap_or_default();
+
+    let config = AppConfig::from_env("payment-link-service")
+        .expect("Failed to load config from environment");
+
+    // Connect to Postgres with retry
     let db = infrastructure::database::connect(&config.database).await;
+
+    // Connect to Redis with retry
+    let redis = infrastructure::cache::connect(&config.redis).await;
+
+    // Create service
     let service = PaymentLinkServiceImpl::new(db.clone());
     let app_state = api::AppState { service: Arc::new(service) };
-    let app = Router::new().route("/healthz", get(healthz)).route("/readyz", get(healthz)).nest("/v1", api::routes::router(app_state)).layer(TraceLayer::new_for_http());
-    let addr = SocketAddr::new(config.server.host.parse().unwrap(), config.server.port);
+
+    // Build shared middleware stack
+    let cors = platform_middleware::cors_layer(&config.cors);
+    let rate_limit = platform_middleware::RateLimitLayer::new(
+        redis.clone(),
+        platform_middleware::RateLimitLayerConfig {
+            login_per_ip_per_minute: config.rate_limit.login_per_ip_per_minute,
+            api_per_principal_per_second: config.rate_limit.api_per_principal_per_second,
+        },
+    );
+
+    let app = Router::new()
+        .route("/healthz", get(healthz))
+        .route("/readyz", get(readyz))
+        .nest("/v1", api::routes::router(app_state))
+        .layer(platform_middleware::SecurityHeadersLayer)
+        .layer(platform_middleware::RequestIdLayer)
+        .layer(rate_limit)
+        .layer(cors)
+        .layer(TraceLayer::new_for_http());
+
+    let addr = SocketAddr::new(
+        config.server.host.parse().unwrap(),
+        config.server.port,
+    );
+
     tracing::info!("Payment link service listening on {addr}");
+
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
-    axum::serve(listener, app).await.unwrap();
+
+    // Graceful shutdown
+    let shutdown_signal = async {
+        tokio::signal::ctrl_c()
+            .await
+            .expect("Failed to install Ctrl+C handler");
+        tracing::info!("Shutdown signal received, starting graceful shutdown...");
+    };
+
+    axum::serve(listener, app)
+        .with_graceful_shutdown(shutdown_signal)
+        .await
+        .unwrap();
+
+    tracing::info!("Payment link service shut down gracefully");
 }
-async fn healthz() -> &'static str { "ok" }
+
+async fn healthz() -> &'static str {
+    "ok"
+}
+
+async fn readyz() -> &'static str {
+    "ok"
+}

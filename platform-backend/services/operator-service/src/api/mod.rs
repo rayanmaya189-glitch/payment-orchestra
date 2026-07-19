@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 pub mod dto;
 pub mod grpc;
 pub mod http;
@@ -15,7 +16,7 @@ pub struct AppState {
 }
 
 impl AppState {
-    pub fn new(db: DatabaseConnection, service: OperatorServiceImpl) -> Self {
+    pub fn new(_db: DatabaseConnection, service: OperatorServiceImpl) -> Self {
         Self {
             service: Arc::new(service),
         }

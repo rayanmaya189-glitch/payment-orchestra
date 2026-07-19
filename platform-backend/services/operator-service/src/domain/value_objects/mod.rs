@@ -1,3 +1,4 @@
+#![allow(clippy::should_implement_trait)]
 use platform_error::ValidationError;
 use serde::{Deserialize, Serialize};
 

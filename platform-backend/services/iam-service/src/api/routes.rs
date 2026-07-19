@@ -1,6 +1,6 @@
 use axum::{
     extract::{Path, State},
-    http::StatusCode,
+    http::{HeaderMap, StatusCode},
     Json, Router,
 };
 use uuid::Uuid;
@@ -11,6 +11,7 @@ use crate::application::commands::*;
 use crate::application::queries::*;
 use crate::application::services::AuthService;
 use crate::domain::value_objects::PermissionContext;
+use platform_middleware::{AuthPrincipal, client_fingerprint};
 
 pub fn router(state: AppState) -> Router {
     Router::new()
@@ -28,18 +29,48 @@ pub fn router(state: AppState) -> Router {
             "/api-keys/{api_key_id}",
             axum::routing::delete(revoke_api_key),
         )
+        .route(
+            "/principals/{principal_id}/sessions/revoke-all",
+            axum::routing::delete(revoke_all_sessions),
+        )
         .with_state(state)
+}
+
+/// Extract client IP from request headers per trusted-proxy convention.
+/// Priority: X-Real-IP > X-Forwarded-For (first entry) > "unknown".
+fn extract_client_ip(headers: &HeaderMap) -> String {
+    if let Some(ip) = headers.get("x-real-ip").and_then(|v| v.to_str().ok()) {
+        return ip.to_string();
+    }
+    if let Some(forwarded) = headers.get("x-forwarded-for").and_then(|v| v.to_str().ok()) {
+        if let Some(first) = forwarded.split(',').next() {
+            return first.trim().to_string();
+        }
+    }
+    "unknown".to_string()
 }
 
 async fn login(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Json(req): Json<LoginRequest>,
 ) -> Result<Json<LoginResponse>, (StatusCode, Json<ErrorResponse>)> {
+    let ip_str = extract_client_ip(&headers);
+    let user_agent = headers
+        .get("user-agent")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("unknown")
+        .to_string();
+
+    let ip_address: std::net::IpAddr = ip_str.parse().unwrap_or(std::net::IpAddr::V4(
+        std::net::Ipv4Addr::new(0, 0, 0, 0),
+    ));
+
     let cmd = AuthenticateCommand {
         email: req.email,
         password: req.password,
-        ip_address: "127.0.0.1".parse().unwrap(),
-        user_agent: "unknown".into(),
+        ip_address,
+        user_agent,
     };
 
     match state.service.authenticate(cmd).await {
@@ -50,13 +81,23 @@ async fn login(
 
 async fn refresh_token(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Json(req): Json<RefreshTokenRequest>,
 ) -> Result<Json<LoginResponse>, (StatusCode, Json<ErrorResponse>)> {
     let cmd = IssueTokenCommand {
         refresh_token: req.refresh_token,
     };
 
-    match state.service.issue_token(cmd).await {
+    // Real client fingerprint for token theft detection (SRS SESS-SEC-003)
+    let ip_str = extract_client_ip(&headers);
+    let user_agent = headers
+        .get("user-agent")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("unknown")
+        .to_string();
+    let fingerprint = client_fingerprint(&ip_str, &user_agent);
+
+    match state.service.issue_token(cmd, fingerprint).await {
         Ok(response) => Ok(Json(response)),
         Err(e) => Err(error_to_response(e)),
     }
@@ -115,6 +156,30 @@ async fn revoke_api_key(
     let cmd = RevokeApiKeyCommand { api_key_id };
 
     match state.service.revoke_api_key(cmd).await {
+        Ok(()) => Ok(StatusCode::OK),
+        Err(e) => Err(error_to_response(e)),
+    }
+}
+
+/// SRS SESS-SEC-004: Admin can revoke all sessions for a principal.
+/// ABAC enforced — only callers with Admin role may use this endpoint.
+async fn revoke_all_sessions(
+    State(state): State<AppState>,
+    auth: AuthPrincipal,
+    Path(principal_id): Path<Uuid>,
+) -> Result<StatusCode, (StatusCode, Json<ErrorResponse>)> {
+    // ABAC: Only Admin can revoke sessions for any principal
+    if auth.role != "admin" {
+        return Err((
+            StatusCode::FORBIDDEN,
+            Json(ErrorResponse {
+                error: "Only admins can revoke all sessions".to_string(),
+                code: "FORBIDDEN".to_string(),
+            }),
+        ));
+    }
+
+    match state.service.revoke_all_sessions(principal_id).await {
         Ok(()) => Ok(StatusCode::OK),
         Err(e) => Err(error_to_response(e)),
     }

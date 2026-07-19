@@ -1,6 +1,6 @@
 use async_trait::async_trait; use uuid::Uuid;
 use crate::domain::aggregates::Dispute;
-use crate::domain::value_objects::{DisputeReason, DisputeStatus};
+use crate::domain::value_objects::DisputeReason;
 use platform_error::PlatformError;
 
 #[async_trait]

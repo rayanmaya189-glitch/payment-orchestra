@@ -1,6 +1,8 @@
+#![allow(dead_code)]
 use chrono::{DateTime, Utc};
 use uuid::Uuid;
 
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct RoleAssignment {
     pub id: Uuid,

@@ -1,9 +1,12 @@
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
+use validator::Validate;
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Validate)]
 pub struct LoginRequest {
+    #[validate(email(message = "Invalid email format"))]
     pub email: String,
+    #[validate(length(min = 8, message = "Password must be at least 8 characters"))]
     pub password: String,
 }
 
@@ -14,16 +17,20 @@ pub struct LoginResponse {
     pub expires_in: u64,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Validate)]
 pub struct RefreshTokenRequest {
+    #[validate(length(min = 1, message = "Refresh token is required"))]
     pub refresh_token: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Validate)]
 pub struct CreateApiKeyRequest {
+    #[validate(length(min = 1, max = 128, message = "Name must be 1-128 characters"))]
     pub name: String,
+    #[validate(length(min = 1, message = "At least one scope is required"))]
     pub scopes: Vec<String>,
     pub acquirer_link_ids: Option<Vec<Uuid>>,
+    #[validate(range(min = 1, max = 365, message = "Expiry must be 1-365 days"))]
     pub expires_in_days: Option<u32>,
 }
 
@@ -33,9 +40,11 @@ pub struct ApiKeyResponse {
     pub api_key_secret: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Validate)]
 pub struct ValidatePermissionRequest {
+    #[validate(length(min = 1, max = 64, message = "Resource must be 1-64 characters"))]
     pub resource: String,
+    #[validate(length(min = 1, max = 64, message = "Action must be 1-64 characters"))]
     pub action: String,
     pub context: Option<PermissionContextRequest>,
 }

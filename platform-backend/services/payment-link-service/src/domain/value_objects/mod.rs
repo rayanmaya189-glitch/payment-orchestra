@@ -1,3 +1,4 @@
+#![allow(clippy::should_implement_trait)]
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

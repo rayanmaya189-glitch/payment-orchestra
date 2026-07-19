@@ -1,15 +1,14 @@
 use async_trait::async_trait;
 use uuid::Uuid;
-use chrono::Utc;
 
 use crate::application::commands::*;
 use crate::application::queries::*;
 use crate::api::dto::PaymentIntentResponse;
-use crate::domain::aggregates::{PaymentIntent, RoutingAttempt, RoutingPolicy};
+use crate::domain::aggregates::{PaymentIntent, RoutingAttempt};
 use crate::domain::value_objects::PaymentPurpose;
 use crate::infrastructure::repository::{PaymentIntentRepository, RoutingPolicyRepository};
 use platform_error::{PlatformError, ConflictError};
-use shared_types::{Money, PaymentStatus, ActorType};
+use shared_types::{Money, ActorType};
 use shared_types::events::EventEnvelope;
 
 #[async_trait]
@@ -66,7 +65,7 @@ impl PaymentService for PaymentServiceImpl {
 
         // Publish event
         let correlation_id = Uuid::now_v7();
-        let event = EventEnvelope::new(
+        let _event = EventEnvelope::new(
             "PaymentIntent",
             intent.payment_intent_id,
             "PaymentIntentCreated",
@@ -267,7 +266,7 @@ impl PaymentService for PaymentServiceImpl {
         Ok(intent_to_response(&intent))
     }
 
-    async fn list_payment_intents(&self, query: ListPaymentIntentsQuery) -> Result<Vec<PaymentIntentResponse>, PlatformError> {
+    async fn list_payment_intents(&self, _query: ListPaymentIntentsQuery) -> Result<Vec<PaymentIntentResponse>, PlatformError> {
         // TODO: Implement with proper filtering
         Ok(Vec::new())
     }

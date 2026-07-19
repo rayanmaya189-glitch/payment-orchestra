@@ -1,5 +1,6 @@
+#![allow(clippy::should_implement_trait)]
 use serde::{Deserialize, Serialize};
-use shared_types::{CardScheme, CurrencyCode, Money};
+use shared_types::{CurrencyCode, Money};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TransactionLimits {
