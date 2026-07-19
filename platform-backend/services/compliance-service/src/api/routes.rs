@@ -7,6 +7,9 @@ use uuid::Uuid;
 
 use super::dto::*;
 use super::AppState;
+use crate::application::commands::*;
+use crate::application::queries::*;
+use crate::application::services::ComplianceService;
 
 pub fn router(state: AppState) -> Router {
     Router::new()
@@ -16,6 +19,7 @@ pub fn router(state: AppState) -> Router {
         .route("/kyb-cases/{case_id}/documents", axum::routing::post(upload_document))
         .route("/kyb-cases/{case_id}/decide", axum::routing::post(decide_case))
         .route("/kyb-cases/{case_id}/assign", axum::routing::post(assign_officer))
+        .route("/kyb-cases/{case_id}/request-documents", axum::routing::post(request_documents))
         .with_state(state)
 }
 
@@ -23,41 +27,42 @@ async fn create_kyb_case(
     State(state): State<AppState>,
     Json(req): Json<CreateKybCaseRequest>,
 ) -> Result<(StatusCode, Json<KybCaseResponse>), (StatusCode, Json<ErrorResponse>)> {
-    let _ = (&state, req);
-    Err((
-        StatusCode::NOT_IMPLEMENTED,
-        Json(ErrorResponse {
-            error: "Not implemented".to_string(),
-            code: "NOT_IMPLEMENTED".to_string(),
-        }),
-    ))
-}
+    let cmd = CreateKybCaseCommand {
+        operator_id: req.operator_id,
+    };
 
-async fn list_kyb_cases(
-    State(state): State<AppState>,
-) -> Result<Json<Vec<KybCaseResponse>>, (StatusCode, Json<ErrorResponse>)> {
-    let _ = &state;
-    Err((
-        StatusCode::NOT_IMPLEMENTED,
-        Json(ErrorResponse {
-            error: "Not implemented".to_string(),
-            code: "NOT_IMPLEMENTED".to_string(),
-        }),
-    ))
+    match state.service.create_kyb_case(cmd).await {
+        Ok(response) => Ok((StatusCode::CREATED, Json(response))),
+        Err(e) => Err(error_to_response(e)),
+    }
 }
 
 async fn get_kyb_case(
     State(state): State<AppState>,
     Path(case_id): Path<Uuid>,
 ) -> Result<Json<KybCaseResponse>, (StatusCode, Json<ErrorResponse>)> {
-    let _ = (&state, case_id);
-    Err((
-        StatusCode::NOT_FOUND,
-        Json(ErrorResponse {
-            error: "Not found".to_string(),
-            code: "KYB_CASE_NOT_FOUND".to_string(),
-        }),
-    ))
+    let query = GetKybCaseQuery { kyb_case_id: case_id };
+
+    match state.service.get_case(query).await {
+        Ok(response) => Ok(Json(response)),
+        Err(e) => Err(error_to_response(e)),
+    }
+}
+
+async fn list_kyb_cases(
+    State(state): State<AppState>,
+) -> Result<Json<Vec<KybCaseResponse>>, (StatusCode, Json<ErrorResponse>)> {
+    let query = ListKybCasesQuery {
+        status: None,
+        operator_id: None,
+        cursor: None,
+        limit: Some(20),
+    };
+
+    match state.service.list_cases(query).await {
+        Ok(response) => Ok(Json(response)),
+        Err(e) => Err(error_to_response(e)),
+    }
 }
 
 async fn upload_document(
@@ -65,14 +70,17 @@ async fn upload_document(
     Path(case_id): Path<Uuid>,
     Json(req): Json<UploadDocumentRequest>,
 ) -> Result<StatusCode, (StatusCode, Json<ErrorResponse>)> {
-    let _ = (&state, case_id, req);
-    Err((
-        StatusCode::NOT_IMPLEMENTED,
-        Json(ErrorResponse {
-            error: "Not implemented".to_string(),
-            code: "NOT_IMPLEMENTED".to_string(),
-        }),
-    ))
+    let cmd = UploadDocumentCommand {
+        kyb_case_id: case_id,
+        document_type: req.document_type,
+        file_key: req.file_key,
+        file_hash: req.file_hash,
+    };
+
+    match state.service.upload_document(cmd).await {
+        Ok(()) => Ok(StatusCode::CREATED),
+        Err(e) => Err(error_to_response(e)),
+    }
 }
 
 async fn decide_case(
@@ -80,26 +88,80 @@ async fn decide_case(
     Path(case_id): Path<Uuid>,
     Json(req): Json<DecideCaseRequest>,
 ) -> Result<StatusCode, (StatusCode, Json<ErrorResponse>)> {
-    let _ = (&state, case_id, req);
-    Err((
-        StatusCode::NOT_IMPLEMENTED,
-        Json(ErrorResponse {
-            error: "Not implemented".to_string(),
-            code: "NOT_IMPLEMENTED".to_string(),
-        }),
-    ))
+    let cmd = DecideKybCaseCommand {
+        kyb_case_id: case_id,
+        decision: req.decision,
+        reason: req.reason,
+        decided_by: Uuid::nil(), // TODO: Get from auth context
+    };
+
+    match state.service.decide_case(cmd).await {
+        Ok(()) => Ok(StatusCode::OK),
+        Err(e) => Err(error_to_response(e)),
+    }
 }
 
 async fn assign_officer(
     State(state): State<AppState>,
     Path(case_id): Path<Uuid>,
+    Json(req): Json<AssignOfficerRequest>,
 ) -> Result<StatusCode, (StatusCode, Json<ErrorResponse>)> {
-    let _ = (&state, case_id);
-    Err((
-        StatusCode::NOT_IMPLEMENTED,
-        Json(ErrorResponse {
-            error: "Not implemented".to_string(),
-            code: "NOT_IMPLEMENTED".to_string(),
-        }),
-    ))
+    let cmd = AssignOfficerCommand {
+        kyb_case_id: case_id,
+        officer_id: req.officer_id,
+    };
+
+    match state.service.assign_officer(cmd).await {
+        Ok(()) => Ok(StatusCode::OK),
+        Err(e) => Err(error_to_response(e)),
+    }
+}
+
+async fn request_documents(
+    State(state): State<AppState>,
+    Path(case_id): Path<Uuid>,
+    Json(req): Json<RequestDocumentsRequest>,
+) -> Result<StatusCode, (StatusCode, Json<ErrorResponse>)> {
+    let cmd = RequestDocumentsCommand {
+        kyb_case_id: case_id,
+        requested_documents: req.requested_documents,
+        reason: req.reason,
+    };
+
+    match state.service.request_documents(cmd).await {
+        Ok(()) => Ok(StatusCode::OK),
+        Err(e) => Err(error_to_response(e)),
+    }
+}
+
+fn error_to_response(e: platform_error::PlatformError) -> (StatusCode, Json<ErrorResponse>) {
+    let (status, code, message) = match &e {
+        platform_error::PlatformError::NotFound { resource, id } => (
+            StatusCode::NOT_FOUND,
+            "NOT_FOUND",
+            format!("{resource} {id} not found"),
+        ),
+        platform_error::PlatformError::Conflict(c) => (
+            StatusCode::CONFLICT,
+            "CONFLICT",
+            c.to_string(),
+        ),
+        platform_error::PlatformError::Validation(v) => (
+            StatusCode::BAD_REQUEST,
+            "VALIDATION_ERROR",
+            v.to_string(),
+        ),
+        platform_error::PlatformError::AuthorizationDenied(msg) => (
+            StatusCode::FORBIDDEN,
+            "AUTHORIZATION_DENIED",
+            msg.clone(),
+        ),
+        _ => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "INTERNAL_ERROR",
+            "Internal error".to_string(),
+        ),
+    };
+
+    (status, Json(ErrorResponse { error: message, code: code.to_string() }))
 }

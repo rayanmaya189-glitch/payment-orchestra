@@ -11,4 +11,5 @@ pub trait OperatorRepository: Send + Sync {
     async fn find_by_trade_license(&self, license: &str) -> Result<Option<Operator>, PlatformError>;
     async fn find_by_email(&self, email: &str) -> Result<Option<Operator>, PlatformError>;
     async fn find_by_subdomain(&self, subdomain: &str) -> Result<Option<Operator>, PlatformError>;
+    async fn list(&self, status: Option<&str>, limit: u64, offset: u64) -> Result<Vec<Operator>, PlatformError>;
 }

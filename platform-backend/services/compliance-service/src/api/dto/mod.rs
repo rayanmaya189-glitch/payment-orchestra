@@ -19,6 +19,17 @@ pub struct DecideCaseRequest {
     pub reason: String,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct AssignOfficerRequest {
+    pub officer_id: Uuid,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct RequestDocumentsRequest {
+    pub requested_documents: Vec<String>,
+    pub reason: String,
+}
+
 #[derive(Debug, Serialize)]
 pub struct KybCaseResponse {
     pub id: Uuid,

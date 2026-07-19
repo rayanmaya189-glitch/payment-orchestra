@@ -1,7 +1,8 @@
 use async_trait::async_trait;
 use uuid::Uuid;
 
-use crate::domain::aggregates::{ApiKey, PendingChange, Principal};
+use crate::domain::aggregates::{ApiKey, Principal, PendingChange};
+use crate::domain::entities::RoleAssignment;
 use platform_error::PlatformError;
 
 #[async_trait]
@@ -9,6 +10,7 @@ pub trait PrincipalRepository: Send + Sync {
     async fn load(&self, id: Uuid) -> Result<Option<Principal>, PlatformError>;
     async fn find_by_email(&self, email: &str) -> Result<Option<Principal>, PlatformError>;
     async fn save(&self, principal: &Principal) -> Result<(), PlatformError>;
+    async fn list_roles(&self, principal_id: Uuid) -> Result<Vec<RoleAssignment>, PlatformError>;
 }
 
 #[async_trait]

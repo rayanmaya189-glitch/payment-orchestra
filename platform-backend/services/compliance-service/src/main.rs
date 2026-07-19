@@ -2,6 +2,7 @@ use axum::{routing::get, Router};
 use platform_config::AppConfig;
 use platform_logging::ServiceLogger;
 use std::net::SocketAddr;
+use std::sync::Arc;
 use tower_http::trace::TraceLayer;
 
 mod api;
@@ -9,16 +10,28 @@ mod application;
 mod domain;
 mod infrastructure;
 
+use crate::application::services::ComplianceServiceImpl;
+use crate::infrastructure::adapters::PostgresKybCaseRepository;
+
 #[tokio::main]
 async fn main() {
     ServiceLogger::init("compliance-service");
 
     let config = AppConfig::from_env("compliance-service").unwrap_or_default();
 
+    // Connect to Postgres
     let db = infrastructure::database::connect(&config.database).await;
-    let redis = infrastructure::cache::connect(&config.redis).await;
 
-    let app_state = api::AppState { db, redis };
+    // Create repository
+    let repo = PostgresKybCaseRepository::new(db.clone());
+
+    // Create service
+    let service = ComplianceServiceImpl::new(Box::new(repo), db.clone());
+
+    // Create app state
+    let app_state = api::AppState {
+        service: Arc::new(service),
+    };
 
     let app = Router::new()
         .route("/healthz", get(healthz))

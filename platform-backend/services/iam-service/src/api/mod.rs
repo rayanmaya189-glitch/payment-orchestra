@@ -3,11 +3,11 @@ pub mod grpc;
 pub mod http;
 pub mod routes;
 
-use redis::aio::ConnectionManager;
-use sea_orm::DatabaseConnection;
+use std::sync::Arc;
+
+use crate::application::services::AuthServiceImpl;
 
 #[derive(Clone)]
 pub struct AppState {
-    pub db: DatabaseConnection,
-    pub redis: ConnectionManager,
+    pub service: Arc<AuthServiceImpl>,
 }

@@ -5,12 +5,16 @@ use axum::{
 };
 use uuid::Uuid;
 
-use super::dto::{ErrorResponse, OperatorResponse, RegisterOperatorRequest, UpdateOperatorStatusRequest};
+use super::dto::{ErrorResponse, RegisterOperatorRequest, UpdateOperatorStatusRequest};
 use super::AppState;
+use crate::application::commands::*;
+use crate::application::queries::*;
+use crate::application::services::OperatorService;
 
 pub fn router(state: AppState) -> Router {
     Router::new()
         .route("/operators", axum::routing::post(register_operator))
+        .route("/operators", axum::routing::get(list_operators))
         .route("/operators/{operator_id}", axum::routing::get(get_operator))
         .route("/operators/{operator_id}/verify-email", axum::routing::post(verify_email))
         .route("/operators/{operator_id}/status", axum::routing::put(update_status))
@@ -18,47 +22,119 @@ pub fn router(state: AppState) -> Router {
 }
 
 async fn register_operator(
-    State(_state): State<AppState>,
+    State(state): State<AppState>,
     Json(req): Json<RegisterOperatorRequest>,
-) -> Result<(StatusCode, Json<OperatorResponse>), (StatusCode, Json<ErrorResponse>)> {
-    let response = OperatorResponse {
-        id: Uuid::now_v7(),
+) -> Result<(StatusCode, Json<crate::api::dto::OperatorResponse>), (StatusCode, Json<ErrorResponse>)> {
+    let cmd = RegisterOperatorCommand {
         legal_name: req.legal_name,
         trade_license_no: req.trade_license_no,
         country: req.country,
-        status: "pending".to_string(),
-        subdomain: String::new(),
         email: req.email,
-        provisioned_at: None,
-        created_at: chrono::Utc::now().to_rfc3339(),
     };
-    Ok((StatusCode::CREATED, Json(response)))
+
+    match state.service.register_operator(cmd).await {
+        Ok(response) => Ok((StatusCode::CREATED, Json(response))),
+        Err(e) => Err(error_to_response(e)),
+    }
 }
 
 async fn get_operator(
-    State(_state): State<AppState>,
-    Path(_operator_id): Path<Uuid>,
-) -> Result<Json<OperatorResponse>, (StatusCode, Json<ErrorResponse>)> {
-    Err((
-        StatusCode::NOT_FOUND,
-        Json(ErrorResponse {
-            error: "Not found".to_string(),
-            code: "OPERATOR_NOT_FOUND".to_string(),
-        }),
-    ))
+    State(state): State<AppState>,
+    Path(operator_id): Path<Uuid>,
+) -> Result<Json<crate::api::dto::OperatorResponse>, (StatusCode, Json<ErrorResponse>)> {
+    let query = GetOperatorQuery { operator_id };
+
+    match state.service.get_operator(query).await {
+        Ok(response) => Ok(Json(response)),
+        Err(e) => Err(error_to_response(e)),
+    }
+}
+
+async fn list_operators(
+    State(state): State<AppState>,
+) -> Result<Json<Vec<crate::api::dto::OperatorResponse>>, (StatusCode, Json<ErrorResponse>)> {
+    let query = ListOperatorsQuery {
+        status: None,
+        cursor: None,
+        limit: Some(20),
+    };
+
+    match state.service.list_operators(query).await {
+        Ok(response) => Ok(Json(response)),
+        Err(e) => Err(error_to_response(e)),
+    }
 }
 
 async fn verify_email(
-    State(_state): State<AppState>,
-    Path(_operator_id): Path<Uuid>,
+    State(state): State<AppState>,
+    Path(operator_id): Path<Uuid>,
 ) -> Result<StatusCode, (StatusCode, Json<ErrorResponse>)> {
-    Ok(StatusCode::OK)
+    let cmd = VerifyEmailCommand { operator_id };
+
+    match state.service.verify_email(cmd).await {
+        Ok(()) => Ok(StatusCode::OK),
+        Err(e) => Err(error_to_response(e)),
+    }
 }
 
 async fn update_status(
-    State(_state): State<AppState>,
-    Path(_operator_id): Path<Uuid>,
-    Json(_req): Json<UpdateOperatorStatusRequest>,
+    State(state): State<AppState>,
+    Path(operator_id): Path<Uuid>,
+    Json(req): Json<UpdateOperatorStatusRequest>,
 ) -> Result<StatusCode, (StatusCode, Json<ErrorResponse>)> {
-    Ok(StatusCode::OK)
+    let cmd = UpdateOperatorStatusCommand {
+        operator_id,
+        new_status: req.new_status,
+        reason: req.reason,
+    };
+
+    match state.service.update_status(cmd).await {
+        Ok(()) => Ok(StatusCode::OK),
+        Err(e) => Err(error_to_response(e)),
+    }
+}
+
+fn error_to_response(e: platform_error::PlatformError) -> (StatusCode, Json<ErrorResponse>) {
+    let (status, code, message) = match &e {
+        platform_error::PlatformError::NotFound { resource, id } => (
+            StatusCode::NOT_FOUND,
+            "OPERATOR_NOT_FOUND",
+            format!("{resource} {id} not found"),
+        ),
+        platform_error::PlatformError::Conflict(c) => {
+            let code = match c {
+                platform_error::ConflictError::IdempotencyKeyConflict => "DUPLICATE_TRADE_LICENSE",
+                platform_error::ConflictError::ConcurrencyViolation => "CONFLICT",
+                _ => "CONFLICT",
+            };
+            (StatusCode::CONFLICT, code, c.to_string())
+        }
+        platform_error::PlatformError::Validation(v) => (
+            StatusCode::BAD_REQUEST,
+            "VALIDATION_ERROR",
+            v.to_string(),
+        ),
+        platform_error::PlatformError::AuthorizationDenied(msg) => (
+            StatusCode::FORBIDDEN,
+            "AUTHORIZATION_DENIED",
+            msg.clone(),
+        ),
+        platform_error::PlatformError::RateLimited { retry_after_ms } => (
+            StatusCode::TOO_MANY_REQUESTS,
+            "RATE_LIMITED",
+            format!("Retry after {retry_after_ms}ms"),
+        ),
+        platform_error::PlatformError::Unavailable(msg) => (
+            StatusCode::SERVICE_UNAVAILABLE,
+            "SERVICE_UNAVAILABLE",
+            msg.clone(),
+        ),
+        platform_error::PlatformError::Internal(msg) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "INTERNAL_ERROR",
+            msg.clone(),
+        ),
+    };
+
+    (status, Json(ErrorResponse { error: message, code: code.to_string() }))
 }

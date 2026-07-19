@@ -31,6 +31,15 @@ impl PrincipalType {
             Self::Service => "service",
         }
     }
+
+    pub fn from_str(s: &str) -> Self {
+        match s {
+            "human" => Self::Human,
+            "api_key" => Self::ApiKey,
+            "service" => Self::Service,
+            _ => Self::Human,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -46,6 +55,15 @@ impl PrincipalStatus {
             Self::Active => "active",
             Self::Suspended => "suspended",
             Self::Deleted => "deleted",
+        }
+    }
+
+    pub fn from_str(s: &str) -> Self {
+        match s {
+            "active" => Self::Active,
+            "suspended" => Self::Suspended,
+            "deleted" => Self::Deleted,
+            _ => Self::Active,
         }
     }
 }
@@ -71,6 +89,27 @@ pub enum PendingChangeStatus {
     Approved,
     Rejected,
     Expired,
+}
+
+impl PendingChangeStatus {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Pending => "pending",
+            Self::Approved => "approved",
+            Self::Rejected => "rejected",
+            Self::Expired => "expired",
+        }
+    }
+
+    pub fn from_str(s: &str) -> Self {
+        match s {
+            "pending" => Self::Pending,
+            "approved" => Self::Approved,
+            "rejected" => Self::Rejected,
+            "expired" => Self::Expired,
+            _ => Self::Pending,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]

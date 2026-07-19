@@ -61,6 +61,7 @@ prost = "0.13"
 argon2 = "0.5"
 sha2 = "0.10"
 aes-gcm = "0.10"
+hex = "0.4"
 
 # Validation
 validator = { version = "0.19", features = ["derive"] }
