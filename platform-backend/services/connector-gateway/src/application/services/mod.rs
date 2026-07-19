@@ -113,10 +113,22 @@ pub struct WebhookUrlValidation {
 #[async_trait]
 impl GatewayService for GatewayServiceImpl {
     async fn create_profile(&self, cmd: CreateGatewayProfileCommand) -> Result<GatewayProfileResponse, PlatformError> {
+        // SRS SSRF-001/002: Validate acquirer API base URL before saving.
+        // Uses validate_url_async to avoid blocking the Tokio runtime during DNS lookups.
+        match validate_url_async(&cmd.base_url).await {
+            SsrfCheckResult::Allowed => {}
+            SsrfCheckResult::Blocked(reason) => {
+                return Err(PlatformError::Validation(
+                    platform_error::ValidationError::SsrfBlocked(reason)
+                ));
+            }
+        }
+
         let mut profile = GatewayProfile::new(
             cmd.operator_id,
             cmd.connector_id,
             cmd.merchant_acquirer_link_id,
+            cmd.base_url,
         );
 
         profile.min_transaction_amount_minor = cmd.min_transaction_amount.amount_minor_units;
@@ -265,6 +277,7 @@ fn profile_to_response(p: &GatewayProfile) -> GatewayProfileResponse {
         connector_id: p.connector_id.clone(),
         status: p.status.as_str().to_string(),
         routing_priority: p.routing_priority,
+        base_url: p.base_url.clone(),
         min_amount: p.min_transaction_amount_minor,
         max_amount: p.max_transaction_amount_minor,
         daily_volume_limit: p.daily_volume_limit_minor,

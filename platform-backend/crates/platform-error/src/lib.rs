@@ -40,6 +40,8 @@ pub enum ValidationError {
     MissingField(String),
     #[error("Invalid state transition: {from} -> {command}")]
     InvalidStateTransition { from: String, command: String },
+    #[error("SSRF blocked: {0}")]
+    SsrfBlocked(String),
 }
 
 #[derive(Debug, Clone, thiserror::Error)]

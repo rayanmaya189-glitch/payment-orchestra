@@ -52,6 +52,7 @@ impl GatewayProfile {
         operator_id: Uuid,
         connector_id: String,
         merchant_acquirer_link_id: Uuid,
+        base_url: String,
     ) -> Self {
         let now = Utc::now();
         Self {
@@ -70,6 +71,7 @@ impl GatewayProfile {
             cross_border_fee_bps: 0,
             currency_conversion_fee_bps: 0,
             routing_priority: 1,
+            base_url,
             enabled_card_schemes: vec![CardScheme::Visa, CardScheme::Mastercard],
             enabled_currencies: vec![CurrencyCode::new("AED").unwrap()],
             enabled_countries: vec!["AE".to_string()],

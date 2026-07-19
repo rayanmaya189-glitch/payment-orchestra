@@ -27,6 +27,7 @@ pub struct Model {
     pub currency_conversion_fee_bps: i32,
 
     pub routing_priority: i32,
+    pub base_url: String,
     pub enabled_card_schemes: String, // JSON array
     pub enabled_currencies: String,   // JSON array
     pub enabled_countries: String,    // JSON array
@@ -72,6 +73,7 @@ impl Model {
             cross_border_fee_bps: self.cross_border_fee_bps,
             currency_conversion_fee_bps: self.currency_conversion_fee_bps,
             routing_priority: self.routing_priority,
+            base_url: self.base_url.clone(),
             enabled_card_schemes,
             enabled_currencies,
             enabled_countries,
@@ -104,6 +106,7 @@ impl From<GatewayProfile> for ActiveModel {
             cross_border_fee_bps: sea_orm::Set(p.cross_border_fee_bps),
             currency_conversion_fee_bps: sea_orm::Set(p.currency_conversion_fee_bps),
             routing_priority: sea_orm::Set(p.routing_priority),
+            base_url: sea_orm::Set(p.base_url),
             enabled_card_schemes: sea_orm::Set(serde_json::to_string(&p.enabled_card_schemes).unwrap()),
             enabled_currencies: sea_orm::Set(serde_json::to_string(&p.enabled_currencies).unwrap()),
             enabled_countries: sea_orm::Set(serde_json::to_string(&p.enabled_countries).unwrap()),

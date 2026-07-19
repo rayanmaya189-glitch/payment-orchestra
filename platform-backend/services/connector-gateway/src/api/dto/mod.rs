@@ -7,6 +7,7 @@ use shared_types::{CardScheme, CurrencyCode, Money};
 pub struct CreateGatewayProfileRequest {
     pub connector_id: String,
     pub merchant_acquirer_link_id: Uuid,
+    pub base_url: String,
     pub min_transaction_amount: Money,
     pub max_transaction_amount: Money,
     pub daily_volume_limit: Money,
@@ -48,6 +49,7 @@ pub struct GatewayProfileResponse {
     pub connector_id: String,
     pub status: String,
     pub routing_priority: i32,
+    pub base_url: String,
     pub min_amount: i64,
     pub max_amount: i64,
     pub daily_volume_limit: i64,
