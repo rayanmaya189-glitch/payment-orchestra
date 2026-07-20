@@ -18,6 +18,8 @@ use redis::aio::ConnectionManager;
 pub struct RateLimitLayerConfig {
     pub login_per_ip_per_minute: u32,
     pub api_per_principal_per_second: u32,
+    /// Per-endpoint overrides: path prefix -> (limit, window_seconds)
+    pub endpoint_overrides: Vec<(String, u32, u32)>,
 }
 
 impl Default for RateLimitLayerConfig {
@@ -25,6 +27,16 @@ impl Default for RateLimitLayerConfig {
         Self {
             login_per_ip_per_minute: 10,
             api_per_principal_per_second: 100,
+            endpoint_overrides: vec![
+                ("/v1/auth/login".into(), 10, 60),      // Login: 10/min
+                ("/v1/auth/refresh".into(), 30, 60),    // Refresh: 30/min
+                ("/v1/payment-intents".into(), 500, 60), // Checkout: 500/min
+                ("/v1/kyb-cases".into(), 10, 60),        // KYB: 10/min
+                ("/v1/gateway-profiles".into(), 100, 60), // Gateway: 100/min
+                ("/v1/invoices".into(), 100, 60),        // Invoices: 100/min
+                ("/v1/disputes".into(), 50, 60),          // Disputes: 50/min
+                ("/v1/subscriptions".into(), 50, 60),    // Subscriptions: 50/min
+            ],
         }
     }
 }
@@ -147,13 +159,26 @@ where
             // Determine client identifier
             let client_key = extract_client_ip(&req);
 
-            // Choose rate limit based on endpoint
+            // Choose rate limit based on endpoint (SRS RL-001: per-endpoint limits)
             let (limit, window_secs) = if path.contains("/auth/login") {
                 // SRS AUTH-009: Login endpoint — per-IP per minute
                 (config.login_per_ip_per_minute, 60i64)
             } else {
-                // General API — per-principal per second
-                (config.api_per_principal_per_second, 1i64)
+                // Check per-endpoint overrides first
+                let mut matched = false;
+                let mut result = (config.api_per_principal_per_second, 1i64);
+                for (prefix, endpoint_limit, endpoint_window) in &config.endpoint_overrides {
+                    if path.starts_with(prefix) {
+                        result = (*endpoint_limit, *endpoint_window as i64);
+                        matched = true;
+                        break;
+                    }
+                }
+                if !matched {
+                    // General API — per-principal per second
+                    result = (config.api_per_principal_per_second, 1i64);
+                }
+                result
             };
 
             // Atomic rate limit using Redis Lua script (prevents INCR/EXPIRE race)

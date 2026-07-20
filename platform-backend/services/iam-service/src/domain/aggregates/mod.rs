@@ -126,6 +126,24 @@ pub struct ApiKey {
     pub created_at: DateTime<Utc>,
 }
 
+/// WebAuthn credential (SRS AUTH-011: FIDO2/WebAuthn for Admin/Finance MFA).
+#[derive(Debug, Clone)]
+pub struct WebAuthnCredential {
+    pub credential_id: Vec<u8>,
+    pub public_key: Vec<u8>,
+    pub sign_count: u64,
+    pub attestation_object: Vec<u8>,
+    pub created_at: DateTime<Utc>,
+}
+
+/// Backup code for MFA recovery (SRS AUTH-014).
+#[derive(Debug, Clone)]
+pub struct BackupCode {
+    pub code_hash: Vec<u8>,
+    pub used: bool,
+    pub used_at: Option<DateTime<Utc>>,
+}
+
 impl Principal {
     pub fn is_locked(&self) -> bool {
         self.locked_until
@@ -270,5 +288,43 @@ mod tests {
             p.record_failed_login(3, 5, 8);
         }
         assert_eq!(p.status, PrincipalStatus::Suspended);
+    }
+
+    #[test]
+    fn test_webauthn_credential_creation() {
+        let cred = WebAuthnCredential {
+            credential_id: vec![1, 2, 3, 4],
+            public_key: vec![5, 6, 7, 8],
+            sign_count: 0,
+            attestation_object: vec![9, 10, 11, 12],
+            created_at: Utc::now(),
+        };
+        assert_eq!(cred.credential_id, vec![1, 2, 3, 4]);
+        assert_eq!(cred.sign_count, 0);
+        assert!(!cred.credential_id.is_empty());
+    }
+
+    #[test]
+    fn test_backup_code_creation() {
+        let code = BackupCode {
+            code_hash: vec![1, 2, 3],
+            used: false,
+            used_at: None,
+        };
+        assert!(!code.used);
+        assert!(code.used_at.is_none());
+    }
+
+    #[test]
+    fn test_backup_code_mark_used() {
+        let mut code = BackupCode {
+            code_hash: vec![1, 2, 3],
+            used: false,
+            used_at: None,
+        };
+        code.used = true;
+        code.used_at = Some(Utc::now());
+        assert!(code.used);
+        assert!(code.used_at.is_some());
     }
 }

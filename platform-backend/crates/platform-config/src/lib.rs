@@ -174,3 +174,216 @@ impl Default for AppConfig {
         }
     }
 }
+
+// ==================== Feature Flag Management (SRS Part 19 §5) ====================
+
+/// Feature flag targeting rules.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
+pub enum FlagTargeting {
+    /// Feature enabled for all users.
+    Global,
+    /// Feature enabled for a percentage of users (0-100).
+    Percentage(u32),
+    /// Feature enabled for specific segments.
+    Segment(Vec<String>),
+}
+
+/// Feature flag definition.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct FeatureFlag {
+    pub flag_key: String,
+    pub enabled: bool,
+    pub targeting: FlagTargeting,
+    pub kill_switch: bool,
+    pub description: String,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+impl FeatureFlag {
+    pub fn new(flag_key: String, enabled: bool, description: String) -> Self {
+        let now = chrono::Utc::now().to_rfc3339();
+        Self {
+            flag_key,
+            enabled,
+            targeting: FlagTargeting::Global,
+            kill_switch: false,
+            description,
+            created_at: now.clone(),
+            updated_at: now,
+        }
+    }
+
+    /// Check if the feature is enabled for a given context.
+    pub fn is_enabled(&self, user_id: Option<&str>, segment: Option<&str>) -> bool {
+        if self.kill_switch {
+            return false;
+        }
+        if !self.enabled {
+            return false;
+        }
+        match &self.targeting {
+            FlagTargeting::Global => true,
+            FlagTargeting::Percentage(pct) => {
+                // Deterministic percentage based on user_id hash
+                if let Some(uid) = user_id {
+                    let hash = self.simple_hash(uid);
+                    (hash % 100) < *pct
+                } else {
+                    false
+                }
+            }
+            FlagTargeting::Segment(segments) => {
+                if let Some(seg) = segment {
+                    segments.contains(&seg.to_string())
+                } else {
+                    false
+                }
+            }
+        }
+    }
+
+    /// Simple deterministic hash for percentage rollouts.
+    fn simple_hash(&self, input: &str) -> u32 {
+        let mut hash: u32 = 0;
+        for byte in input.bytes() {
+            hash = hash.wrapping_mul(31).wrapping_add(byte as u32);
+        }
+        hash
+    }
+}
+
+/// Feature flag store — in-memory with thread-safe access.
+pub struct FeatureFlagStore {
+    flags: std::sync::RwLock<Vec<FeatureFlag>>,
+}
+
+impl FeatureFlagStore {
+    pub fn new() -> Self {
+        Self {
+            flags: std::sync::RwLock::new(Vec::new()),
+        }
+    }
+
+    /// Add or update a feature flag.
+    pub fn set_flag(&self, flag: FeatureFlag) {
+        let mut flags = self.flags.write().unwrap();
+        if let Some(existing) = flags.iter_mut().find(|f| f.flag_key == flag.flag_key) {
+            *existing = flag;
+        } else {
+            flags.push(flag);
+        }
+    }
+
+    /// Check if a feature is enabled.
+    pub fn is_enabled(&self, flag_key: &str, user_id: Option<&str>, segment: Option<&str>) -> bool {
+        let flags = self.flags.read().unwrap();
+        flags.iter()
+            .find(|f| f.flag_key == flag_key)
+            .map(|f| f.is_enabled(user_id, segment))
+            .unwrap_or(false) // Unknown flags default to disabled
+    }
+
+    /// Get all flags.
+    pub fn list_flags(&self) -> Vec<FeatureFlag> {
+        self.flags.read().unwrap().clone()
+    }
+
+    /// Remove a flag.
+    pub fn remove_flag(&self, flag_key: &str) -> bool {
+        let mut flags = self.flags.write().unwrap();
+        let len_before = flags.len();
+        flags.retain(|f| f.flag_key != flag_key);
+        flags.len() < len_before
+    }
+}
+
+impl Default for FeatureFlagStore {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_feature_flag_global() {
+        let flag = FeatureFlag::new("test_feature".into(), true, "Test feature".into());
+        assert!(flag.is_enabled(None, None));
+    }
+
+    #[test]
+    fn test_feature_flag_disabled() {
+        let flag = FeatureFlag::new("test_feature".into(), false, "Test feature".into());
+        assert!(!flag.is_enabled(None, None));
+    }
+
+    #[test]
+    fn test_feature_flag_kill_switch() {
+        let mut flag = FeatureFlag::new("test_feature".into(), true, "Test feature".into());
+        flag.kill_switch = true;
+        assert!(!flag.is_enabled(None, None));
+    }
+
+    #[test]
+    fn test_feature_flag_percentage() {
+        let flag = FeatureFlag {
+            flag_key: "test_feature".into(),
+            enabled: true,
+            targeting: FlagTargeting::Percentage(50),
+            kill_switch: false,
+            description: "Test".into(),
+            created_at: String::new(),
+            updated_at: String::new(),
+        };
+        // Should be deterministic for same user
+        let result1 = flag.is_enabled(Some("user_123"), None);
+        let result2 = flag.is_enabled(Some("user_123"), None);
+        assert_eq!(result1, result2);
+    }
+
+    #[test]
+    fn test_feature_flag_segment() {
+        let flag = FeatureFlag {
+            flag_key: "test_feature".into(),
+            enabled: true,
+            targeting: FlagTargeting::Segment(vec!["beta".into(), "premium".into()]),
+            kill_switch: false,
+            description: "Test".into(),
+            created_at: String::new(),
+            updated_at: String::new(),
+        };
+        assert!(flag.is_enabled(None, Some("beta")));
+        assert!(flag.is_enabled(None, Some("premium")));
+        assert!(!flag.is_enabled(None, Some("basic")));
+    }
+
+    #[test]
+    fn test_feature_flag_store() {
+        let store = FeatureFlagStore::new();
+        store.set_flag(FeatureFlag::new("feature_a".into(), true, "Feature A".into()));
+        store.set_flag(FeatureFlag::new("feature_b".into(), false, "Feature B".into()));
+
+        assert!(store.is_enabled("feature_a", None, None));
+        assert!(!store.is_enabled("feature_b", None, None));
+        assert!(!store.is_enabled("unknown_feature", None, None)); // Unknown = disabled
+
+        assert_eq!(store.list_flags().len(), 2);
+        assert!(store.remove_flag("feature_a"));
+        assert_eq!(store.list_flags().len(), 1);
+    }
+
+    #[test]
+    fn test_feature_flag_store_update() {
+        let store = FeatureFlagStore::new();
+        store.set_flag(FeatureFlag::new("feature_a".into(), false, "Feature A".into()));
+        assert!(!store.is_enabled("feature_a", None, None));
+
+        // Update the flag
+        store.set_flag(FeatureFlag::new("feature_a".into(), true, "Feature A updated".into()));
+        assert!(store.is_enabled("feature_a", None, None));
+        assert_eq!(store.list_flags().len(), 1); // Still only 1 flag
+    }
+}

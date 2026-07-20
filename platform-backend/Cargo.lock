@@ -2372,12 +2372,14 @@ dependencies = [
  "platform-logging",
  "platform-messaging",
  "platform-middleware",
+ "platform-proto",
  "redis",
  "sea-orm",
  "serde",
  "serde_json",
  "shared-types",
  "tokio",
+ "tonic",
  "tower 0.5.3",
  "tower-http",
  "tracing",
@@ -2671,8 +2673,10 @@ dependencies = [
 name = "platform-config"
 version = "0.1.0"
 dependencies = [
+ "chrono",
  "config",
  "serde",
+ "serde_json",
  "thiserror 2.0.19",
 ]
 
