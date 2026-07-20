@@ -6,6 +6,7 @@ use crate::domain::aggregates::Invoice;
 use crate::domain::value_objects::InvoiceLineItem;
 use crate::infrastructure::repository::InvoiceRepository;
 use platform_error::{PlatformError, ConflictError};
+use platform_middleware::{evaluate_policy, AbacContext};
 
 #[async_trait]
 pub trait InvoiceService: Send + Sync {
@@ -33,17 +34,23 @@ pub struct CreateInvoiceCommand {
     pub line_items: Vec<InvoiceLineItem>,
     pub due_date: chrono::DateTime<chrono::Utc>,
     pub recipient_email: Option<String>,
+    pub principal_id: Uuid,
+    pub role: String,
 }
 
 #[derive(Debug, Clone)]
 pub struct SendInvoiceCommand {
     pub invoice_id: Uuid,
+    pub principal_id: Uuid,
+    pub role: String,
 }
 
 #[derive(Debug, Clone)]
 pub struct CancelInvoiceCommand {
     pub invoice_id: Uuid,
     pub reason: Option<String>,
+    pub principal_id: Uuid,
+    pub role: String,
 }
 
 #[derive(Debug, Clone)]
@@ -68,6 +75,13 @@ pub struct InvoiceResponse {
 #[async_trait]
 impl InvoiceService for InvoiceServiceImpl {
     async fn create_invoice(&self, cmd: CreateInvoiceCommand) -> Result<InvoiceResponse, PlatformError> {
+        // ABAC check
+        evaluate_policy(&AbacContext {
+            principal_id: cmd.principal_id, role: cmd.role.clone(), action: "create".into(),
+            resource: "invoice".into(), resource_id: None, amount: None,
+            ip_address: None, operator_id: Some(cmd.operator_id),
+        })?;
+
         // Check duplicate (INV-INV-01)
         if self.repo.find_by_order_reference(cmd.operator_id, &cmd.order_reference).await?.is_some() {
             return Err(PlatformError::Conflict(ConflictError::DuplicateOrderInvoice));

@@ -36,6 +36,8 @@ impl GrpcOrchestrationService {
 
         let cmd = crate::application::commands::CreatePaymentIntentCommand {
             operator_id: Uuid::nil(),
+            principal_id: Uuid::nil(),
+            role: "system".to_string(),
             amount,
             idempotency_key,
             purpose: Some(purpose),
@@ -55,6 +57,9 @@ impl GrpcOrchestrationService {
         let cmd = crate::application::commands::AuthorizePaymentIntentCommand {
             payment_intent_id,
             payment_method_token_id,
+            principal_id: Uuid::nil(),
+            role: "system".to_string(),
+            operator_id: Uuid::nil(),
         };
 
         let resp = self.service.authorize(cmd).await?;
@@ -81,6 +86,9 @@ impl GrpcOrchestrationService {
         let cmd = crate::application::commands::CapturePaymentIntentCommand {
             payment_intent_id,
             amount,
+            principal_id: Uuid::nil(),
+            role: "system".to_string(),
+            operator_id: Uuid::nil(),
         };
 
         let resp = self.service.capture(cmd).await?;
@@ -93,6 +101,9 @@ impl GrpcOrchestrationService {
     ) -> Result<String, PlatformError> {
         let cmd = crate::application::commands::VoidPaymentIntentCommand {
             payment_intent_id,
+            principal_id: Uuid::nil(),
+            role: "system".to_string(),
+            operator_id: Uuid::nil(),
         };
 
         let resp = self.service.void(cmd).await?;
@@ -116,6 +127,9 @@ impl GrpcOrchestrationService {
         let cmd = crate::application::commands::RefundPaymentIntentCommand {
             payment_intent_id,
             amount,
+            principal_id: Uuid::nil(),
+            role: "system".to_string(),
+            operator_id: Uuid::nil(),
         };
 
         let resp = self.service.refund(cmd).await?;

@@ -22,7 +22,7 @@ pub fn router(state: AppState) -> Router {
 
 async fn create_invoice(
     State(state): State<AppState>,
-    _auth: AuthPrincipal,
+    auth: AuthPrincipal,
     Json(req): Json<CreateInvoiceRequest>,
 ) -> Result<(StatusCode, Json<InvoiceResponse>), (StatusCode, Json<ErrorResponse>)> {
     let line_items = req.line_items.into_iter().map(|l| crate::domain::value_objects::InvoiceLineItem {
@@ -36,11 +36,13 @@ async fn create_invoice(
         .unwrap_or_else(|_| chrono::Utc::now() + chrono::Duration::days(30));
 
     let cmd = crate::application::services::CreateInvoiceCommand {
-        operator_id: Uuid::nil(), // TODO: Get from auth context
+        operator_id: Uuid::nil(),
         order_reference: req.order_reference,
         line_items,
         due_date,
         recipient_email: req.recipient_email,
+        principal_id: auth.principal_id,
+        role: auth.role.clone(),
     };
 
     match state.service.create_invoice(cmd).await {
@@ -79,9 +81,14 @@ async fn get_invoice(
 
 async fn send_invoice(
     State(state): State<AppState>,
+    auth: AuthPrincipal,
     Path(invoice_id): Path<Uuid>,
 ) -> Result<StatusCode, (StatusCode, Json<ErrorResponse>)> {
-    let cmd = crate::application::services::SendInvoiceCommand { invoice_id };
+    let cmd = crate::application::services::SendInvoiceCommand {
+        invoice_id,
+        principal_id: auth.principal_id,
+        role: auth.role.clone(),
+    };
 
     match state.service.send_invoice(cmd).await {
         Ok(()) => Ok(StatusCode::OK),
@@ -91,11 +98,14 @@ async fn send_invoice(
 
 async fn cancel_invoice(
     State(state): State<AppState>,
+    auth: AuthPrincipal,
     Path(invoice_id): Path<Uuid>,
 ) -> Result<StatusCode, (StatusCode, Json<ErrorResponse>)> {
     let cmd = crate::application::services::CancelInvoiceCommand {
         invoice_id,
         reason: None,
+        principal_id: auth.principal_id,
+        role: auth.role.clone(),
     };
 
     match state.service.cancel_invoice(cmd).await {

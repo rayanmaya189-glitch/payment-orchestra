@@ -3,6 +3,7 @@ use uuid::Uuid;
 use crate::api::AppState;
 use crate::application::commands::*;
 use crate::application::services::DisputeService;
+use platform_middleware::AuthPrincipal;
 
 pub fn router(state: AppState) -> Router {
     Router::new()
@@ -13,7 +14,7 @@ pub fn router(state: AppState) -> Router {
         .with_state(state)
 }
 
-async fn open_dispute(State(state): State<AppState>, Json(req): Json<serde_json::Value>) -> Result<(axum::http::StatusCode, Json<serde_json::Value>), (axum::http::StatusCode, Json<serde_json::Value>)> {
+async fn open_dispute(State(state): State<AppState>, auth: AuthPrincipal, Json(req): Json<serde_json::Value>) -> Result<(axum::http::StatusCode, Json<serde_json::Value>), (axum::http::StatusCode, Json<serde_json::Value>)> {
     let cmd = OpenDisputeCommand {
         payment_intent_id: req["payment_intent_id"].as_str().and_then(|s| Uuid::parse_str(s).ok()).unwrap_or(Uuid::nil()),
         operator_id: req["operator_id"].as_str().and_then(|s| Uuid::parse_str(s).ok()).unwrap_or(Uuid::nil()),
@@ -22,6 +23,8 @@ async fn open_dispute(State(state): State<AppState>, Json(req): Json<serde_json:
         currency: req["currency"].as_str().unwrap_or("AED").to_string(),
         acquirer_reference: req["acquirer_reference"].as_str().unwrap_or("").to_string(),
         connector_id: req["connector_id"].as_str().unwrap_or("").to_string(),
+        principal_id: auth.principal_id,
+        role: auth.role.clone(),
     };
     match state.service.open(cmd).await {
         Ok(id) => Ok((axum::http::StatusCode::CREATED, Json(serde_json::json!({"dispute_id": id.to_string()})))),
@@ -37,17 +40,17 @@ async fn get_dispute(State(state): State<AppState>, Path(id): Path<String>) -> R
     }
 }
 
-async fn submit_evidence(State(state): State<AppState>, Path(id): Path<String>, Json(req): Json<serde_json::Value>) -> Result<Json<serde_json::Value>, (axum::http::StatusCode, Json<serde_json::Value>)> {
+async fn submit_evidence(State(state): State<AppState>, auth: AuthPrincipal, Path(id): Path<String>, Json(req): Json<serde_json::Value>) -> Result<Json<serde_json::Value>, (axum::http::StatusCode, Json<serde_json::Value>)> {
     let did = Uuid::parse_str(&id).unwrap_or(Uuid::nil());
-    match state.service.submit_evidence(SubmitEvidenceCommand { dispute_id: did, evidence: req }).await {
+    match state.service.submit_evidence(SubmitEvidenceCommand { dispute_id: did, evidence: req, principal_id: auth.principal_id, role: auth.role.clone() }).await {
         Ok(()) => Ok(Json(serde_json::json!({"status": "evidence_submitted"}))),
         Err(e) => Err((axum::http::StatusCode::BAD_REQUEST, Json(serde_json::json!({"error": e.to_string()})))),
     }
 }
 
-async fn resolve_dispute(State(state): State<AppState>, Path(id): Path<String>, Json(req): Json<serde_json::Value>) -> Result<Json<serde_json::Value>, (axum::http::StatusCode, Json<serde_json::Value>)> {
+async fn resolve_dispute(State(state): State<AppState>, auth: AuthPrincipal, Path(id): Path<String>, Json(req): Json<serde_json::Value>) -> Result<Json<serde_json::Value>, (axum::http::StatusCode, Json<serde_json::Value>)> {
     let did = Uuid::parse_str(&id).unwrap_or(Uuid::nil());
-    match state.service.resolve(ResolveDisputeCommand { dispute_id: did, decision: req["decision"].as_str().unwrap_or("won").to_string(), reason: req["reason"].as_str().unwrap_or("").to_string() }).await {
+    match state.service.resolve(ResolveDisputeCommand { dispute_id: did, decision: req["decision"].as_str().unwrap_or("won").to_string(), reason: req["reason"].as_str().unwrap_or("").to_string(), principal_id: auth.principal_id, role: auth.role.clone() }).await {
         Ok(()) => Ok(Json(serde_json::json!({"status": "resolved"}))),
         Err(e) => Err((axum::http::StatusCode::BAD_REQUEST, Json(serde_json::json!({"error": e.to_string()})))),
     }

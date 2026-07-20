@@ -5,6 +5,8 @@ use shared_types::Money;
 #[derive(Debug, Clone)]
 pub struct CreatePaymentIntentCommand {
     pub operator_id: Uuid,
+    pub principal_id: Uuid,
+    pub role: String,
     pub amount: Money,
     pub idempotency_key: String,
     pub purpose: Option<String>,
@@ -16,21 +18,33 @@ pub struct CreatePaymentIntentCommand {
 pub struct AuthorizePaymentIntentCommand {
     pub payment_intent_id: Uuid,
     pub payment_method_token_id: Uuid,
+    pub principal_id: Uuid,
+    pub role: String,
+    pub operator_id: Uuid,
 }
 
 #[derive(Debug, Clone)]
 pub struct CapturePaymentIntentCommand {
     pub payment_intent_id: Uuid,
     pub amount: Option<Money>,
+    pub principal_id: Uuid,
+    pub role: String,
+    pub operator_id: Uuid,
 }
 
 #[derive(Debug, Clone)]
 pub struct VoidPaymentIntentCommand {
     pub payment_intent_id: Uuid,
+    pub principal_id: Uuid,
+    pub role: String,
+    pub operator_id: Uuid,
 }
 
 #[derive(Debug, Clone)]
 pub struct RefundPaymentIntentCommand {
     pub payment_intent_id: Uuid,
     pub amount: Money,
+    pub principal_id: Uuid,
+    pub role: String,
+    pub operator_id: Uuid,
 }

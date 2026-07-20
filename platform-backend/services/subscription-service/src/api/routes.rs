@@ -9,6 +9,7 @@ use uuid::Uuid;
 use crate::api::AppState;
 use crate::application::commands::*;
 use crate::application::services::SubscriptionService;
+use platform_middleware::AuthPrincipal;
 
 pub fn router(state: AppState) -> Router {
     Router::new()
@@ -41,6 +42,7 @@ struct SubscriptionResponse {
 
 async fn create_subscription(
     State(state): State<AppState>,
+    auth: AuthPrincipal,
     Json(req): Json<CreateSubscriptionRequest>,
 ) -> Result<(axum::http::StatusCode, Json<SubscriptionResponse>), (axum::http::StatusCode, Json<serde_json::Value>)> {
     let cmd = CreateSubscriptionCommand {
@@ -52,6 +54,8 @@ async fn create_subscription(
         interval_count: req.interval_count,
         trial_period_days: req.trial_period_days,
         payment_method_token_id: req.payment_method_token_id,
+        principal_id: auth.principal_id,
+        role: auth.role.clone(),
     };
 
     match state.service.create_subscription(cmd).await {
@@ -98,19 +102,22 @@ async fn get_subscription(
 }
 
 async fn list_subscriptions(
-    State(_state): State<AppState>,
+    State(state): State<AppState>,
 ) -> Result<Json<serde_json::Value>, (axum::http::StatusCode, Json<serde_json::Value>)> {
     Ok(Json(serde_json::json!({"data": [], "has_more": false})))
 }
 
 async fn cancel_subscription(
     State(state): State<AppState>,
+    auth: AuthPrincipal,
     Path(id): Path<String>,
 ) -> Result<Json<serde_json::Value>, (axum::http::StatusCode, Json<serde_json::Value>)> {
     let sub_id = Uuid::parse_str(&id).unwrap_or(Uuid::nil());
     let cmd = CancelSubscriptionCommand {
         subscription_id: sub_id,
         reason: "user_request".to_string(),
+        principal_id: auth.principal_id,
+        role: auth.role.clone(),
     };
     match state.service.cancel_subscription(cmd).await {
         Ok(()) => Ok(Json(serde_json::json!({"status": "canceled"}))),

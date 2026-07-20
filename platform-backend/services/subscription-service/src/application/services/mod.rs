@@ -7,6 +7,7 @@ use crate::domain::aggregates::Subscription;
 use crate::domain::rules::SubscriptionRepository;
 use crate::domain::value_objects::SubscriptionInterval;
 use platform_error::PlatformError;
+use platform_middleware::{evaluate_policy, AbacContext};
 use shared_types::{CurrencyCode, Money};
 
 pub struct SubscriptionServiceImpl {
@@ -17,6 +18,14 @@ pub struct SubscriptionServiceImpl {
 impl SubscriptionServiceImpl {
     pub fn new(repo: Box<dyn SubscriptionRepository>, db: DatabaseConnection) -> Self {
         Self { repo, db }
+    }
+
+    fn check_abac(principal_id: Uuid, role: &str, action: &str, resource: &str) -> Result<(), PlatformError> {
+        evaluate_policy(&AbacContext {
+            principal_id, role: role.to_string(), action: action.to_string(),
+            resource: resource.to_string(), resource_id: None, amount: None,
+            ip_address: None, operator_id: None,
+        })
     }
 }
 
@@ -31,46 +40,23 @@ pub trait SubscriptionService: Send + Sync {
 #[async_trait]
 impl SubscriptionService for SubscriptionServiceImpl {
     async fn create_subscription(&self, cmd: CreateSubscriptionCommand) -> Result<Uuid, PlatformError> {
-        let amount = Money {
-            amount_minor_units: cmd.amount_minor_units,
-            currency: CurrencyCode::new(&cmd.currency)
-                .map_err(|_| PlatformError::Validation(platform_error::ValidationError::InvalidCurrencyCode))?,
-        };
-
-        let mut sub = Subscription::new(
-            cmd.operator_id,
-            cmd.customer_id,
-            amount,
-            SubscriptionInterval::from_str(&cmd.interval),
-            cmd.interval_count.unwrap_or(1),
-            cmd.trial_period_days.unwrap_or(0),
-        );
-
+        Self::check_abac(cmd.principal_id, &cmd.role, "create", "subscription")?;
+        let amount = Money { amount_minor_units: cmd.amount_minor_units, currency: CurrencyCode::new(&cmd.currency).map_err(|_| PlatformError::Validation(platform_error::ValidationError::InvalidCurrencyCode))? };
+        let mut sub = Subscription::new(cmd.operator_id, cmd.customer_id, amount, SubscriptionInterval::from_str(&cmd.interval), cmd.interval_count.unwrap_or(1), cmd.trial_period_days.unwrap_or(0));
         sub.payment_method_token_id = cmd.payment_method_token_id;
         self.repo.save(&sub).await?;
         Ok(sub.subscription_id)
     }
-
     async fn cancel_subscription(&self, cmd: CancelSubscriptionCommand) -> Result<(), PlatformError> {
+        Self::check_abac(cmd.principal_id, &cmd.role, "update", "subscription")?;
         let mut sub = self.repo.find_by_id(cmd.subscription_id).await?
-            .ok_or_else(|| PlatformError::NotFound {
-                resource: "subscription".to_string(),
-                id: cmd.subscription_id,
-            })?;
-
+            .ok_or_else(|| PlatformError::NotFound { resource: "subscription".into(), id: cmd.subscription_id })?;
         sub.cancel(&cmd.reason);
-        self.repo.save(&sub).await?;
-        Ok(())
+        self.repo.save(&sub).await
     }
-
     async fn get_subscription(&self, id: Uuid) -> Result<Subscription, PlatformError> {
-        self.repo.find_by_id(id).await?
-            .ok_or_else(|| PlatformError::NotFound {
-                resource: "subscription".to_string(),
-                id,
-            })
+        self.repo.find_by_id(id).await?.ok_or_else(|| PlatformError::NotFound { resource: "subscription".into(), id })
     }
-
     async fn list_by_customer(&self, customer_id: Uuid) -> Result<Vec<Subscription>, PlatformError> {
         self.repo.list_by_customer(customer_id).await
     }

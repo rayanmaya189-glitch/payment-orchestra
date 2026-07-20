@@ -12,6 +12,7 @@ use crate::infrastructure::connector_client::{
 };
 use crate::infrastructure::repository::{PaymentIntentRepository, RoutingPolicyRepository};
 use platform_error::{PlatformError, ConflictError};
+use platform_middleware::{evaluate_policy, AbacContext};
 use shared_types::{Money, ActorType};
 use shared_types::events::EventEnvelope;
 
@@ -81,11 +82,37 @@ impl PaymentServiceImpl {
         tracing::debug!(event_type = %event.event_type, aggregate_id = %aggregate_id, "Event written to outbox");
         Ok(())
     }
+
+    /// Check ABAC permission for a command (SRS ABAC-001 through ABAC-008).
+    fn check_abac(
+        &self,
+        principal_id: Uuid,
+        role: &str,
+        action: &str,
+        resource: &str,
+        operator_id: Option<Uuid>,
+        amount: Option<i64>,
+    ) -> Result<(), PlatformError> {
+        let ctx = AbacContext {
+            principal_id,
+            role: role.to_string(),
+            action: action.to_string(),
+            resource: resource.to_string(),
+            resource_id: None,
+            amount,
+            ip_address: None,
+            operator_id,
+        };
+        evaluate_policy(&ctx)
+    }
 }
 
 #[async_trait]
 impl PaymentService for PaymentServiceImpl {
     async fn create_payment_intent(&self, cmd: CreatePaymentIntentCommand) -> Result<PaymentIntentResponse, PlatformError> {
+        // ABAC check: create requires "create" permission on "payment"
+        self.check_abac(cmd.principal_id, &cmd.role, "create", "payment", Some(cmd.operator_id), Some(cmd.amount.amount_minor_units))?;
+
         // Check idempotency (SRS Part 5 §4.1)
         if let Some(existing) = self.intent_repo.find_by_idempotency_key(&cmd.idempotency_key).await? {
             return Ok(intent_to_response(&existing));
@@ -136,6 +163,9 @@ impl PaymentService for PaymentServiceImpl {
     /// On retryable decline, immediately attempts the next candidate.
     /// Max hops enforced per FailoverConfig.max_hops (platform ceiling: 3).
     async fn authorize(&self, cmd: AuthorizePaymentIntentCommand) -> Result<PaymentIntentResponse, PlatformError> {
+        // ABAC check: authorize requires "create" permission on "payment"
+        self.check_abac(cmd.principal_id, &cmd.role, "create", "payment", Some(cmd.operator_id), None)?;
+
         let mut intent = self.intent_repo
             .load(cmd.payment_intent_id)
             .await?
@@ -293,6 +323,9 @@ impl PaymentService for PaymentServiceImpl {
     }
 
     async fn capture(&self, cmd: CapturePaymentIntentCommand) -> Result<PaymentIntentResponse, PlatformError> {
+        // ABAC check: capture requires "update" permission on "payment"
+        self.check_abac(cmd.principal_id, &cmd.role, "update", "payment", Some(cmd.operator_id), cmd.amount.as_ref().map(|a| a.amount_minor_units))?;
+
         let mut intent = self.intent_repo
             .load(cmd.payment_intent_id)
             .await?
@@ -365,6 +398,9 @@ impl PaymentService for PaymentServiceImpl {
     }
 
     async fn void(&self, cmd: VoidPaymentIntentCommand) -> Result<PaymentIntentResponse, PlatformError> {
+        // ABAC check: void requires "update" permission on "payment"
+        self.check_abac(cmd.principal_id, &cmd.role, "update", "payment", Some(cmd.operator_id), None)?;
+
         let mut intent = self.intent_repo
             .load(cmd.payment_intent_id)
             .await?
@@ -415,6 +451,9 @@ impl PaymentService for PaymentServiceImpl {
     }
 
     async fn refund(&self, cmd: RefundPaymentIntentCommand) -> Result<PaymentIntentResponse, PlatformError> {
+        // ABAC check: refund requires "update" permission on "payment"
+        self.check_abac(cmd.principal_id, &cmd.role, "update", "payment", Some(cmd.operator_id), Some(cmd.amount.amount_minor_units))?;
+
         let mut intent = self.intent_repo
             .load(cmd.payment_intent_id)
             .await?

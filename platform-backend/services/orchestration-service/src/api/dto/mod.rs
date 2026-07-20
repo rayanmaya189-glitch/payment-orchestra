@@ -5,6 +5,7 @@ use shared_types::Money;
 
 #[derive(Debug, Deserialize)]
 pub struct CreatePaymentIntentRequest {
+    pub operator_id: Option<Uuid>,
     pub amount: Money,
     pub purpose: Option<String>,
     pub metadata: Option<serde_json::Value>,

@@ -3,6 +3,7 @@ use uuid::Uuid;
 use crate::api::AppState;
 use crate::application::commands::*;
 use crate::application::services::PaymentLinkService;
+use platform_middleware::AuthPrincipal;
 
 pub fn router(state: AppState) -> Router {
     Router::new()
@@ -13,7 +14,7 @@ pub fn router(state: AppState) -> Router {
         .with_state(state)
 }
 
-async fn create_payment_link(State(state): State<AppState>, Json(req): Json<serde_json::Value>) -> Result<(axum::http::StatusCode, Json<serde_json::Value>), (axum::http::StatusCode, Json<serde_json::Value>)> {
+async fn create_payment_link(State(state): State<AppState>, auth: AuthPrincipal, Json(req): Json<serde_json::Value>) -> Result<(axum::http::StatusCode, Json<serde_json::Value>), (axum::http::StatusCode, Json<serde_json::Value>)> {
     let cmd = CreatePaymentLinkCommand {
         operator_id: req["operator_id"].as_str().and_then(|s| Uuid::parse_str(s).ok()).unwrap_or(Uuid::nil()),
         description: req["description"].as_str().unwrap_or("").to_string(),
@@ -22,6 +23,8 @@ async fn create_payment_link(State(state): State<AppState>, Json(req): Json<serd
         currency: req["currency"].as_str().unwrap_or("AED").to_string(),
         max_uses: req["max_uses"].as_i64().map(|v| v as i32),
         expires_in_hours: req["expires_in_hours"].as_i64(),
+        principal_id: auth.principal_id,
+        role: auth.role.clone(),
     };
     match state.service.create(cmd).await {
         Ok(link) => Ok((axum::http::StatusCode::CREATED, Json(serde_json::json!({"link_id": link.link_id.to_string(), "public_token": link.public_token, "status": link.status.as_str()})))),
