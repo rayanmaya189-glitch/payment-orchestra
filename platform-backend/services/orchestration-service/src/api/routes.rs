@@ -10,6 +10,7 @@ use super::AppState;
 use crate::application::commands::*;
 use crate::application::queries::*;
 use crate::application::services::PaymentService;
+use platform_middleware::AuthPrincipal;
 
 pub fn router(state: AppState) -> Router {
     Router::new()
@@ -24,10 +25,12 @@ pub fn router(state: AppState) -> Router {
 
 async fn create_payment_intent(
     State(state): State<AppState>,
+    _auth: AuthPrincipal,
     Json(req): Json<CreatePaymentIntentRequest>,
 ) -> Result<(StatusCode, Json<PaymentIntentResponse>), (StatusCode, Json<ErrorResponse>)> {
+    // ABAC: TODO derive operator_id from auth.principal_id
     let cmd = CreatePaymentIntentCommand {
-        operator_id: Uuid::nil(), // TODO: Get from auth context
+        operator_id: Uuid::nil(),
         amount: req.amount,
         idempotency_key: format!("idem_{}", Uuid::now_v7()),
         purpose: req.purpose,

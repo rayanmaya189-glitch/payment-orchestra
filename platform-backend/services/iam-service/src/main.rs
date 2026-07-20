@@ -73,20 +73,14 @@ async fn main() {
 
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
 
-    // Graceful shutdown
-    let shutdown_signal = async {
-        tokio::signal::ctrl_c()
-            .await
-            .expect("Failed to install Ctrl+C handler");
-        tracing::info!("Shutdown signal received, starting graceful shutdown...");
-    };
+    let shutdown_signal = platform_middleware::shutdown_signal(
+        platform_middleware::ShutdownConfig::critical("iam-service"),
+    );
 
     axum::serve(listener, app)
         .with_graceful_shutdown(shutdown_signal)
         .await
         .unwrap();
-
-    tracing::info!("IAM service shut down gracefully");
 }
 
 async fn healthz() -> &'static str {

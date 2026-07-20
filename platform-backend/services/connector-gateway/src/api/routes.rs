@@ -8,6 +8,7 @@ use uuid::Uuid;
 use super::dto::*;
 use super::AppState;
 use crate::application::services::GatewayService;
+use platform_middleware::AuthPrincipal;
 
 pub fn router(state: AppState) -> Router {
     Router::new()
@@ -24,10 +25,15 @@ pub fn router(state: AppState) -> Router {
 
 async fn create_profile(
     State(state): State<AppState>,
+    _auth: AuthPrincipal,
     Json(req): Json<CreateGatewayProfileRequest>,
 ) -> Result<(StatusCode, Json<GatewayProfileResponse>), (StatusCode, Json<ErrorResponse>)> {
+    // ABAC: principal_id from JWT; operator_id derivation requires principal→operator mapping
+    // TODO: Replace with proper operator_id lookup from auth context
+    let operator_id = Uuid::nil();
+
     let cmd = crate::application::services::CreateGatewayProfileCommand {
-        operator_id: Uuid::nil(), // TODO: Get from auth context
+        operator_id,
         connector_id: req.connector_id,
         merchant_acquirer_link_id: req.merchant_acquirer_link_id,
         base_url: req.base_url,
@@ -146,9 +152,14 @@ async fn validate_transaction(
 
 async fn select_gateway(
     State(state): State<AppState>,
+    auth: AuthPrincipal,
     Path(operator_id): Path<Uuid>,
     Json(req): Json<SelectGatewayRequest>,
 ) -> Result<Json<GatewaySelectionResponse>, (StatusCode, Json<ErrorResponse>)> {
+    // ABAC: Verify the authenticated principal has access to this operator
+    // TODO: Check auth.principal_id has permission for operator_id
+    let _ = &auth;
+
     let cmd = crate::application::services::SelectGatewayCommand {
         operator_id,
         amount: req.amount,

@@ -10,6 +10,7 @@ platform-config.workspace = true
 platform-logging.workspace = true
 platform-db.workspace = true
 platform-middleware.workspace = true
+platform-messaging.workspace = true
 
 tokio.workspace = true
 axum.workspace = true

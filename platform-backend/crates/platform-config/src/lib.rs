@@ -43,9 +43,17 @@ pub struct NatsConfig {
 /// All secrets loaded from environment variables, NEVER hardcoded.
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
 pub struct AuthConfig {
-    /// JWT signing secret — loaded from PLATFORM__AUTH__JWT_SECRET env var.
-    /// CRITICAL: Must be at least 256 bits (32 bytes) for HS256.
+    /// JWT signing secret — for HS256 (test/development only).
+    /// Production MUST use RSA keys via jwt_private_key_pem / jwt_public_key_pem.
     pub jwt_secret: String,
+    /// RSA private key PEM for JWT signing (SRS AUTH-017: RS256).
+    /// Loaded from PLATFORM__AUTH__JWT_PRIVATE_KEY_PEM env var (multiline).
+    /// When set, overrides jwt_secret for signing.
+    pub jwt_private_key_pem: Option<String>,
+    /// RSA public key PEM for JWT verification (SRS AUTH-017: RS256).
+    /// Loaded from PLATFORM__AUTH__JWT_PUBLIC_KEY_PEM env var (multiline).
+    /// When set, overrides jwt_secret for verification.
+    pub jwt_public_key_pem: Option<String>,
     /// JWT access token lifetime in seconds (default: 900 = 15 minutes per SRS AUTH-002)
     pub jwt_access_token_ttl_secs: u64,
     /// JWT refresh token lifetime in seconds (default: 604800 = 7 days per SRS AUTH-002)
@@ -142,6 +150,8 @@ impl Default for AppConfig {
             auth: AuthConfig {
                 // Test-only default — production MUST use from_env_or_panic()
                 jwt_secret: "test-only-insecure-secret-not-for-production-32bytes!!".to_string(),
+                jwt_private_key_pem: None,
+                jwt_public_key_pem: None,
                 jwt_access_token_ttl_secs: 900,        // 15 minutes
                 jwt_refresh_token_ttl_secs: 604800,     // 7 days
                 refresh_token_rotation_window_secs: 300, // 5 minutes

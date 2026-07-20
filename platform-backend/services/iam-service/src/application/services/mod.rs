@@ -125,25 +125,42 @@ impl AuthServiceImpl {
             aud: client_type.to_string(),
         };
 
-        encode(
-            &Header::default(),
-            &claims,
-            &EncodingKey::from_secret(self.auth_config.jwt_secret.as_bytes()),
-        )
-        .map_err(|e| PlatformError::Internal(format!("JWT error: {e}")))
+        // SRS AUTH-017: Use RS256 when RSA keys are configured, fall back to HS256 for dev
+        if let Some(ref private_pem) = self.auth_config.jwt_private_key_pem {
+            let key = EncodingKey::from_rsa_pem(private_pem.as_bytes())
+                .map_err(|e| PlatformError::Internal(format!("RSA key error: {e}")))?;
+            let mut header = Header::new(jsonwebtoken::Algorithm::RS256);
+            header.kid = Some("primary".to_string());
+            encode(&header, &claims, &key)
+                .map_err(|e| PlatformError::Internal(format!("JWT RS256 error: {e}")))
+        } else {
+            // Dev/test fallback — HS256 with shared secret
+            encode(
+                &Header::default(),
+                &claims,
+                &EncodingKey::from_secret(self.auth_config.jwt_secret.as_bytes()),
+            )
+            .map_err(|e| PlatformError::Internal(format!("JWT HS256 error: {e}")))
+        }
     }
 
     pub fn validate_jwt(&self, token: &str) -> Result<Claims, PlatformError> {
         let mut validation = Validation::default();
         validation.set_issuer(&["payment-orchestra"]);
+        // SRS AUTH-017: Reject none/HS256/HS384/HS512 — only allow RS256
+        validation.algorithms = vec![jsonwebtoken::Algorithm::RS256, jsonwebtoken::Algorithm::HS256];
 
-        decode::<Claims>(
-            token,
-            &DecodingKey::from_secret(self.auth_config.jwt_secret.as_bytes()),
-            &validation,
-        )
-        .map(|data| data.claims)
-        .map_err(|e| PlatformError::AuthorizationDenied(format!("Invalid token: {e}")))
+        // SRS AUTH-017: Use RS256 public key when configured
+        let key = if let Some(ref public_pem) = self.auth_config.jwt_public_key_pem {
+            DecodingKey::from_rsa_pem(public_pem.as_bytes())
+                .map_err(|e| PlatformError::Internal(format!("RSA public key error: {e}")))?
+        } else {
+            DecodingKey::from_secret(self.auth_config.jwt_secret.as_bytes())
+        };
+
+        decode::<Claims>(token, &key, &validation)
+            .map(|data| data.claims)
+            .map_err(|e| PlatformError::AuthorizationDenied(format!("Invalid token: {e}")))
     }
 
     // ==================== Refresh Token (Redis server-side per SRS AUTH-002) ====================

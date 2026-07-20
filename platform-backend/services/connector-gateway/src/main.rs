@@ -53,12 +53,10 @@ async fn main() {
     tracing::info!("Connector gateway listening on {addr}");
 
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
-    let shutdown_signal = async {
-        tokio::signal::ctrl_c().await.expect("Failed to install Ctrl+C handler");
-        tracing::info!("Shutdown signal received...");
-    };
+    let shutdown_signal = platform_middleware::shutdown_signal(
+        platform_middleware::ShutdownConfig::critical("connector-gateway"),
+    );
     axum::serve(listener, app).with_graceful_shutdown(shutdown_signal).await.unwrap();
-    tracing::info!("Connector gateway shut down gracefully");
 }
 
 async fn healthz() -> &'static str { "ok" }

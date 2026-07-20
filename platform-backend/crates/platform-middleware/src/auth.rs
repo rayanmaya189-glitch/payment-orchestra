@@ -17,6 +17,7 @@ use std::task::{Context, Poll};
 use tower::{Layer, Service};
 
 use platform_config::AuthConfig;
+use platform_error::PlatformError;
 
 /// Decoded JWT claims — matches IAM service Claims struct.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -134,13 +135,34 @@ where
 
             match token {
                 Some(token_str) => {
-                    // Validate JWT
-                    let mut validation = Validation::new(Algorithm::HS256);
+                    // SRS AUTH-017: Support both RS256 (production) and HS256 (dev)
+                    // Determine decoding key based on config
+                    let (key, allowed_algorithms) = if let Some(ref public_pem) = config.jwt_public_key_pem {
+                        (
+                            DecodingKey::from_rsa_pem(public_pem.as_bytes())
+                                .map_err(|e| PlatformError::Internal(format!("RSA key error: {e}")))
+                                .ok()
+                                .map(|k| k as DecodingKey),
+                            vec![Algorithm::RS256],
+                        )
+                    } else {
+                        (
+                            Some(DecodingKey::from_secret(config.jwt_secret.as_bytes())),
+                            vec![Algorithm::HS256],
+                        )
+                    };
+
+                    let Some(decoding_key) = key else {
+                        return Ok(forbidden_response("Server configuration error"));
+                    };
+
+                    let mut validation = Validation::new(allowed_algorithms.first().copied().unwrap_or(Algorithm::HS256));
                     validation.set_issuer(&["payment-orchestra"]);
+                    validation.algorithms = allowed_algorithms;
 
                     match decode::<Claims>(
                         token_str,
-                        &DecodingKey::from_secret(config.jwt_secret.as_bytes()),
+                        &decoding_key,
                         &validation,
                     ) {
                         Ok(token_data) => {

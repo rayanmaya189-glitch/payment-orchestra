@@ -85,6 +85,7 @@ platform-logging = { path = "crates/platform-logging" }
 platform-config = { path = "crates/platform-config" }
 platform-db = { path = "crates/platform-db" }
 platform-middleware = { path = "crates/platform-middleware" }
+platform-messaging = { path = "crates/platform-messaging" }
 
 # sqlx removed — SeaORM uses its own sqlx-postgres adapter internally
 
