@@ -19,3 +19,6 @@ sea-orm.workspace = true
 uuid.workspace = true
 tracing.workspace = true
 async-trait.workspace = true
+platform-api.workspace = true
+platform-middleware.workspace = true
+utoipa-swagger-ui = { workspace = true, features = ["axum"] }

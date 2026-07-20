@@ -66,6 +66,11 @@ hex = "0.4"
 # Validation
 validator = { version = "0.19", features = ["derive"] }
 
+# OpenAPI / Swagger
+utoipa = { version = "5", features = ["axum_extras", "chrono", "uuid"] }
+utoipa-axum = "0.2"
+utoipa-swagger-ui = { version = "9", features = ["axum"] }
+
 # HTTP
 http = "1"
 
@@ -87,6 +92,7 @@ platform-db = { path = "crates/platform-db" }
 platform-middleware = { path = "crates/platform-middleware" }
 platform-messaging = { path = "crates/platform-messaging" }
 platform-proto = { path = "crates/platform-proto" }
+platform-api = { path = "crates/platform-api" }
 
 # sqlx removed — SeaORM uses its own sqlx-postgres adapter internally
 
