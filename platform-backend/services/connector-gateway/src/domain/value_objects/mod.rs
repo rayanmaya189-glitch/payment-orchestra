@@ -229,6 +229,7 @@ pub struct AuthorizeRequest {
     pub card_token: String,
     pub currency: CurrencyCode,
     pub merchant_reference: String,
+    pub idempotency_key: String,
     pub metadata: Option<serde_json::Value>,
 }
 

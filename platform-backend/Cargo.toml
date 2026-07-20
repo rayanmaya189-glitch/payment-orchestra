@@ -74,6 +74,9 @@ utoipa-swagger-ui = { version = "9", features = ["axum"] }
 # HTTP
 http = "1"
 
+# HTTP client
+reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
+
 # IP parsing
 ipnet = "2"
 
