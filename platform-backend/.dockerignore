@@ -1,0 +1,37 @@
+# Build artifacts
+target/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Git
+.git/
+.gitignore
+
+# Documentation
+docs/
+*.md
+LICENSE
+
+# CI/CD
+.github/
+.gitlab-ci.yml
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Test files
+tests/
+**/tests/
+
+# Proto files (not needed at runtime)
+proto/
+
+# Temporary files
+*.tmp
+*.bak

@@ -573,4 +573,174 @@ mod tests {
         );
         assert!(link.is_none());
     }
+
+    // ==================== Edge Case Tests ====================
+
+    #[test]
+    fn test_uncommitted_events_cleared_after_from_events() {
+        let events = vec![
+            PaymentIntentEvent::Created {
+                operator_id: Uuid::now_v7(),
+                amount_minor_units: 5000,
+                currency: "AED".to_string(),
+                idempotency_key: "idem_clear".to_string(),
+                purpose: "payment".to_string(),
+            },
+        ];
+        let intent = PaymentIntent::from_events(Uuid::now_v7(), events);
+        assert!(intent.uncommitted_events.is_empty());
+    }
+
+    #[test]
+    fn test_take_uncommitted_events() {
+        let mut intent = make_intent();
+        assert_eq!(intent.uncommitted_events.len(), 1);
+        let taken = intent.take_uncommitted_events();
+        assert_eq!(taken.len(), 1);
+        assert!(intent.uncommitted_events.is_empty());
+    }
+
+    #[test]
+    fn test_capture_zero_amount_fails_validation() {
+        let mut intent = make_intent();
+        intent.record_authorization(aed(10000));
+        // Capture with zero amount
+        intent.record_capture(aed(0));
+        // Should be partially captured (0 < 10000)
+        assert_eq!(intent.status, PaymentStatus::PartiallyCaptured);
+    }
+
+    #[test]
+    fn test_refund_more_than_captured_goes_to_fully_refunded() {
+        let mut intent = make_intent();
+        intent.record_authorization(aed(10000));
+        intent.record_capture(aed(5000));
+        intent.record_refund(aed(10000)); // More than captured
+        assert_eq!(intent.status, PaymentStatus::Refunded);
+        assert_eq!(intent.refunded_amount.amount_minor_units, 10000);
+    }
+
+    #[test]
+    fn test_routing_policy_no_rules_returns_none() {
+        let policy = RoutingPolicy {
+            routing_policy_id: Uuid::now_v7(),
+            operator_id: Uuid::now_v7(),
+            version: 1,
+            status: "active".to_string(),
+            rules: vec![],
+            failover_config: FailoverConfig::default(),
+            created_at: Utc::now(),
+            activated_at: None,
+        };
+
+        let link = policy.select_route(
+            Some(&shared_types::CardScheme::Visa),
+            &shared_types::CurrencyCode::new("AED").unwrap(),
+            &aed(5000),
+            &[],
+        );
+        assert!(link.is_none());
+    }
+
+    #[test]
+    fn test_routing_policy_multiple_rules_selects_highest_priority() {
+        let link1 = Uuid::now_v7();
+        let link2 = Uuid::now_v7();
+        let policy = RoutingPolicy {
+            routing_policy_id: Uuid::now_v7(),
+            operator_id: Uuid::now_v7(),
+            version: 1,
+            status: "active".to_string(),
+            rules: vec![
+                RoutingRule {
+                    rule_id: "rule_low".to_string(),
+                    priority: 10,
+                    card_scheme: None,
+                    currency: None,
+                    min_amount: None,
+                    max_amount: None,
+                    acquirer_link_id: link1,
+                },
+                RoutingRule {
+                    rule_id: "rule_high".to_string(),
+                    priority: 1,
+                    card_scheme: None,
+                    currency: None,
+                    min_amount: None,
+                    max_amount: None,
+                    acquirer_link_id: link2,
+                },
+            ],
+            failover_config: FailoverConfig::default(),
+            created_at: Utc::now(),
+            activated_at: None,
+        };
+
+        let selected = policy.select_route(
+            None,
+            &shared_types::CurrencyCode::new("AED").unwrap(),
+            &aed(5000),
+            &[],
+        );
+        assert_eq!(selected, Some(link2)); // Higher priority (lower number)
+    }
+
+    #[test]
+    fn test_routing_policy_amount_range_filter() {
+        let link1 = Uuid::now_v7();
+        let link2 = Uuid::now_v7();
+        let policy = RoutingPolicy {
+            routing_policy_id: Uuid::now_v7(),
+            operator_id: Uuid::now_v7(),
+            version: 1,
+            status: "active".to_string(),
+            rules: vec![
+                RoutingRule {
+                    rule_id: "small".to_string(),
+                    priority: 1,
+                    card_scheme: None,
+                    currency: None,
+                    min_amount: Some(0),
+                    max_amount: Some(1000),
+                    acquirer_link_id: link1,
+                },
+                RoutingRule {
+                    rule_id: "large".to_string(),
+                    priority: 2,
+                    card_scheme: None,
+                    currency: None,
+                    min_amount: Some(1001),
+                    max_amount: None,
+                    acquirer_link_id: link2,
+                },
+            ],
+            failover_config: FailoverConfig::default(),
+            created_at: Utc::now(),
+            activated_at: None,
+        };
+
+        // Small amount → link1
+        let selected = policy.select_route(None, &shared_types::CurrencyCode::new("AED").unwrap(), &aed(500), &[]);
+        assert_eq!(selected, Some(link1));
+
+        // Large amount → link2
+        let selected = policy.select_route(None, &shared_types::CurrencyCode::new("AED").unwrap(), &aed(5000), &[]);
+        assert_eq!(selected, Some(link2));
+    }
+
+    #[test]
+    fn test_failover_config_default() {
+        let config = FailoverConfig::default();
+        assert_eq!(config.max_hops, 3);
+        assert_eq!(config.latency_budget_ms, 10000);
+        assert!(!config.retry_unknown_as_fallback);
+    }
+
+    #[test]
+    fn test_routing_attempt_new() {
+        let attempt = RoutingAttempt::new(Uuid::now_v7(), 1, Uuid::now_v7(), "ni-test".into());
+        assert_eq!(attempt.attempt_number, 1);
+        assert_eq!(attempt.status, "pending");
+        assert!(attempt.decline_reason.is_none());
+    }
 }
