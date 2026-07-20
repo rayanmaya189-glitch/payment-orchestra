@@ -1,4 +1,12 @@
 pub mod network_international;
+pub mod fawry;
+pub mod tap;
+pub mod hyperpay;
+
+pub use network_international::NetworkInternationalConnector;
+pub use fawry::FawryConnector;
+pub use tap::TapConnector;
+pub use hyperpay::HyperPayConnector;
 
 use async_trait::async_trait;
 use sea_orm::{DatabaseConnection, EntityTrait, QueryFilter, ColumnTrait, ActiveModelTrait, QueryOrder};
