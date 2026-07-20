@@ -1,0 +1,91 @@
+syntax = "proto3";
+package reconciliation;
+
+service ReconciliationService {
+  rpc GetReconciliationExceptions(GetExceptionsRequest) returns (GetExceptionsResponse);
+  rpc ResolveException(ResolveExceptionRequest) returns (ResolveExceptionResponse);
+  rpc GetSettlementBatches(GetBatchesRequest) returns (GetBatchesResponse);
+  rpc IngestSettlementBatch(IngestSettlementRequest) returns (IngestSettlementResponse);
+  rpc VerifyLedgerBalance(VerifyLedgerRequest) returns (VerifyLedgerResponse);
+}
+
+message GetExceptionsRequest {
+  string operator_id = 1;
+  string status = 2;
+  string cursor = 3;
+  uint32 limit = 4;
+}
+
+message GetExceptionsResponse {
+  repeated ReconciliationException exceptions = 1;
+}
+
+message ReconciliationException {
+  string exception_id = 1;
+  string settlement_record_id = 2;
+  string payment_intent_id = 3;
+  int64 amount_minor_units = 4;
+  string currency_code = 5;
+  string status = 6;
+  string classification = 7;
+  string detected_at = 8;
+}
+
+message ResolveExceptionRequest {
+  string exception_id = 1;
+  string resolution = 2;
+  string payment_intent_id = 3;
+  string note = 4;
+}
+
+message ResolveExceptionResponse {
+  string status = 1;
+}
+
+message GetBatchesRequest {
+  string operator_id = 1;
+  string cursor = 2;
+  uint32 limit = 3;
+}
+
+message GetBatchesResponse {
+  repeated SettlementBatchView batches = 1;
+  string next_cursor = 2;
+  bool has_more = 3;
+}
+
+message SettlementBatchView {
+  string batch_id = 1;
+  string status = 2;
+  int32 total_records = 3;
+  int32 matched_count = 4;
+  int32 unmatched_count = 5;
+  int64 total_amount_minor_units = 6;
+  string total_currency_code = 7;
+  string ingested_at = 8;
+  string processed_at = 9;
+}
+
+message IngestSettlementRequest {
+  string operator_id = 1;
+  string acquirer_link_id = 2;
+  bytes file_content = 3;
+  string file_format = 4;
+}
+
+message IngestSettlementResponse {
+  string batch_id = 1;
+  string status = 2;
+  int32 total_records = 3;
+}
+
+message VerifyLedgerRequest {
+  string transaction_id = 1;
+}
+
+message VerifyLedgerResponse {
+  string transaction_id = 1;
+  bool balanced = 2;
+  int64 total_debits = 3;
+  int64 total_credits = 4;
+}

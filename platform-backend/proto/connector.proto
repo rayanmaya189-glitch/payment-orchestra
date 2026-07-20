@@ -79,3 +79,13 @@ message CapabilitiesResponse {
   repeated string supported_card_schemes = 4;
   repeated string supported_currencies = 5;
 }
+
+message Money {
+  int64 amount_minor_units = 1;
+  string currency_code = 2;
+}
+
+message PaginationResponse {
+  string next_cursor = 1;
+  bool has_more = 2;
+}

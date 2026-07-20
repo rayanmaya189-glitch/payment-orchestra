@@ -120,3 +120,13 @@ message RoutingPolicyView {
   repeated RoutingRule rules = 4;
   FailoverConfig failover_config = 5;
 }
+
+message Money {
+  int64 amount_minor_units = 1;
+  string currency_code = 2;
+}
+
+message PaginationResponse {
+  string next_cursor = 1;
+  bool has_more = 2;
+}

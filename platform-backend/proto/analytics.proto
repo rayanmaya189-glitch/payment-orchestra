@@ -1,0 +1,112 @@
+syntax = "proto3";
+package analytics;
+
+import "common.proto";
+
+service AnalyticsService {
+  rpc GetAuthorizationRates(GetAuthRatesRequest) returns (GetAuthRatesResponse);
+  rpc GetDeclineReasons(GetDeclineReasonsRequest) returns (GetDeclineReasonsResponse);
+  rpc GetSettlementStatus(GetSettlementStatusRequest) returns (GetSettlementStatusResponse);
+  rpc GetFeeAnalysis(GetFeeAnalysisRequest) returns (GetFeeAnalysisResponse);
+  rpc GetChargebackTrends(GetChargebackTrendsRequest) returns (GetChargebackTrendsResponse);
+  rpc GetTransactionVolume(GetTransactionVolumeRequest) returns (GetTransactionVolumeResponse);
+}
+
+message GetAuthRatesRequest {
+  string operator_id = 1;
+  string granularity = 2;
+  string start_date = 3;
+  string end_date = 4;
+}
+
+message GetAuthRatesResponse {
+  repeated DataPoint data_points = 1;
+  double average_rate = 2;
+}
+
+message GetDeclineReasonsRequest {
+  string operator_id = 1;
+  string start_date = 2;
+  string end_date = 3;
+}
+
+message GetDeclineReasonsResponse {
+  repeated DeclineReasonCount reasons = 1;
+}
+
+message DeclineReasonCount {
+  string reason = 1;
+  int64 count = 2;
+  double percentage = 3;
+}
+
+message GetSettlementStatusRequest {
+  string operator_id = 1;
+  string start_date = 2;
+  string end_date = 3;
+}
+
+message GetSettlementStatusResponse {
+  int64 total_settled = 1;
+  int64 total_pending = 2;
+  int64 total_unmatched = 3;
+  Money total_amount = 4;
+}
+
+message GetFeeAnalysisRequest {
+  string operator_id = 1;
+  string start_date = 2;
+  string end_date = 3;
+}
+
+message GetFeeAnalysisResponse {
+  Money total_fees = 1;
+  double average_fee_percentage = 2;
+  repeated FeeBreakdown breakdown = 3;
+}
+
+message FeeBreakdown {
+  string connector_name = 1;
+  Money total_fees = 2;
+  double average_fee_percentage = 3;
+}
+
+message GetChargebackTrendsRequest {
+  string operator_id = 1;
+  string granularity = 2;
+  string start_date = 3;
+  string end_date = 4;
+}
+
+message GetChargebackTrendsResponse {
+  repeated DataPoint data_points = 1;
+  double average_rate = 2;
+}
+
+message GetTransactionVolumeRequest {
+  string operator_id = 1;
+  string granularity = 2;
+  string start_date = 3;
+  string end_date = 4;
+}
+
+message GetTransactionVolumeResponse {
+  repeated DataPoint data_points = 1;
+  int64 total_volume = 2;
+}
+
+message DataPoint {
+  string timestamp = 1;
+  double value = 2;
+  string label = 3;
+}
+
+message Money {
+  int64 amount_minor_units = 1;
+  string currency_code = 2;
+}
+
+message PaginationResponse {
+  string next_cursor = 1;
+  bool has_more = 2;
+}

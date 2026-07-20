@@ -22,3 +22,47 @@ pub mod connector {
 pub mod compliance {
     tonic::include_proto!("compliance");
 }
+
+pub mod operator {
+    tonic::include_proto!("operator");
+}
+
+pub mod reconciliation {
+    tonic::include_proto!("reconciliation");
+}
+
+pub mod invoice {
+    tonic::include_proto!("invoice");
+}
+
+pub mod subscription {
+    tonic::include_proto!("subscription");
+}
+
+pub mod dispute {
+    tonic::include_proto!("dispute");
+}
+
+pub mod risk {
+    tonic::include_proto!("risk");
+}
+
+pub mod notification {
+    tonic::include_proto!("notification");
+}
+
+pub mod analytics {
+    tonic::include_proto!("analytics");
+}
+
+pub mod saga {
+    tonic::include_proto!("saga");
+}
+
+pub mod ai_assistant {
+    tonic::include_proto!("ai_assistant");
+}
+
+pub mod document {
+    tonic::include_proto!("document");
+}

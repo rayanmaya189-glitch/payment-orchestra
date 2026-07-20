@@ -1,0 +1,68 @@
+syntax = "proto3";
+package risk;
+
+import "common.proto";
+
+service RiskService {
+  rpc AssessRisk(AssessRiskRequest) returns (AssessRiskResponse);
+  rpc GetAssessment(GetAssessmentRequest) returns (RiskAssessmentView);
+  rpc ListAssessments(ListAssessmentsRequest) returns (ListAssessmentsResponse);
+}
+
+message AssessRiskRequest {
+  string payment_intent_id = 1;
+  Money amount = 2;
+  string card_scheme = 3;
+  string currency = 4;
+}
+
+message AssessRiskResponse {
+  string assessment_id = 1;
+  double score = 2;
+  string decision = 3;
+  repeated RiskFactor factors = 4;
+}
+
+message RiskFactor {
+  string factor = 1;
+  double score = 2;
+  double weight = 3;
+  string description = 4;
+}
+
+message GetAssessmentRequest {
+  string assessment_id = 1;
+}
+
+message RiskAssessmentView {
+  string assessment_id = 1;
+  string payment_intent_id = 2;
+  double score = 3;
+  string decision = 4;
+  repeated RiskFactor factors = 5;
+  Money amount = 6;
+  string created_at = 7;
+}
+
+message ListAssessmentsRequest {
+  string operator_id = 1;
+  string decision = 2;
+  string cursor = 3;
+  uint32 limit = 4;
+}
+
+message ListAssessmentsResponse {
+  repeated RiskAssessmentView assessments = 1;
+  string next_cursor = 2;
+  bool has_more = 3;
+}
+
+message Money {
+  int64 amount_minor_units = 1;
+  string currency_code = 2;
+}
+
+message PaginationResponse {
+  string next_cursor = 1;
+  bool has_more = 2;
+}

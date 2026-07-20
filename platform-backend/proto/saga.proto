@@ -1,0 +1,69 @@
+syntax = "proto3";
+package saga;
+
+service SagaService {
+  rpc GetSagaInstance(GetSagaInstanceRequest) returns (SagaInstanceView);
+  rpc ListSagaInstances(ListSagaInstancesRequest) returns (ListSagaInstancesResponse);
+  rpc RetrySagaStep(RetrySagaStepRequest) returns (RetrySagaStepResponse);
+  rpc CompensateSaga(CompensateSagaRequest) returns (CompensateSagaResponse);
+}
+
+message GetSagaInstanceRequest {
+  string saga_id = 1;
+}
+
+message SagaInstanceView {
+  string saga_id = 1;
+  string saga_type = 2;
+  string aggregate_id = 3;
+  string aggregate_type = 4;
+  string status = 5;
+  uint32 current_step = 6;
+  uint32 total_steps = 7;
+  repeated SagaStepView steps = 8;
+  string created_at = 9;
+  string updated_at = 10;
+  string completed_at = 11;
+}
+
+message SagaStepView {
+  uint32 step_id = 1;
+  string name = 2;
+  string service = 3;
+  string action = 4;
+  string compensation_action = 5;
+  string status = 6;
+  string error = 7;
+  string started_at = 8;
+  string completed_at = 9;
+}
+
+message ListSagaInstancesRequest {
+  string saga_type = 1;
+  string status = 2;
+  string cursor = 3;
+  uint32 limit = 4;
+}
+
+message ListSagaInstancesResponse {
+  repeated SagaInstanceView instances = 1;
+  string next_cursor = 2;
+  bool has_more = 3;
+}
+
+message RetrySagaStepRequest {
+  string saga_id = 1;
+  uint32 step_id = 2;
+}
+
+message RetrySagaStepResponse {
+  string status = 1;
+}
+
+message CompensateSagaRequest {
+  string saga_id = 1;
+}
+
+message CompensateSagaResponse {
+  string status = 1;
+}
