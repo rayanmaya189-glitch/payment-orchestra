@@ -1,0 +1,18 @@
+# cargo-audit configuration — vulnerability scanning (SRS SUPPLY-004)
+# Run: cargo audit
+
+[database]
+# Use RustSec advisory database (default)
+path = "~/.cargo/audit/advisory-db"
+
+[output]
+# Show all advisories including informational
+deny = ["unmaintained", "yanked"]
+# Ignore list — add SRS-approved exceptions here with justification
+# ignore = [
+#     { id = "RUSTSEC-XXXX-XXXX", reason = "SRS OQ-XXX: accepted risk, mitigated by ..." },
+# ]
+
+[target]
+# Audit all targets
+all = true

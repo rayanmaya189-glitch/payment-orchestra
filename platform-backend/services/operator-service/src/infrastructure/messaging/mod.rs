@@ -64,14 +64,20 @@ impl EventPublisher {
         let id = uuid::Uuid::now_v7();
         let now = chrono::Utc::now();
 
-        db.execute(Statement::from_string(
+        // Parameterized query — prevents SQL injection (OWASP A03)
+        db.execute(Statement::from_sql_and_values(
             sea_orm::DatabaseBackend::Postgres,
-            format!(
-                "INSERT INTO outbox (outbox_id, aggregate_type, aggregate_id, event_type, event_version, payload, created_at)
-                 VALUES ('{}', '{}', '{}', '{}', {}, E'\\\\x{}'::bytea, '{}')",
-                id, aggregate_type, aggregate_id, event.event_type, event.event_version,
-                hex::encode(&payload), now.to_rfc3339()
-            ),
+            "INSERT INTO outbox (outbox_id, aggregate_type, aggregate_id, event_type, event_version, payload, created_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7)",
+            vec![
+                id.into(),
+                aggregate_type.into(),
+                aggregate_id.into(),
+                event.event_type.clone().into(),
+                event.event_version.into(),
+                hex::encode(&payload).into(),
+                now.to_rfc3339().into(),
+            ],
         ))
         .await
         .map_err(|e| PlatformError::Internal(format!("Failed to write outbox: {e}")))?;

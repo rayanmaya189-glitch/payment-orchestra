@@ -67,14 +67,23 @@ where
 // ==================== JWT Middleware ====================
 
 /// Layer that adds JWT authentication to all routes.
+///
+/// When `require` is true (default), requests without a valid JWT are rejected with 401.
+/// When `require` is false, unauthenticated requests pass through (useful for mixed routes).
 #[derive(Clone)]
 pub struct JwtAuthLayer {
     config: AuthConfig,
+    require: bool,
 }
 
 impl JwtAuthLayer {
     pub fn new(config: AuthConfig) -> Self {
-        Self { config }
+        Self { config, require: true }
+    }
+
+    /// Create a layer that does NOT require authentication (pass-through for unauthenticated).
+    pub fn optional(config: AuthConfig) -> Self {
+        Self { config, require: false }
     }
 }
 
@@ -85,6 +94,7 @@ impl<S> Layer<S> for JwtAuthLayer {
         JwtAuthService {
             inner,
             config: self.config.clone(),
+            require: self.require,
         }
     }
 }
@@ -93,6 +103,7 @@ impl<S> Layer<S> for JwtAuthLayer {
 pub struct JwtAuthService<S> {
     inner: S,
     config: AuthConfig,
+    require: bool,
 }
 
 impl<S> Service<http::Request<Body>> for JwtAuthService<S>
@@ -110,6 +121,7 @@ where
 
     fn call(&mut self, mut req: http::Request<Body>) -> Self::Future {
         let config = self.config.clone();
+        let require = self.require;
         let mut inner = self.inner.clone();
 
         Box::pin(async move {
@@ -157,8 +169,14 @@ where
                     }
                 }
                 None => {
-                    // No Authorization header — pass through (other auth methods may apply)
-                    inner.call(req).await
+                    // No Authorization header
+                    if require {
+                        // Authentication required — reject
+                        Ok(forbidden_response("Authentication required"))
+                    } else {
+                        // Optional auth — pass through
+                        inner.call(req).await
+                    }
                 }
             }
         })

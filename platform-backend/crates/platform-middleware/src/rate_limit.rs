@@ -8,6 +8,9 @@ use axum::body::Body;
 use axum::http::StatusCode;
 use tower::{Layer, Service};
 use std::task::{Context, Poll};
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
+use std::time::{Instant, Duration};
 use redis::aio::ConnectionManager;
 
 /// Configuration for rate limiting.
@@ -49,16 +52,53 @@ end
 return {current, 0}
 "#;
 
+/// In-memory sliding window fallback for when Redis is unavailable.
+/// Uses a simple per-key counter with a timestamp. Not distributed, but prevents
+/// brute-force attacks during Redis outages (OWASP A04).
+#[derive(Clone)]
+struct InMemoryFallback {
+    counters: Arc<Mutex<HashMap<String, (u32, Instant)>>>,
+}
+
+impl InMemoryFallback {
+    fn new() -> Self {
+        Self {
+            counters: Arc::new(Mutex::new(HashMap::new())),
+        }
+    }
+
+    /// Check and increment. Returns (current_count, is_limited).
+    fn check(&self, key: &str, limit: u32, window: Duration) -> (u32, bool) {
+        let mut counters = self.counters.lock().unwrap();
+        let now = Instant::now();
+
+        let entry = counters.entry(key.to_string()).or_insert((0, now));
+        if now.duration_since(entry.1) > window {
+            // Window expired — reset
+            *entry = (1, now);
+            (1, false)
+        } else {
+            entry.0 += 1;
+            (entry.0, entry.0 > limit)
+        }
+    }
+}
+
 /// Layer that adds rate limiting to requests.
 #[derive(Clone)]
 pub struct RateLimitLayer {
     redis: ConnectionManager,
     config: RateLimitLayerConfig,
+    fallback: InMemoryFallback,
 }
 
 impl RateLimitLayer {
     pub fn new(redis: ConnectionManager, config: RateLimitLayerConfig) -> Self {
-        Self { redis, config }
+        Self {
+            redis,
+            config,
+            fallback: InMemoryFallback::new(),
+        }
     }
 }
 
@@ -70,6 +110,7 @@ impl<S> Layer<S> for RateLimitLayer {
             inner,
             redis: self.redis.clone(),
             config: self.config.clone(),
+            fallback: self.fallback.clone(),
         }
     }
 }
@@ -79,6 +120,7 @@ pub struct RateLimitService<S> {
     inner: S,
     redis: ConnectionManager,
     config: RateLimitLayerConfig,
+    fallback: InMemoryFallback,
 }
 
 impl<S> Service<http::Request<Body>> for RateLimitService<S>
@@ -98,6 +140,7 @@ where
         let mut inner = self.inner.clone();
         let mut redis = self.redis.clone();
         let config = self.config.clone();
+        let fallback = self.fallback.clone();
         let path = req.uri().path().to_string();
 
         Box::pin(async move {
@@ -145,8 +188,23 @@ where
                     inner.call(req).await
                 }
                 Err(_) => {
-                    // Redis unavailable — fail open (allow request through)
-                    tracing::warn!("Rate limit check failed (Redis unavailable) — allowing request");
+                    // Redis unavailable — use in-memory fallback (OWASP A04: no fail-open)
+                    tracing::warn!("Redis unavailable for rate limiting — using in-memory fallback");
+                    let window = Duration::from_secs(window_secs as u64);
+                    let (_current, is_limited) = fallback.check(&redis_key, limit, window);
+                    if is_limited {
+                        let response = http::Response::builder()
+                            .status(StatusCode::TOO_MANY_REQUESTS)
+                            .header("content-type", "application/json")
+                            .header("retry-after", window_secs.to_string())
+                            .body(Body::from(serde_json::json!({
+                                "error": "Rate limited (fallback)",
+                                "code": "RATE_LIMITED",
+                                "retry_after_seconds": window_secs
+                            }).to_string()))
+                            .unwrap();
+                        return Ok(response);
+                    }
                     inner.call(req).await
                 }
             }

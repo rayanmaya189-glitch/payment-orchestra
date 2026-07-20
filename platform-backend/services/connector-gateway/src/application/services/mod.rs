@@ -156,7 +156,10 @@ impl GatewayService for GatewayServiceImpl {
             })?;
 
         if let Some(status) = cmd.status {
-            profile.status = GatewayProfileStatus::from_str(&status);
+            profile.status = GatewayProfileStatus::from_str(&status)
+                .map_err(|e| PlatformError::Validation(
+                    platform_error::ValidationError::MissingField(e.to_string())
+                ))?;
         }
         if let Some(min) = cmd.min_transaction_amount {
             profile.min_transaction_amount_minor = min.amount_minor_units;

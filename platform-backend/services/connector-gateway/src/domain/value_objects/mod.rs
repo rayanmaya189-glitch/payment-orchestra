@@ -72,12 +72,12 @@ impl GatewayProfileStatus {
         }
     }
 
-    pub fn from_str(s: &str) -> Self {
+    pub fn from_str(s: &str) -> Result<Self, &'static str> {
         match s {
-            "active" => Self::Active,
-            "disabled" => Self::Disabled,
-            "maintenance" => Self::Maintenance,
-            _ => Self::Active,
+            "active" => Ok(Self::Active),
+            "disabled" => Ok(Self::Disabled),
+            "maintenance" => Ok(Self::Maintenance),
+            _ => Err("unknown gateway profile status"),
         }
     }
 }
@@ -104,14 +104,14 @@ impl RotationStrategy {
         }
     }
 
-    pub fn from_str(s: &str) -> Self {
+    pub fn from_str(s: &str) -> Result<Self, &'static str> {
         match s {
-            "priority" => Self::Priority,
-            "round_robin" => Self::RoundRobin,
-            "cost_based" => Self::CostBased,
-            "success_rate_based" => Self::SuccessRateBased,
-            "volume_capped" => Self::VolumeCapped,
-            _ => Self::Priority,
+            "priority" => Ok(Self::Priority),
+            "round_robin" => Ok(Self::RoundRobin),
+            "cost_based" => Ok(Self::CostBased),
+            "success_rate_based" => Ok(Self::SuccessRateBased),
+            "volume_capped" => Ok(Self::VolumeCapped),
+            _ => Err("unknown rotation strategy"),
         }
     }
 }

@@ -259,7 +259,11 @@ impl AuthService for AuthServiceImpl {
             .ok_or_else(|| PlatformError::AuthorizationDenied("No password set".into()))?;
 
         if !Self::verify_password(&cmd.password, password_hash)? {
-            principal.record_failed_login();
+            principal.record_failed_login(
+                self.auth_config.lockout_attempts_15min,
+                self.auth_config.lockout_attempts_1hr,
+                self.auth_config.lockout_attempts_suspend,
+            );
             self.principal_repo.save(&principal).await?;
             return Err(PlatformError::AuthorizationDenied("Invalid credentials".into()));
         }

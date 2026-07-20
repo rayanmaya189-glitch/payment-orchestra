@@ -6,6 +6,8 @@ mod m20240101_000003_create_api_keys;
 mod m20240101_000004_create_pending_changes;
 mod m20240101_000005_create_kyb_cases;
 mod m20240101_000006_create_outbox;
+mod m20240101_000007_create_audit_log;
+mod m20240101_000008_create_refresh_tokens;
 
 pub struct Migrator;
 
@@ -19,6 +21,8 @@ impl MigratorTrait for Migrator {
             Box::new(m20240101_000004_create_pending_changes::Migration),
             Box::new(m20240101_000005_create_kyb_cases::Migration),
             Box::new(m20240101_000006_create_outbox::Migration),
+            Box::new(m20240101_000007_create_audit_log::Migration),
+            Box::new(m20240101_000008_create_refresh_tokens::Migration),
         ]
     }
 }

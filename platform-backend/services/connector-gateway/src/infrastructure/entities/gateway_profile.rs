@@ -62,7 +62,8 @@ impl Model {
             operator_id: self.operator_id,
             connector_id: self.connector_id.clone(),
             merchant_acquirer_link_id: self.merchant_acquirer_link_id,
-            status: GatewayProfileStatus::from_str(&self.status),
+            status: GatewayProfileStatus::from_str(&self.status)
+                .expect("DB contains invalid gateway profile status — data corruption"),
             min_transaction_amount_minor: self.min_transaction_amount_minor,
             max_transaction_amount_minor: self.max_transaction_amount_minor,
             daily_volume_limit_minor: self.daily_volume_limit_minor,

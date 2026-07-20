@@ -33,12 +33,12 @@ impl PrincipalType {
         }
     }
 
-    pub fn from_str(s: &str) -> Self {
+    pub fn from_str(s: &str) -> Result<Self, &'static str> {
         match s {
-            "human" => Self::Human,
-            "api_key" => Self::ApiKey,
-            "service" => Self::Service,
-            _ => Self::Human,
+            "human" => Ok(Self::Human),
+            "api_key" => Ok(Self::ApiKey),
+            "service" => Ok(Self::Service),
+            _ => Err("unknown principal type"),
         }
     }
 }
@@ -59,12 +59,12 @@ impl PrincipalStatus {
         }
     }
 
-    pub fn from_str(s: &str) -> Self {
+    pub fn from_str(s: &str) -> Result<Self, &'static str> {
         match s {
-            "active" => Self::Active,
-            "suspended" => Self::Suspended,
-            "deleted" => Self::Deleted,
-            _ => Self::Active,
+            "active" => Ok(Self::Active),
+            "suspended" => Ok(Self::Suspended),
+            "deleted" => Ok(Self::Deleted),
+            _ => Err("unknown principal status"),
         }
     }
 }
@@ -102,13 +102,13 @@ impl PendingChangeStatus {
         }
     }
 
-    pub fn from_str(s: &str) -> Self {
+    pub fn from_str(s: &str) -> Result<Self, &'static str> {
         match s {
-            "pending" => Self::Pending,
-            "approved" => Self::Approved,
-            "rejected" => Self::Rejected,
-            "expired" => Self::Expired,
-            _ => Self::Pending,
+            "pending" => Ok(Self::Pending),
+            "approved" => Ok(Self::Approved),
+            "rejected" => Ok(Self::Rejected),
+            "expired" => Ok(Self::Expired),
+            _ => Err("unknown pending change status"),
         }
     }
 }
@@ -133,13 +133,14 @@ impl Principal {
             .unwrap_or(false)
     }
 
-    pub fn record_failed_login(&mut self) {
+    pub fn record_failed_login(&mut self, lockout_15min: i32, lockout_1hr: i32, lockout_suspend: i32) {
         self.failed_login_attempts += 1;
-        match self.failed_login_attempts {
-            5 => self.locked_until = Some(Utc::now() + chrono::Duration::minutes(15)),
-            10 => self.locked_until = Some(Utc::now() + chrono::Duration::hours(1)),
-            20 => self.status = PrincipalStatus::Suspended,
-            _ => {}
+        if self.failed_login_attempts == lockout_15min {
+            self.locked_until = Some(Utc::now() + chrono::Duration::minutes(15));
+        } else if self.failed_login_attempts == lockout_1hr {
+            self.locked_until = Some(Utc::now() + chrono::Duration::hours(1));
+        } else if self.failed_login_attempts >= lockout_suspend {
+            self.status = PrincipalStatus::Suspended;
         }
     }
 

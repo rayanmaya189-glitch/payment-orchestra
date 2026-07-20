@@ -52,7 +52,8 @@ async fn main() {
     let app = Router::new()
         .route("/healthz", get(healthz))
         .route("/readyz", get(readyz))
-        .nest("/v1", api::routes::router(app_state))
+        .nest("/v1", api::routes::router(app_state)
+            .layer(platform_middleware::JwtAuthLayer::new(config.auth.clone())))
         .layer(platform_middleware::SecurityHeadersLayer)
         .layer(platform_middleware::RequestIdLayer)
         .layer(rate_limit)
@@ -88,7 +89,14 @@ async fn healthz() -> &'static str {
     "ok"
 }
 
-async fn readyz() -> &'static str {
-    // TODO: check Postgres ping, Redis PING
-    "ok"
+async fn readyz() -> axum::Json<serde_json::Value> {
+    // TODO: inject db/redis pool via AppState for real checks
+    // For now, return structured JSON per SRS HEALTH-005
+    axum::Json(serde_json::json!({
+        "status": "ok",
+        "checks": {
+            "postgres": "not_checked",
+            "redis": "not_checked"
+        }
+    }))
 }

@@ -58,22 +58,22 @@ impl PaymentStatus {
     }
 
     #[allow(clippy::should_implement_trait)]
-    pub fn from_str(s: &str) -> Self {
+    pub fn from_str(s: &str) -> Result<Self, &'static str> {
         match s {
-            "created" => Self::Created,
-            "authorizing" => Self::Authorizing,
-            "authorized" => Self::Authorized,
-            "capturing" => Self::Capturing,
-            "captured" => Self::Captured,
-            "partially_captured" => Self::PartiallyCaptured,
-            "voided" => Self::Voided,
-            "authorization_expired" => Self::AuthorizationExpired,
-            "failed" => Self::Failed,
-            "failed_all_routes" => Self::FailedAllRoutes,
-            "refunding" => Self::Refunding,
-            "refunded" => Self::Refunded,
-            "partially_refunded" => Self::PartiallyRefunded,
-            _ => Self::Created,
+            "created" => Ok(Self::Created),
+            "authorizing" => Ok(Self::Authorizing),
+            "authorized" => Ok(Self::Authorized),
+            "capturing" => Ok(Self::Capturing),
+            "captured" => Ok(Self::Captured),
+            "partially_captured" => Ok(Self::PartiallyCaptured),
+            "voided" => Ok(Self::Voided),
+            "authorization_expired" => Ok(Self::AuthorizationExpired),
+            "failed" => Ok(Self::Failed),
+            "failed_all_routes" => Ok(Self::FailedAllRoutes),
+            "refunding" => Ok(Self::Refunding),
+            "refunded" => Ok(Self::Refunded),
+            "partially_refunded" => Ok(Self::PartiallyRefunded),
+            _ => Err("unknown payment status"),
         }
     }
 }

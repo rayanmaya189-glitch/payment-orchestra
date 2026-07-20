@@ -34,7 +34,8 @@ impl Model {
             maker_id: self.maker_id,
             checker_id: self.checker_id,
             payload: self.payload.clone(),
-            status: PendingChangeStatus::from_str(&self.status),
+            status: PendingChangeStatus::from_str(&self.status)
+                .expect("DB contains invalid pending_change status — data corruption"),
             maker_note: self.maker_note.clone(),
             checker_note: self.checker_note.clone(),
             requested_at: self.requested_at.into(),

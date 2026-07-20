@@ -46,12 +46,14 @@ impl Model {
     pub fn to_domain(&self) -> Principal {
         Principal {
             id: self.id,
-            principal_type: PrincipalType::from_str(&self.principal_type),
+            principal_type: PrincipalType::from_str(&self.principal_type)
+                .expect("DB contains invalid principal_type — data corruption"),
             email: self.email.clone(),
             password_hash: self.password_hash.clone(),
             mfa_enrolled: self.mfa_enrolled,
             mfa_method: self.mfa_method.clone(),
-            status: PrincipalStatus::from_str(&self.status),
+            status: PrincipalStatus::from_str(&self.status)
+                .expect("DB contains invalid principal status — data corruption"),
             failed_login_attempts: self.failed_login_attempts,
             locked_until: self.locked_until.map(|dt| dt.into()),
             created_at: self.created_at.into(),

@@ -48,7 +48,8 @@ impl Model {
         PaymentIntent {
             payment_intent_id: self.payment_intent_id,
             operator_id: self.operator_id,
-            status: PaymentStatus::from_str(&self.status),
+            status: PaymentStatus::from_str(&self.status)
+                .expect("DB contains invalid payment status — data corruption"),
             requested_amount: Money {
                 amount_minor_units: self.requested_amount_minor_units,
                 currency: currency.clone(),
