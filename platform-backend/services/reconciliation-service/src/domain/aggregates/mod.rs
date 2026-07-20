@@ -139,3 +139,76 @@ impl ReconciliationMatcher {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use shared_types::Money;
+
+    #[test]
+    fn test_new_batch_is_ingesting() {
+        let b = SettlementBatch::new(Uuid::now_v7(), Uuid::now_v7(), "checksum123".into(), "csv".into());
+        assert_eq!(b.status, SettlementBatchStatus::Ingesting);
+        assert_eq!(b.total_records, 0);
+    }
+
+    #[test]
+    fn test_record_match_and_unmatch() {
+        let mut b = SettlementBatch::new(Uuid::now_v7(), Uuid::now_v7(), "checksum".into(), "csv".into());
+        b.record_match();
+        b.record_match();
+        b.record_unmatch();
+        assert_eq!(b.matched_count, 2);
+        assert_eq!(b.unmatched_count, 1);
+    }
+
+    #[test]
+    fn test_complete_sets_processed() {
+        let mut b = SettlementBatch::new(Uuid::now_v7(), Uuid::now_v7(), "checksum".into(), "csv".into());
+        b.complete();
+        assert_eq!(b.status, SettlementBatchStatus::Processed);
+        assert!(b.processed_at.is_some());
+    }
+
+    #[test]
+    fn test_ledger_entry_new() {
+        let e = LedgerEntry::new(Uuid::now_v7(), "debit".into(), 5000, 0, "AED".into(), "NI".into());
+        assert_eq!(e.debit_amount_minor_units, 5000);
+        assert_eq!(e.credit_amount_minor_units, 0);
+        assert!(!e.reconciled);
+    }
+
+    #[test]
+    fn test_matcher_exact_match() {
+        let matcher = ReconciliationMatcher::new();
+        let intent_id = Uuid::now_v7();
+        let record = SettlementRecord {
+            acquirer_reference: "NI_abc123".into(),
+            amount_minor_units: 10000,
+            currency: "AED".into(),
+            settled_at: Utc::now(),
+            fee_minor_units: None,
+        };
+        let refs = vec![(intent_id, "NI_abc123".to_string())];
+        let result = matcher.match_record(&record, &refs);
+        assert_eq!(result.outcome, SettlementMatchOutcome::Matched);
+        assert_eq!(result.confidence, 1.0);
+        assert!(result.auto_confirm);
+    }
+
+    #[test]
+    fn test_matcher_no_match() {
+        let matcher = ReconciliationMatcher::new();
+        let record = SettlementRecord {
+            acquirer_reference: "NI_unknown".into(),
+            amount_minor_units: 10000,
+            currency: "AED".into(),
+            settled_at: Utc::now(),
+            fee_minor_units: None,
+        };
+        let refs = vec![(Uuid::now_v7(), "NI_abc123".to_string())];
+        let result = matcher.match_record(&record, &refs);
+        assert_eq!(result.outcome, SettlementMatchOutcome::Unmatched);
+        assert_eq!(result.confidence, 0.0);
+    }
+}

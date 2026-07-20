@@ -54,3 +54,47 @@ impl Operator {
         self.status == OperatorStatus::ActiveVerified
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_new_operator_is_pending() {
+        let o = Operator::new("Test Corp".into(), TradeLicenseNo::new("TL-12345").unwrap(), "AE".into(), "test@corp.com".into(), "test-corp".into());
+        assert_eq!(o.status, OperatorStatus::Pending);
+        assert!(o.provisioned_at.is_none());
+    }
+
+    #[test]
+    fn test_verify_email_transitions_to_active_unverified() {
+        let mut o = Operator::new("Test Corp".into(), TradeLicenseNo::new("TL-12345").unwrap(), "AE".into(), "test@corp.com".into(), "test-corp".into());
+        o.verify_email().unwrap();
+        assert_eq!(o.status, OperatorStatus::ActiveUnverified);
+    }
+
+    #[test]
+    fn test_verify_email_fails_if_not_pending() {
+        let mut o = Operator::new("Test Corp".into(), TradeLicenseNo::new("TL-12345").unwrap(), "AE".into(), "test@corp.com".into(), "test-corp".into());
+        o.verify_email().unwrap();
+        let result = o.verify_email();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_can_process_live_only_when_verified() {
+        let mut o = Operator::new("Test Corp".into(), TradeLicenseNo::new("TL-12345").unwrap(), "AE".into(), "test@corp.com".into(), "test-corp".into());
+        assert!(!o.can_process_live_transactions());
+        o.status = OperatorStatus::ActiveVerified;
+        assert!(o.can_process_live_transactions());
+    }
+
+    #[test]
+    fn test_operator_status_values() {
+        assert_eq!(OperatorStatus::Pending.as_str(), "pending");
+        assert_eq!(OperatorStatus::ActiveUnverified.as_str(), "active_unverified");
+        assert_eq!(OperatorStatus::ActiveVerified.as_str(), "active_verified");
+        assert_eq!(OperatorStatus::Suspended.as_str(), "suspended");
+        assert_eq!(OperatorStatus::ExpiredUnverified.as_str(), "expired_unverified");
+    }
+}
