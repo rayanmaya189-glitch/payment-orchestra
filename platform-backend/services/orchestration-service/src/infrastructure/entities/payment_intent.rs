@@ -76,6 +76,7 @@ impl Model {
             gateway_profile_version: self.gateway_profile_version,
             created_at: self.created_at.into(),
             updated_at: self.updated_at.into(),
+            uncommitted_events: Vec::new(),
         }
     }
 }

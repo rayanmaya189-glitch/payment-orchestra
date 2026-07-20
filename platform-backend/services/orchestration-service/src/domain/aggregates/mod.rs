@@ -1,8 +1,47 @@
 use chrono::{DateTime, Utc};
 use uuid::Uuid;
+use serde::{Deserialize, Serialize};
 
 use crate::domain::value_objects::{FailoverConfig, PaymentPurpose, RoutingRule};
 use shared_types::{Money, PaymentStatus};
+
+/// Domain events for PaymentIntent (SRS Part 5 §4, EVT-01 through EVT-10).
+#[derive(Debug, Clone)]
+pub enum PaymentIntentEvent {
+    Created {
+        operator_id: Uuid,
+        amount_minor_units: i64,
+        currency: String,
+        idempotency_key: String,
+        purpose: String,
+    },
+    Authorized {
+        amount_minor_units: i64,
+        acquirer_reference: String,
+    },
+    CaptureStarted {
+        amount_minor_units: i64,
+    },
+    Captured {
+        captured_amount_minor_units: i64,
+    },
+    PartiallyCaptured {
+        captured_amount_minor_units: i64,
+    },
+    Voided {},
+    Failed {
+        reason: String,
+    },
+    RefundStarted {
+        amount_minor_units: i64,
+    },
+    Refunded {
+        refund_amount_minor_units: i64,
+    },
+    PartiallyRefunded {
+        refund_amount_minor_units: i64,
+    },
+}
 
 #[derive(Debug, Clone)]
 pub struct PaymentIntent {
@@ -22,6 +61,8 @@ pub struct PaymentIntent {
     pub gateway_profile_version: Option<i32>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+    /// Uncommitted domain events (event sourcing)
+    pub(crate) uncommitted_events: Vec<PaymentIntentEvent>,
 }
 
 impl PaymentIntent {
@@ -32,7 +73,20 @@ impl PaymentIntent {
         purpose: PaymentPurpose,
     ) -> Self {
         let now = Utc::now();
-        Self {
+        let purpose_str = match &purpose {
+            PaymentPurpose::Payment => "payment",
+            PaymentPurpose::CardVerification => "card_verification",
+        }.to_string();
+
+        let event = PaymentIntentEvent::Created {
+            operator_id,
+            amount_minor_units: amount.amount_minor_units,
+            currency: amount.currency.0.clone(),
+            idempotency_key: idempotency_key.clone(),
+            purpose: purpose_str,
+        };
+
+        let mut intent = Self {
             payment_intent_id: Uuid::now_v7(),
             operator_id,
             status: PaymentStatus::Created,
@@ -58,7 +112,106 @@ impl PaymentIntent {
             gateway_profile_version: None,
             created_at: now,
             updated_at: now,
+            uncommitted_events: Vec::new(),
+        };
+
+        intent.apply(event);
+        intent
+    }
+
+    /// Apply a domain event to mutate state (event sourcing fold).
+    pub fn apply(&mut self, event: PaymentIntentEvent) {
+        match &event {
+            PaymentIntentEvent::Created { .. } => {
+                // Already initialized in new()
+            }
+            PaymentIntentEvent::Authorized { amount_minor_units, .. } => {
+                self.authorized_amount.amount_minor_units = *amount_minor_units;
+                self.status = PaymentStatus::Authorized;
+            }
+            PaymentIntentEvent::Captured { captured_amount_minor_units } => {
+                self.captured_amount.amount_minor_units = *captured_amount_minor_units;
+                self.status = PaymentStatus::Captured;
+            }
+            PaymentIntentEvent::PartiallyCaptured { captured_amount_minor_units } => {
+                self.captured_amount.amount_minor_units = *captured_amount_minor_units;
+                self.status = PaymentStatus::PartiallyCaptured;
+            }
+            PaymentIntentEvent::Voided {} => {
+                self.status = PaymentStatus::Voided;
+            }
+            PaymentIntentEvent::Failed { .. } => {
+                self.status = PaymentStatus::Failed;
+            }
+            PaymentIntentEvent::Refunded { refund_amount_minor_units } => {
+                self.refunded_amount.amount_minor_units = *refund_amount_minor_units;
+                if self.refunded_amount.amount_minor_units >= self.captured_amount.amount_minor_units {
+                    self.status = PaymentStatus::Refunded;
+                } else {
+                    self.status = PaymentStatus::PartiallyRefunded;
+                }
+            }
+            PaymentIntentEvent::PartiallyRefunded { refund_amount_minor_units } => {
+                self.refunded_amount.amount_minor_units = *refund_amount_minor_units;
+                self.status = PaymentStatus::PartiallyRefunded;
+            }
+            PaymentIntentEvent::CaptureStarted { .. } => {
+                self.status = PaymentStatus::Capturing;
+            }
+            PaymentIntentEvent::RefundStarted { .. } => {
+                self.status = PaymentStatus::Refunding;
+            }
         }
+        self.updated_at = Utc::now();
+        self.uncommitted_events.push(event);
+    }
+
+    /// Rebuild aggregate from event history (event sourcing replay).
+    pub fn from_events(id: Uuid, events: Vec<PaymentIntentEvent>) -> Self {
+        let first = events.first().expect("Events must not be empty");
+        let (operator_id, amount_minor_units, currency, idempotency_key, purpose_str) = match first {
+            PaymentIntentEvent::Created { operator_id, amount_minor_units, currency, idempotency_key, purpose } => {
+                (*operator_id, *amount_minor_units, currency.clone(), idempotency_key.clone(), purpose.clone())
+            }
+            _ => panic!("First event must be Created"),
+        };
+
+        let currency_obj = shared_types::CurrencyCode::new(&currency).unwrap();
+        let purpose = match purpose_str.as_str() {
+            "card_verification" => PaymentPurpose::CardVerification,
+            _ => PaymentPurpose::Payment,
+        };
+
+        let mut intent = Self {
+            payment_intent_id: id,
+            operator_id,
+            status: PaymentStatus::Created,
+            requested_amount: Money { amount_minor_units, currency: currency_obj.clone() },
+            authorized_amount: Money { amount_minor_units: 0, currency: currency_obj.clone() },
+            captured_amount: Money { amount_minor_units: 0, currency: currency_obj.clone() },
+            refunded_amount: Money { amount_minor_units: 0, currency: currency_obj },
+            idempotency_key,
+            payment_method_token_id: None,
+            routing_policy_id: None,
+            purpose,
+            metadata: None,
+            gateway_profile_id: None,
+            gateway_profile_version: None,
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+            uncommitted_events: Vec::new(),
+        };
+
+        for event in events.into_iter().skip(1) {
+            intent.apply(event);
+        }
+        intent.uncommitted_events.clear();
+        intent
+    }
+
+    /// Take uncommitted events (for publishing after save).
+    pub fn take_uncommitted_events(&mut self) -> Vec<PaymentIntentEvent> {
+        std::mem::take(&mut self.uncommitted_events)
     }
 
     pub fn can_authorize(&self) -> bool {
@@ -92,42 +245,44 @@ impl PaymentIntent {
     }
 
     pub fn record_authorization(&mut self, amount: Money) {
-        self.authorized_amount = amount;
-        self.status = PaymentStatus::Authorized;
-        self.updated_at = Utc::now();
+        self.apply(PaymentIntentEvent::Authorized {
+            amount_minor_units: amount.amount_minor_units,
+            acquirer_reference: String::new(),
+        });
     }
 
     pub fn record_capture(&mut self, amount: Money) {
-        self.captured_amount = amount;
-        if self.captured_amount.amount_minor_units >= self.authorized_amount.amount_minor_units {
-            self.status = PaymentStatus::Captured;
+        let new_captured = self.captured_amount.amount_minor_units + amount.amount_minor_units;
+        if new_captured >= self.authorized_amount.amount_minor_units {
+            self.apply(PaymentIntentEvent::Captured {
+                captured_amount_minor_units: new_captured,
+            });
         } else {
-            self.status = PaymentStatus::PartiallyCaptured;
+            self.apply(PaymentIntentEvent::PartiallyCaptured {
+                captured_amount_minor_units: new_captured,
+            });
         }
-        self.updated_at = Utc::now();
     }
 
     pub fn record_refund(&mut self, amount: Money) {
-        self.refunded_amount = shared_types::Money {
-            amount_minor_units: self.refunded_amount.amount_minor_units + amount.amount_minor_units,
-            currency: amount.currency.clone(),
-        };
-        if self.refunded_amount.amount_minor_units >= self.captured_amount.amount_minor_units {
-            self.status = PaymentStatus::Refunded;
+        let new_refunded = self.refunded_amount.amount_minor_units + amount.amount_minor_units;
+        if new_refunded >= self.captured_amount.amount_minor_units {
+            self.apply(PaymentIntentEvent::Refunded {
+                refund_amount_minor_units: new_refunded,
+            });
         } else {
-            self.status = PaymentStatus::PartiallyRefunded;
+            self.apply(PaymentIntentEvent::PartiallyRefunded {
+                refund_amount_minor_units: new_refunded,
+            });
         }
-        self.updated_at = Utc::now();
     }
 
     pub fn record_void(&mut self) {
-        self.status = PaymentStatus::Voided;
-        self.updated_at = Utc::now();
+        self.apply(PaymentIntentEvent::Voided {});
     }
 
     pub fn record_failure(&mut self) {
-        self.status = PaymentStatus::Failed;
-        self.updated_at = Utc::now();
+        self.apply(PaymentIntentEvent::Failed { reason: String::new() });
     }
 }
 
