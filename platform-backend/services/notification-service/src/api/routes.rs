@@ -3,12 +3,13 @@ use uuid::Uuid;
 use super::dto::*;
 use super::AppState;
 use crate::application::services::{NotificationService, NotificationResponse as ServiceResponse};
+use platform_middleware::AuthPrincipal;
 
 pub fn router(state: AppState) -> Router {
     Router::new().route("/notifications", axum::routing::post(send_notification)).route("/notifications/{id}", axum::routing::get(get_notification)).with_state(state)
 }
 
-async fn send_notification(State(state): State<AppState>, Json(req): Json<SendNotificationRequest>) -> Result<(StatusCode, Json<NotificationResponse>), (StatusCode, Json<ErrorResponse>)> {
+async fn send_notification(State(state): State<AppState>, _auth: AuthPrincipal, Json(req): Json<SendNotificationRequest>) -> Result<(StatusCode, Json<NotificationResponse>), (StatusCode, Json<ErrorResponse>)> {
     let cmd = crate::application::services::SendNotificationCommand { operator_id: Uuid::nil(), notification_type: req.notification_type, recipient: req.recipient, subject: req.subject, body: req.body };
     match state.service.send_notification(cmd).await { Ok(r) => Ok((StatusCode::CREATED, Json(convert_response(r)))), Err(e) => Err(err(e)) }
 }

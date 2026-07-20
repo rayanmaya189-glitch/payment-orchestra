@@ -8,6 +8,7 @@ mod m20240101_000005_create_kyb_cases;
 mod m20240101_000006_create_outbox;
 mod m20240101_000007_create_audit_log;
 mod m20240101_000008_create_refresh_tokens;
+mod m20240101_000009_create_event_store;
 
 pub struct Migrator;
 
@@ -23,6 +24,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20240101_000006_create_outbox::Migration),
             Box::new(m20240101_000007_create_audit_log::Migration),
             Box::new(m20240101_000008_create_refresh_tokens::Migration),
+            Box::new(m20240101_000009_create_event_store::Migration),
         ]
     }
 }

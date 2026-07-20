@@ -8,6 +8,7 @@ use uuid::Uuid;
 use super::dto::*;
 use super::AppState;
 use crate::application::services::ReconciliationService;
+use platform_middleware::AuthPrincipal;
 
 pub fn router(state: AppState) -> Router {
     Router::new()
@@ -19,6 +20,7 @@ pub fn router(state: AppState) -> Router {
 
 async fn ingest_settlement(
     State(state): State<AppState>,
+    _auth: AuthPrincipal,
     Json(req): Json<IngestSettlementRequest>,
 ) -> Result<(StatusCode, Json<SettlementBatchResponse>), (StatusCode, Json<ErrorResponse>)> {
     let cmd = crate::application::services::IngestSettlementBatchCommand {

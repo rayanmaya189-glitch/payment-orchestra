@@ -3,12 +3,13 @@ use uuid::Uuid;
 use super::dto::*;
 use super::AppState;
 use crate::application::services::{RiskService, RiskAssessmentResponse as ServiceResponse};
+use platform_middleware::AuthPrincipal;
 
 pub fn router(state: AppState) -> Router {
     Router::new().route("/risk/assess", axum::routing::post(assess_risk)).route("/risk/{id}", axum::routing::get(get_assessment)).with_state(state)
 }
 
-async fn assess_risk(State(state): State<AppState>, Json(req): Json<AssessRiskRequest>) -> Result<(StatusCode, Json<RiskAssessmentResponse>), (StatusCode, Json<ErrorResponse>)> {
+async fn assess_risk(State(state): State<AppState>, _auth: AuthPrincipal, Json(req): Json<AssessRiskRequest>) -> Result<(StatusCode, Json<RiskAssessmentResponse>), (StatusCode, Json<ErrorResponse>)> {
     let cmd = crate::application::services::AssessRiskCommand { operator_id: Uuid::nil(), payment_intent_id: req.payment_intent_id, amount: req.amount };
     match state.service.assess_risk(cmd).await { Ok(r) => Ok((StatusCode::CREATED, Json(convert_response(r)))), Err(e) => Err(err(e)) }
 }

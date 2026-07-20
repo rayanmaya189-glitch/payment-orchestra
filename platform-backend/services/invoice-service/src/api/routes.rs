@@ -8,6 +8,7 @@ use uuid::Uuid;
 use super::dto::*;
 use super::AppState;
 use crate::application::services::InvoiceService;
+use platform_middleware::AuthPrincipal;
 
 pub fn router(state: AppState) -> Router {
     Router::new()
@@ -21,6 +22,7 @@ pub fn router(state: AppState) -> Router {
 
 async fn create_invoice(
     State(state): State<AppState>,
+    _auth: AuthPrincipal,
     Json(req): Json<CreateInvoiceRequest>,
 ) -> Result<(StatusCode, Json<InvoiceResponse>), (StatusCode, Json<ErrorResponse>)> {
     let line_items = req.line_items.into_iter().map(|l| crate::domain::value_objects::InvoiceLineItem {

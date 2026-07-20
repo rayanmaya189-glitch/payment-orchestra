@@ -18,3 +18,31 @@ pub trait RoutingPolicyRepository: Send + Sync {
     async fn load_active_for_operator(&self, operator_id: Uuid) -> Result<Option<RoutingPolicy>, PlatformError>;
     async fn save(&self, policy: &RoutingPolicy) -> Result<(), PlatformError>;
 }
+
+/// Append-only event store repository per SRS Part 5, §4.
+/// Events are immutable — only append is allowed.
+#[async_trait]
+pub trait EventStoreRepository: Send + Sync {
+    /// Append an event to the store with optimistic concurrency control.
+    /// `expected_sequence` is the last known sequence for this aggregate.
+    /// Returns the assigned sequence number.
+    async fn append(
+        &self,
+        event: &shared_types::events::EventEnvelope,
+        expected_sequence: i64,
+    ) -> Result<i64, PlatformError>;
+
+    /// Load all events for an aggregate, ordered by sequence.
+    async fn load_events(
+        &self,
+        aggregate_type: &str,
+        aggregate_id: Uuid,
+    ) -> Result<Vec<shared_types::events::EventEnvelope>, PlatformError>;
+
+    /// Get the current sequence number for an aggregate (0 if no events).
+    async fn current_sequence(
+        &self,
+        aggregate_type: &str,
+        aggregate_id: Uuid,
+    ) -> Result<i64, PlatformError>;
+}

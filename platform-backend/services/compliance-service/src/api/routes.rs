@@ -10,6 +10,7 @@ use super::AppState;
 use crate::application::commands::*;
 use crate::application::queries::*;
 use crate::application::services::ComplianceService;
+use platform_middleware::AuthPrincipal;
 
 pub fn router(state: AppState) -> Router {
     Router::new()
@@ -85,6 +86,7 @@ async fn upload_document(
 
 async fn decide_case(
     State(state): State<AppState>,
+    auth: AuthPrincipal,
     Path(case_id): Path<Uuid>,
     Json(req): Json<DecideCaseRequest>,
 ) -> Result<StatusCode, (StatusCode, Json<ErrorResponse>)> {
@@ -92,7 +94,7 @@ async fn decide_case(
         kyb_case_id: case_id,
         decision: req.decision,
         reason: req.reason,
-        decided_by: Uuid::nil(), // TODO: Get from auth context
+        decided_by: auth.principal_id,
     };
 
     match state.service.decide_case(cmd).await {

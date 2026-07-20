@@ -1,3 +1,5 @@
+pub mod event_store;
+
 use async_trait::async_trait;
 use sea_orm::{DatabaseConnection, EntityTrait, QueryFilter, ColumnTrait, ActiveModelTrait};
 use uuid::Uuid;

@@ -3,6 +3,7 @@ use uuid::Uuid;
 use super::dto::*;
 use super::AppState;
 use crate::application::services::{DisputeService, DisputeResponse as ServiceResponse};
+use platform_middleware::AuthPrincipal;
 
 pub fn router(state: AppState) -> Router {
     Router::new()
@@ -13,7 +14,7 @@ pub fn router(state: AppState) -> Router {
         .with_state(state)
 }
 
-async fn open_dispute(State(state): State<AppState>, Json(req): Json<OpenDisputeRequest>) -> Result<(StatusCode, Json<DisputeResponse>), (StatusCode, Json<ErrorResponse>)> {
+async fn open_dispute(State(state): State<AppState>, _auth: AuthPrincipal, Json(req): Json<OpenDisputeRequest>) -> Result<(StatusCode, Json<DisputeResponse>), (StatusCode, Json<ErrorResponse>)> {
     let cmd = crate::application::services::OpenDisputeCommand {
         operator_id: Uuid::nil(),
         payment_intent_id: req.payment_intent_id,

@@ -16,6 +16,9 @@ pub struct EventEnvelope {
     pub correlation_id: Uuid,
     pub payload: serde_json::Value,
     pub trace_context: Option<String>,
+    /// HMAC-SHA256 signature for event integrity verification (SRS AUD-004)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub signature: Option<Vec<u8>>,
 }
 
 impl EventEnvelope {
@@ -40,6 +43,7 @@ impl EventEnvelope {
             correlation_id,
             payload,
             trace_context: None,
+            signature: None,
         }
     }
 
@@ -123,5 +127,84 @@ impl PaymentEventPayload {
         };
 
         EventEnvelope::new("PaymentIntent", aggregate_id, event_type, actor_type, correlation_id, payload)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_event_envelope_validate_payload_ok() {
+        let envelope = EventEnvelope::new(
+            "PaymentIntent",
+            Uuid::now_v7(),
+            "PaymentIntentCreated",
+            "user",
+            Uuid::now_v7(),
+            serde_json::json!({"amount": 1000}),
+        );
+        assert!(envelope.validate_payload().is_ok());
+    }
+
+    #[test]
+    fn test_event_envelope_validate_payload_rejects_null() {
+        let envelope = EventEnvelope::new(
+            "PaymentIntent",
+            Uuid::now_v7(),
+            "PaymentIntentCreated",
+            "user",
+            Uuid::now_v7(),
+            serde_json::Value::Null,
+        );
+        assert!(envelope.validate_payload().is_err());
+    }
+
+    #[test]
+    fn test_payment_event_payload_serialization() {
+        let payload = PaymentEventPayload::IntentCreated {
+            operator_id: Uuid::now_v7(),
+            amount_minor_units: 5000,
+            currency: "AED".to_string(),
+            idempotency_key: "idem_123".to_string(),
+        };
+
+        let json = serde_json::to_value(&payload).unwrap();
+        assert_eq!(json["event"], "PaymentIntentCreated");
+        assert_eq!(json["data"]["amount_minor_units"], 5000);
+    }
+
+    #[test]
+    fn test_payment_event_to_envelope() {
+        let payload = PaymentEventPayload::Authorized {
+            acquirer_reference: "acq_ref_123".to_string(),
+            authorized_amount_minor_units: 10000,
+        };
+
+        let aggregate_id = Uuid::now_v7();
+        let correlation_id = Uuid::now_v7();
+        let envelope = payload.to_envelope(aggregate_id, "user", correlation_id);
+
+        assert_eq!(envelope.aggregate_type, "PaymentIntent");
+        assert_eq!(envelope.event_type, "PaymentAuthorized");
+        assert_eq!(envelope.aggregate_id, aggregate_id);
+        assert_eq!(envelope.correlation_id, correlation_id);
+    }
+
+    #[test]
+    fn test_event_envelope_new_sets_defaults() {
+        let id = Uuid::now_v7();
+        let correlation = Uuid::now_v7();
+        let payload = serde_json::json!({"test": true});
+
+        let envelope = EventEnvelope::new("TestAggregate", id, "TestEvent", "system", correlation, payload.clone());
+
+        assert_eq!(envelope.event_version, 1);
+        assert_eq!(envelope.actor_type, "system");
+        assert!(envelope.actor_id.is_none());
+        assert!(envelope.causation_id.is_none());
+        assert!(envelope.trace_context.is_none());
+        assert!(envelope.signature.is_none());
+        assert_eq!(envelope.payload, payload);
     }
 }

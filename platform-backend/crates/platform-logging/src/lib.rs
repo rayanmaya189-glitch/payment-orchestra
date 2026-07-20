@@ -18,6 +18,45 @@ pub struct LogEntry {
     pub metadata: Option<serde_json::Value>,
 }
 
+/// Structured security event for audit logging (SRS AUD-001).
+/// These events are logged at WARN/ERROR level for SIEM ingestion.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SecurityEvent {
+    pub timestamp: DateTime<Utc>,
+    pub service: String,
+    pub event_type: SecurityEventType,
+    pub principal_id: Option<Uuid>,
+    pub ip_address: Option<String>,
+    pub user_agent: Option<String>,
+    pub outcome: SecurityOutcome,
+    pub details: Option<serde_json::Value>,
+    pub correlation_id: Option<Uuid>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum SecurityEventType {
+    LoginFailed,
+    LoginSuccess,
+    AccountLocked,
+    AccountSuspended,
+    SessionRevoked,
+    PermissionDenied,
+    ApiKeyInvalid,
+    RateLimited,
+    BruteForceDetected,
+    PasswordChanged,
+    MfaFailed,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum SecurityOutcome {
+    Success,
+    Failure,
+    Blocked,
+}
+
 pub struct ServiceLogger {
     service_name: String,
 }
@@ -75,5 +114,36 @@ impl ServiceLogger {
                 _ => tracing::info!("{}", json),
             }
         }
+    }
+}
+
+/// Log a structured security event (OWASP A09: Security Logging and Monitoring).
+///
+/// These events are written as structured JSON at WARN level for SIEM ingestion.
+/// Call this for: failed logins, account lockouts, permission denials, rate limiting.
+pub fn log_security_event(
+    service: &str,
+    event_type: SecurityEventType,
+    outcome: SecurityOutcome,
+    principal_id: Option<Uuid>,
+    ip_address: Option<&str>,
+    user_agent: Option<&str>,
+    correlation_id: Option<Uuid>,
+    details: Option<serde_json::Value>,
+) {
+    let event = SecurityEvent {
+        timestamp: Utc::now(),
+        service: service.to_string(),
+        event_type,
+        principal_id,
+        ip_address: ip_address.map(String::from),
+        user_agent: user_agent.map(String::from),
+        outcome,
+        details,
+        correlation_id,
+    };
+
+    if let Ok(json) = serde_json::to_string(&event) {
+        tracing::warn!(security_event = %json, "Security event");
     }
 }

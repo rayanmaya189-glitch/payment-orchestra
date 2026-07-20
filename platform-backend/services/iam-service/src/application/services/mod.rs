@@ -265,6 +265,16 @@ impl AuthService for AuthServiceImpl {
 
         // Check if account is locked (SRS AUTH-007)
         if principal.is_locked() {
+            platform_logging::log_security_event(
+                "iam-service",
+                platform_logging::SecurityEventType::BruteForceDetected,
+                platform_logging::SecurityOutcome::Blocked,
+                Some(principal.id),
+                Some(&cmd.ip_address.to_string()),
+                Some(&cmd.user_agent),
+                None,
+                Some(serde_json::json!({"locked_until": principal.locked_until})),
+            );
             return Err(PlatformError::AuthorizationDenied(format!(
                 "Account locked until {:?}",
                 principal.locked_until
@@ -276,6 +286,16 @@ impl AuthService for AuthServiceImpl {
             .ok_or_else(|| PlatformError::AuthorizationDenied("No password set".into()))?;
 
         if !Self::verify_password(&cmd.password, password_hash)? {
+            platform_logging::log_security_event(
+                "iam-service",
+                platform_logging::SecurityEventType::LoginFailed,
+                platform_logging::SecurityOutcome::Failure,
+                Some(principal.id),
+                Some(&cmd.ip_address.to_string()),
+                Some(&cmd.user_agent),
+                None,
+                Some(serde_json::json!({"attempts": principal.failed_login_attempts + 1})),
+            );
             principal.record_failed_login(
                 self.auth_config.lockout_attempts_15min,
                 self.auth_config.lockout_attempts_1hr,
@@ -291,6 +311,16 @@ impl AuthService for AuthServiceImpl {
         }
 
         // Record successful login
+        platform_logging::log_security_event(
+            "iam-service",
+            platform_logging::SecurityEventType::LoginSuccess,
+            platform_logging::SecurityOutcome::Success,
+            Some(principal.id),
+            Some(&cmd.ip_address.to_string()),
+            Some(&cmd.user_agent),
+            None,
+            None,
+        );
         principal.record_successful_login();
         self.principal_repo.save(&principal).await?;
 

@@ -3,6 +3,7 @@ use uuid::Uuid;
 use super::dto::*;
 use super::AppState;
 use crate::application::services::{SubscriptionService, SubscriptionResponse as ServiceResponse};
+use platform_middleware::AuthPrincipal;
 
 pub fn router(state: AppState) -> Router {
     Router::new()
@@ -14,7 +15,7 @@ pub fn router(state: AppState) -> Router {
         .with_state(state)
 }
 
-async fn create_sub(State(state): State<AppState>, Json(req): Json<CreateSubscriptionRequest>) -> Result<(StatusCode, Json<SubscriptionResponse>), (StatusCode, Json<ErrorResponse>)> {
+async fn create_sub(State(state): State<AppState>, _auth: AuthPrincipal, Json(req): Json<CreateSubscriptionRequest>) -> Result<(StatusCode, Json<SubscriptionResponse>), (StatusCode, Json<ErrorResponse>)> {
     let cmd = crate::application::services::CreateSubscriptionCommand {
         operator_id: Uuid::nil(),
         customer_id: req.customer_id,
