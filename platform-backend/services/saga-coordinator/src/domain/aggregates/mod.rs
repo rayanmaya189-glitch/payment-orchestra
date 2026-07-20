@@ -12,7 +12,7 @@ pub struct SagaInstance {
     pub completed_at: Option<DateTime<Utc>>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct SagaStep {
     pub step_number: u32, pub name: String, pub service: String,
     pub action: String, pub compensation_action: Option<String>,

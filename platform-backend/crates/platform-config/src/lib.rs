@@ -1,6 +1,8 @@
 use config::{Config, ConfigError, Environment};
 use serde::Deserialize;
 
+pub mod encryption;
+
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
 pub struct AppConfig {
     pub server: ServerConfig,
@@ -71,6 +73,9 @@ pub struct AuthConfig {
     pub api_key_default_expiry_days: u32,
     /// API key maximum expiry in days (SRS AUTH-004)
     pub api_key_max_expiry_days: u32,
+    /// Encryption key for PII fields (AES-256, 32 bytes hex-encoded)
+    /// Loaded from PLATFORM__AUTH__ENCRYPTION_KEY env var
+    pub encryption_key: Option<String>,
 }
 
 /// CORS configuration per SRS CORS-001
@@ -161,6 +166,7 @@ impl Default for AppConfig {
                 password_min_length: 12,
                 api_key_default_expiry_days: 90,
                 api_key_max_expiry_days: 365,
+                encryption_key: None, // Production MUST set via env var
             },
             cors: CorsConfig {
                 allowed_origins: "http://localhost:3000".to_string(),

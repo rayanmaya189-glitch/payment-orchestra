@@ -1,5 +1,7 @@
 use platform_error::ValidationError;
 
+pub mod totp;
+
 /// Email value object with validation.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Email(String);
