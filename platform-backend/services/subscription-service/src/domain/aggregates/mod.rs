@@ -19,3 +19,59 @@ impl Subscription {
     pub fn can_resume(&self) -> bool { self.status == SubscriptionStatus::Paused }
     pub fn can_cancel(&self) -> bool { matches!(self.status, SubscriptionStatus::Active | SubscriptionStatus::Paused) }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn aed(amount: i64) -> Money {
+        Money { amount_minor_units: amount, currency: shared_types::CurrencyCode::new("AED").unwrap() }
+    }
+
+    #[test]
+    fn test_new_subscription_is_active() {
+        let s = Subscription::new(Uuid::now_v7(), Uuid::now_v7(), aed(10000), BillingInterval::Monthly);
+        assert_eq!(s.status, SubscriptionStatus::Active);
+        assert!(s.can_pause());
+        assert!(!s.can_resume());
+        assert!(s.can_cancel());
+    }
+
+    #[test]
+    fn test_period_end_monthly() {
+        let s = Subscription::new(Uuid::now_v7(), Uuid::now_v7(), aed(10000), BillingInterval::Monthly);
+        let diff = s.current_period_end - s.current_period_start;
+        assert!(diff.num_days() >= 29 && diff.num_days() <= 30);
+    }
+
+    #[test]
+    fn test_period_end_yearly() {
+        let s = Subscription::new(Uuid::now_v7(), Uuid::now_v7(), aed(10000), BillingInterval::Yearly);
+        let diff = s.current_period_end - s.current_period_start;
+        assert_eq!(diff.num_days(), 365);
+    }
+
+    #[test]
+    fn test_can_pause_only_when_active() {
+        let mut s = Subscription::new(Uuid::now_v7(), Uuid::now_v7(), aed(10000), BillingInterval::Monthly);
+        assert!(s.can_pause());
+        s.status = SubscriptionStatus::Paused;
+        assert!(!s.can_pause());
+    }
+
+    #[test]
+    fn test_can_resume_only_when_paused() {
+        let mut s = Subscription::new(Uuid::now_v7(), Uuid::now_v7(), aed(10000), BillingInterval::Monthly);
+        assert!(!s.can_resume());
+        s.status = SubscriptionStatus::Paused;
+        assert!(s.can_resume());
+    }
+
+    #[test]
+    fn test_cannot_cancel_when_cancelled() {
+        let mut s = Subscription::new(Uuid::now_v7(), Uuid::now_v7(), aed(10000), BillingInterval::Monthly);
+        assert!(s.can_cancel());
+        s.status = SubscriptionStatus::Cancelled;
+        assert!(!s.can_cancel());
+    }
+}

@@ -363,3 +363,214 @@ impl RoutingAttempt {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn aed(amount: i64) -> Money {
+        Money { amount_minor_units: amount, currency: shared_types::CurrencyCode::new("AED").unwrap() }
+    }
+
+    fn make_intent() -> PaymentIntent {
+        PaymentIntent::new(
+            Uuid::now_v7(),
+            aed(10000),
+            "idem_test_123".to_string(),
+            PaymentPurpose::Payment,
+        )
+    }
+
+    #[test]
+    fn test_new_intent_creates_event() {
+        let intent = make_intent();
+        assert_eq!(intent.status, PaymentStatus::Created);
+        assert_eq!(intent.requested_amount.amount_minor_units, 10000);
+        assert_eq!(intent.uncommitted_events.len(), 1);
+    }
+
+    #[test]
+    fn test_authorize_emits_event() {
+        let mut intent = make_intent();
+        intent.record_authorization(aed(10000));
+        assert_eq!(intent.status, PaymentStatus::Authorized);
+        assert_eq!(intent.authorized_amount.amount_minor_units, 10000);
+        assert_eq!(intent.uncommitted_events.len(), 2); // Created + Authorized
+    }
+
+    #[test]
+    fn test_capture_full_emits_event() {
+        let mut intent = make_intent();
+        intent.record_authorization(aed(10000));
+        intent.record_capture(aed(10000));
+        assert_eq!(intent.status, PaymentStatus::Captured);
+        assert_eq!(intent.captured_amount.amount_minor_units, 10000);
+    }
+
+    #[test]
+    fn test_capture_partial_emits_event() {
+        let mut intent = make_intent();
+        intent.record_authorization(aed(10000));
+        intent.record_capture(aed(5000));
+        assert_eq!(intent.status, PaymentStatus::PartiallyCaptured);
+        assert_eq!(intent.captured_amount.amount_minor_units, 5000);
+        assert_eq!(intent.remaining_capture_amount(), 5000);
+    }
+
+    #[test]
+    fn test_void_emits_event() {
+        let mut intent = make_intent();
+        intent.record_authorization(aed(10000));
+        intent.record_void();
+        assert_eq!(intent.status, PaymentStatus::Voided);
+    }
+
+    #[test]
+    fn test_refund_full_emits_event() {
+        let mut intent = make_intent();
+        intent.record_authorization(aed(10000));
+        intent.record_capture(aed(10000));
+        intent.record_refund(aed(10000));
+        assert_eq!(intent.status, PaymentStatus::Refunded);
+        assert_eq!(intent.refunded_amount.amount_minor_units, 10000);
+        assert_eq!(intent.remaining_refund_amount(), 0);
+    }
+
+    #[test]
+    fn test_refund_partial_emits_event() {
+        let mut intent = make_intent();
+        intent.record_authorization(aed(10000));
+        intent.record_capture(aed(10000));
+        intent.record_refund(aed(3000));
+        assert_eq!(intent.status, PaymentStatus::PartiallyRefunded);
+        assert_eq!(intent.refunded_amount.amount_minor_units, 3000);
+        assert_eq!(intent.remaining_refund_amount(), 7000);
+    }
+
+    #[test]
+    fn test_failure_emits_event() {
+        let mut intent = make_intent();
+        intent.record_failure();
+        assert_eq!(intent.status, PaymentStatus::Failed);
+    }
+
+    #[test]
+    fn test_from_events_replay() {
+        let events = vec![
+            PaymentIntentEvent::Created {
+                operator_id: Uuid::now_v7(),
+                amount_minor_units: 10000,
+                currency: "AED".to_string(),
+                idempotency_key: "idem_replay".to_string(),
+                purpose: "payment".to_string(),
+            },
+            PaymentIntentEvent::Authorized {
+                amount_minor_units: 10000,
+                acquirer_reference: "acq_123".to_string(),
+            },
+            PaymentIntentEvent::Captured {
+                captured_amount_minor_units: 10000,
+            },
+        ];
+
+        let id = Uuid::now_v7();
+        let intent = PaymentIntent::from_events(id, events);
+        assert_eq!(intent.payment_intent_id, id);
+        assert_eq!(intent.status, PaymentStatus::Captured);
+        assert_eq!(intent.authorized_amount.amount_minor_units, 10000);
+        assert_eq!(intent.captured_amount.amount_minor_units, 10000);
+        assert!(intent.uncommitted_events.is_empty()); // Cleared after replay
+    }
+
+    #[test]
+    fn test_can_authorize_only_created_or_failed() {
+        let mut intent = make_intent();
+        assert!(intent.can_authorize());
+
+        intent.record_authorization(aed(10000));
+        assert!(!intent.can_authorize());
+
+        intent.record_failure();
+        assert!(intent.can_authorize());
+    }
+
+    #[test]
+    fn test_can_capture_only_authorized_or_partially_captured() {
+        let mut intent = make_intent();
+        assert!(!intent.can_capture());
+
+        intent.record_authorization(aed(10000));
+        assert!(intent.can_capture());
+
+        intent.record_capture(aed(5000));
+        assert!(intent.can_capture()); // PartiallyCaptured
+
+        intent.record_capture(aed(5000));
+        assert!(!intent.can_capture()); // Captured
+    }
+
+    #[test]
+    fn test_can_void_only_authorized() {
+        let mut intent = make_intent();
+        assert!(!intent.can_void());
+
+        intent.record_authorization(aed(10000));
+        assert!(intent.can_void());
+
+        intent.record_void();
+        assert!(!intent.can_void());
+    }
+
+    #[test]
+    fn test_can_refund_only_captured() {
+        let mut intent = make_intent();
+        assert!(!intent.can_refund());
+
+        intent.record_authorization(aed(10000));
+        assert!(!intent.can_refund());
+
+        intent.record_capture(aed(10000));
+        assert!(intent.can_refund());
+    }
+
+    #[test]
+    fn test_routing_policy_select_route() {
+        let policy = RoutingPolicy {
+            routing_policy_id: Uuid::now_v7(),
+            operator_id: Uuid::now_v7(),
+            version: 1,
+            status: "active".to_string(),
+            rules: vec![
+                RoutingRule {
+                    rule_id: "rule1".to_string(),
+                    priority: 1,
+                    card_scheme: Some(shared_types::CardScheme::Visa),
+                    currency: Some(shared_types::CurrencyCode::new("AED").unwrap()),
+                    min_amount: None,
+                    max_amount: None,
+                    acquirer_link_id: Uuid::now_v7(),
+                },
+            ],
+            failover_config: FailoverConfig::default(),
+            created_at: Utc::now(),
+            activated_at: None,
+        };
+
+        let link = policy.select_route(
+            Some(&shared_types::CardScheme::Visa),
+            &shared_types::CurrencyCode::new("AED").unwrap(),
+            &aed(5000),
+            &[],
+        );
+        assert!(link.is_some());
+
+        // Already attempted → no route
+        let link = policy.select_route(
+            Some(&shared_types::CardScheme::Visa),
+            &shared_types::CurrencyCode::new("AED").unwrap(),
+            &aed(5000),
+            &[policy.rules[0].acquirer_link_id],
+        );
+        assert!(link.is_none());
+    }
+}

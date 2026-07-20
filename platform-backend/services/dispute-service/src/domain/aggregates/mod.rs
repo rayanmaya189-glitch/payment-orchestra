@@ -16,3 +16,42 @@ impl Dispute {
     pub fn can_resolve(&self) -> bool { self.status == DisputeStatus::UnderReview }
     pub fn can_close(&self) -> bool { self.status != DisputeStatus::Closed }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_new_dispute_starts_open() {
+        let d = Dispute::new(Uuid::now_v7(), Uuid::now_v7(), DisputeReason::Fraudulent, Money { amount_minor_units: 5000, currency: shared_types::CurrencyCode::new("AED").unwrap() });
+        assert_eq!(d.status, DisputeStatus::Open);
+        assert!(d.evidence.is_none());
+    }
+
+    #[test]
+    fn test_can_submit_evidence_when_open() {
+        let d = Dispute::new(Uuid::now_v7(), Uuid::now_v7(), DisputeReason::Fraudulent, Money { amount_minor_units: 5000, currency: shared_types::CurrencyCode::new("AED").unwrap() });
+        assert!(d.can_submit_evidence());
+    }
+
+    #[test]
+    fn test_cannot_resolve_when_open() {
+        let d = Dispute::new(Uuid::now_v7(), Uuid::now_v7(), DisputeReason::Fraudulent, Money { amount_minor_units: 5000, currency: shared_types::CurrencyCode::new("AED").unwrap() });
+        assert!(!d.can_resolve());
+    }
+
+    #[test]
+    fn test_can_resolve_when_under_review() {
+        let mut d = Dispute::new(Uuid::now_v7(), Uuid::now_v7(), DisputeReason::Fraudulent, Money { amount_minor_units: 5000, currency: shared_types::CurrencyCode::new("AED").unwrap() });
+        d.status = DisputeStatus::UnderReview;
+        assert!(d.can_resolve());
+    }
+
+    #[test]
+    fn test_dispute_status_values() {
+        assert_eq!(DisputeStatus::Open.as_str(), "open");
+        assert_eq!(DisputeStatus::UnderReview.as_str(), "under_review");
+        assert_eq!(DisputeStatus::Resolved.as_str(), "resolved");
+        assert_eq!(DisputeStatus::Closed.as_str(), "closed");
+    }
+}

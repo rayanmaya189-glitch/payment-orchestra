@@ -1,3 +1,5 @@
+pub mod network_international;
+
 use async_trait::async_trait;
 use sea_orm::{DatabaseConnection, EntityTrait, QueryFilter, ColumnTrait, ActiveModelTrait, QueryOrder};
 use uuid::Uuid;

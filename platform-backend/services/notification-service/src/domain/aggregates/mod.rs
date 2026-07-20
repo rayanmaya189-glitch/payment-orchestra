@@ -15,3 +15,37 @@ impl Notification {
     pub fn mark_sent(&mut self) { self.status = NotificationStatus::Sent; self.sent_at = Some(Utc::now()); }
     pub fn mark_failed(&mut self) { self.status = NotificationStatus::Failed; }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_new_notification_is_pending() {
+        let n = Notification::new(Uuid::now_v7(), NotificationType::Email, "test@example.com".into(), Some("Subject".into()), "Body".into());
+        assert_eq!(n.status, NotificationStatus::Pending);
+        assert!(n.sent_at.is_none());
+    }
+
+    #[test]
+    fn test_mark_sent() {
+        let mut n = Notification::new(Uuid::now_v7(), NotificationType::Email, "test@example.com".into(), None, "Body".into());
+        n.mark_sent();
+        assert_eq!(n.status, NotificationStatus::Sent);
+        assert!(n.sent_at.is_some());
+    }
+
+    #[test]
+    fn test_mark_failed() {
+        let mut n = Notification::new(Uuid::now_v7(), NotificationType::Sms, "+971501234567".into(), None, "Code: 1234".into());
+        n.mark_failed();
+        assert_eq!(n.status, NotificationStatus::Failed);
+    }
+
+    #[test]
+    fn test_notification_type_values() {
+        assert_eq!(NotificationType::Email.as_str(), "email");
+        assert_eq!(NotificationType::Sms.as_str(), "sms");
+        assert_eq!(NotificationType::Push.as_str(), "push");
+    }
+}
