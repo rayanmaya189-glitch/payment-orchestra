@@ -41,6 +41,113 @@ impl FeeStructure {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use shared_types::CardScheme;
+
+    fn aed(amount: i64) -> Money {
+        Money { amount_minor_units: amount, currency: CurrencyCode::new("AED").unwrap() }
+    }
+
+    #[test]
+    fn test_fee_calculation_fixed_only() {
+        let fee = FeeStructure {
+            fixed_fee: aed(100),
+            percentage_fee_bps: 0,
+            cross_border_fee_bps: 0,
+            currency_conversion_fee_bps: 0,
+        };
+        let result = fee.calculate_fee(&aed(10000), false, false);
+        assert_eq!(result.amount_minor_units, 100);
+    }
+
+    #[test]
+    fn test_fee_calculation_percentage() {
+        let fee = FeeStructure {
+            fixed_fee: aed(0),
+            percentage_fee_bps: 250, // 2.5%
+            cross_border_fee_bps: 0,
+            currency_conversion_fee_bps: 0,
+        };
+        let result = fee.calculate_fee(&aed(10000), false, false);
+        assert_eq!(result.amount_minor_units, 250); // 10000 * 250 / 10000
+    }
+
+    #[test]
+    fn test_fee_calculation_cross_border() {
+        let fee = FeeStructure {
+            fixed_fee: aed(50),
+            percentage_fee_bps: 200, // 2%
+            cross_border_fee_bps: 100, // 1%
+            currency_conversion_fee_bps: 50, // 0.5%
+        };
+        let result = fee.calculate_fee(&aed(10000), true, true);
+        // 50 + 200 + 100 + 50 = 400
+        assert_eq!(result.amount_minor_units, 400);
+    }
+
+    #[test]
+    fn test_fee_calculation_no_cross_border_no_fx() {
+        let fee = FeeStructure {
+            fixed_fee: aed(50),
+            percentage_fee_bps: 200,
+            cross_border_fee_bps: 100,
+            currency_conversion_fee_bps: 50,
+        };
+        let result = fee.calculate_fee(&aed(10000), false, false);
+        // 50 + 200 + 0 + 0 = 250
+        assert_eq!(result.amount_minor_units, 250);
+    }
+
+    #[test]
+    fn test_gateway_profile_validate_transaction() {
+        use crate::domain::aggregates::GatewayProfile;
+        use chrono::Utc;
+
+        let profile = GatewayProfile {
+            profile_id: uuid::Uuid::now_v7(),
+            operator_id: uuid::Uuid::now_v7(),
+            connector_id: "test".to_string(),
+            merchant_acquirer_link_id: uuid::Uuid::now_v7(),
+            status: GatewayProfileStatus::Active,
+            min_transaction_amount_minor: 100,
+            max_transaction_amount_minor: 50_000_000,
+            daily_volume_limit_minor: 5_000_000_000,
+            monthly_volume_limit_minor: 50_000_000_000,
+            max_refund_amount_minor: 50_000_000,
+            fixed_fee_minor: 100,
+            percentage_fee_bps: 250,
+            cross_border_fee_bps: 0,
+            currency_conversion_fee_bps: 0,
+            routing_priority: 1,
+            base_url: "https://api.test.com".to_string(),
+            enabled_card_schemes: vec![CardScheme::Visa],
+            enabled_currencies: vec![CurrencyCode::new("AED").unwrap()],
+            enabled_countries: vec!["AE".to_string()],
+            rate_limit_per_second: 100,
+            rate_limit_per_day: 1_000_000,
+            success_rate_threshold: 0.95,
+            latency_threshold_ms: 5000,
+            auto_disable_on_low_success: true,
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        };
+
+        // Valid transaction
+        assert!(profile.validate_transaction(&aed(5000), &CardScheme::Visa, &CurrencyCode::new("AED").unwrap()).is_ok());
+
+        // Below minimum
+        assert!(profile.validate_transaction(&aed(50), &CardScheme::Visa, &CurrencyCode::new("AED").unwrap()).is_err());
+
+        // Unsupported card scheme
+        assert!(profile.validate_transaction(&aed(5000), &CardScheme::Amex, &CurrencyCode::new("AED").unwrap()).is_err());
+
+        // Unsupported currency
+        assert!(profile.validate_transaction(&aed(5000), &CardScheme::Visa, &CurrencyCode::new("USD").unwrap()).is_err());
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RateLimitConfig {
     pub per_second: u32,

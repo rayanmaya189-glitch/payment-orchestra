@@ -10,7 +10,7 @@ use crate::application::queries::*;
 use crate::api::dto::LoginResponse;
 use crate::domain::aggregates::{ApiKey, PrincipalStatus};
 use crate::domain::value_objects::PermissionResult;
-use crate::infrastructure::repository::{ApiKeyRepository, PrincipalRepository};
+use crate::infrastructure::repository::{ApiKeyRepository, PendingChangeRepository, PrincipalRepository};
 use platform_config::AuthConfig;
 use platform_error::PlatformError;
 
@@ -55,6 +55,7 @@ pub trait AuthService: Send + Sync {
 pub struct AuthServiceImpl {
     principal_repo: Box<dyn PrincipalRepository>,
     api_key_repo: Box<dyn ApiKeyRepository>,
+    pending_change_repo: Box<dyn PendingChangeRepository>,
     _db: sea_orm::DatabaseConnection,
     redis: ConnectionManager,
     auth_config: AuthConfig,
@@ -64,11 +65,12 @@ impl AuthServiceImpl {
     pub fn new(
         principal_repo: Box<dyn PrincipalRepository>,
         api_key_repo: Box<dyn ApiKeyRepository>,
+        pending_change_repo: Box<dyn PendingChangeRepository>,
         db: sea_orm::DatabaseConnection,
         redis: ConnectionManager,
         auth_config: AuthConfig,
     ) -> Self {
-        Self { principal_repo, api_key_repo, _db: db, redis, auth_config }
+        Self { principal_repo, api_key_repo, pending_change_repo, _db: db, redis, auth_config }
     }
 
     // ==================== Password Hashing (Argon2id per SRS AUTH-005) ====================
@@ -509,8 +511,56 @@ impl AuthService for AuthServiceImpl {
     }
 
     async fn approve_pending_change(&self, cmd: ApprovePendingChangeCommand) -> Result<(), PlatformError> {
-        // TODO: Implement Maker/Checker approval logic
-        let _ = cmd;
+        use crate::domain::aggregates::PendingChangeStatus;
+
+        // Load the pending change
+        let mut change = self.pending_change_repo
+            .load(cmd.change_id)
+            .await?
+            .ok_or_else(|| PlatformError::NotFound {
+                resource: "PendingChange".into(),
+                id: cmd.change_id,
+            })?;
+
+        // Verify it's in Pending status
+        if change.status != PendingChangeStatus::Pending {
+            return Err(PlatformError::AuthorizationDenied(
+                "Pending change is not in Pending status".into()
+            ));
+        }
+
+        // ABAC-004: Maker/Checker segregation — checker cannot be the maker
+        if change.maker_id == cmd.checker_id {
+            return Err(PlatformError::AuthorizationDenied(
+                "Maker and checker must be different principals (ABAC-004)".into()
+            ));
+        }
+
+        // Verify not expired (SRS PendingChange auto-expires)
+        if change.expires_at < Utc::now() {
+            change.status = PendingChangeStatus::Expired;
+            self.pending_change_repo.save(&change).await?;
+            return Err(PlatformError::AuthorizationDenied(
+                "Pending change has expired".into()
+            ));
+        }
+
+        // Approve the change
+        change.status = PendingChangeStatus::Approved;
+        change.checker_id = Some(cmd.checker_id);
+        change.checker_note = cmd.note;
+        change.reviewed_at = Some(Utc::now());
+
+        self.pending_change_repo.save(&change).await?;
+
+        tracing::info!(
+            change_id = %change.change_id,
+            change_type = %change.change_type,
+            maker_id = %change.maker_id,
+            checker_id = %cmd.checker_id,
+            "Pending change approved via Maker/Checker"
+        );
+
         Ok(())
     }
 

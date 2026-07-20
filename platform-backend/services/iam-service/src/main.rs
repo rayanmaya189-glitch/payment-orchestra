@@ -11,7 +11,7 @@ mod domain;
 mod infrastructure;
 
 use crate::application::services::AuthServiceImpl;
-use crate::infrastructure::adapters::{PostgresApiKeyRepository, PostgresPrincipalRepository};
+use crate::infrastructure::adapters::{PostgresApiKeyRepository, PostgresPendingChangeRepository, PostgresPrincipalRepository};
 
 #[tokio::main]
 async fn main() {
@@ -28,11 +28,13 @@ async fn main() {
     // Create repositories
     let principal_repo = PostgresPrincipalRepository::new(db.clone());
     let api_key_repo = PostgresApiKeyRepository::new(db.clone());
+    let pending_change_repo = PostgresPendingChangeRepository::new(db.clone());
 
     // Create service with AuthConfig (JWT secret from environment, NOT hardcoded)
     let service = AuthServiceImpl::new(
         Box::new(principal_repo),
         Box::new(api_key_repo),
+        Box::new(pending_change_repo),
         db.clone(),
         redis.clone(),
         config.auth.clone(),

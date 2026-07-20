@@ -150,3 +150,125 @@ impl Principal {
         self.last_login_at = Some(Utc::now());
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_principal() -> Principal {
+        Principal {
+            id: Uuid::now_v7(),
+            principal_type: PrincipalType::Human,
+            email: Some("test@example.com".to_string()),
+            password_hash: Some(vec![1, 2, 3]),
+            mfa_enrolled: false,
+            mfa_method: None,
+            status: PrincipalStatus::Active,
+            failed_login_attempts: 0,
+            locked_until: None,
+            created_at: Utc::now(),
+            last_login_at: None,
+        }
+    }
+
+    #[test]
+    fn test_principal_not_locked_initially() {
+        let p = make_principal();
+        assert!(!p.is_locked());
+    }
+
+    #[test]
+    fn test_lockout_after_5_failures() {
+        let mut p = make_principal();
+        for _ in 0..5 {
+            p.record_failed_login(5, 10, 20);
+        }
+        assert!(p.is_locked());
+        assert!(p.locked_until.is_some());
+        // Still active, not suspended
+        assert_eq!(p.status, PrincipalStatus::Active);
+    }
+
+    #[test]
+    fn test_lockout_after_10_failures() {
+        let mut p = make_principal();
+        for _ in 0..10 {
+            p.record_failed_login(5, 10, 20);
+        }
+        assert!(p.is_locked());
+        // 10 failures = 1hr lockout (overrides 15min)
+        let locked_until = p.locked_until.unwrap();
+        let now = Utc::now();
+        let diff = locked_until - now;
+        assert!(diff.num_minutes() > 50 && diff.num_minutes() <= 60);
+    }
+
+    #[test]
+    fn test_suspension_after_20_failures() {
+        let mut p = make_principal();
+        for _ in 0..20 {
+            p.record_failed_login(5, 10, 20);
+        }
+        assert_eq!(p.status, PrincipalStatus::Suspended);
+    }
+
+    #[test]
+    fn test_successful_login_resets_counters() {
+        let mut p = make_principal();
+        for _ in 0..4 {
+            p.record_failed_login(5, 10, 20);
+        }
+        assert_eq!(p.failed_login_attempts, 4);
+        assert!(!p.is_locked());
+
+        p.record_successful_login();
+        assert_eq!(p.failed_login_attempts, 0);
+        assert!(p.locked_until.is_none());
+        assert!(p.last_login_at.is_some());
+    }
+
+    #[test]
+    fn test_principal_type_from_str() {
+        assert_eq!(PrincipalType::from_str("human").unwrap(), PrincipalType::Human);
+        assert_eq!(PrincipalType::from_str("api_key").unwrap(), PrincipalType::ApiKey);
+        assert_eq!(PrincipalType::from_str("service").unwrap(), PrincipalType::Service);
+        assert!(PrincipalType::from_str("unknown").is_err());
+    }
+
+    #[test]
+    fn test_principal_status_from_str() {
+        assert_eq!(PrincipalStatus::from_str("active").unwrap(), PrincipalStatus::Active);
+        assert_eq!(PrincipalStatus::from_str("suspended").unwrap(), PrincipalStatus::Suspended);
+        assert_eq!(PrincipalStatus::from_str("deleted").unwrap(), PrincipalStatus::Deleted);
+        assert!(PrincipalStatus::from_str("unknown").is_err());
+    }
+
+    #[test]
+    fn test_pending_change_status_from_str() {
+        assert_eq!(PendingChangeStatus::from_str("pending").unwrap(), PendingChangeStatus::Pending);
+        assert_eq!(PendingChangeStatus::from_str("approved").unwrap(), PendingChangeStatus::Approved);
+        assert_eq!(PendingChangeStatus::from_str("rejected").unwrap(), PendingChangeStatus::Rejected);
+        assert_eq!(PendingChangeStatus::from_str("expired").unwrap(), PendingChangeStatus::Expired);
+        assert!(PendingChangeStatus::from_str("unknown").is_err());
+    }
+
+    #[test]
+    fn test_lockout_with_custom_thresholds() {
+        let mut p = make_principal();
+        // Custom: 3 → 15min, 5 → 1hr, 8 → suspend
+        for _ in 0..3 {
+            p.record_failed_login(3, 5, 8);
+        }
+        assert!(p.is_locked());
+        assert_eq!(p.status, PrincipalStatus::Active);
+
+        // Reset
+        p.record_successful_login();
+
+        // 8 suspends
+        for _ in 0..8 {
+            p.record_failed_login(3, 5, 8);
+        }
+        assert_eq!(p.status, PrincipalStatus::Suspended);
+    }
+}
