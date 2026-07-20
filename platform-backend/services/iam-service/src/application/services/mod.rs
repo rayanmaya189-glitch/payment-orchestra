@@ -212,6 +212,18 @@ impl IamService for IamServiceImpl {
         principal.record_successful_login(&cmd.ip_address, &cmd.user_agent);
         self.principal_repo.save(&principal).await?;
 
+        // MFA enforcement (SRS AUTH-001): Check if MFA is enrolled
+        // If MFA is enrolled, require TOTP verification before issuing tokens
+        if principal.mfa_enrolled {
+            // For now, log that MFA is required but don't block
+            // In production, this would return a challenge response
+            tracing::warn!(
+                principal_id = %principal.principal_id,
+                "MFA enrolled but TOTP verification not yet enforced in login flow"
+            );
+            // TODO: Return MFA challenge response when MFA UI is implemented
+        }
+
         // Generate tokens
         let role = principal.role.as_str();
         let access_token = self.generate_access_token(principal.principal_id, role)?;
@@ -277,10 +289,24 @@ impl IamService for IamServiceImpl {
         let principal_id = Uuid::parse_str(&claims.sub)
             .map_err(|_| PlatformError::AuthorizationDenied("Invalid principal ID".to_string()))?;
 
-        // Verify client fingerprint
+        // Verify client fingerprint (SRS SESS-SEC-003: Session binding)
         let expected_fingerprint = platform_middleware::client_fingerprint(&cmd.ip_address, &cmd.user_agent);
         if claims.fingerprint_hash != expected_fingerprint {
-            // Possible token theft — invalidate all sessions
+            // Possible token theft — log security event and invalidate all sessions
+            platform_logging::log_security_event(
+                "iam-service",
+                platform_logging::SecurityEventType::BruteForceDetected,
+                platform_logging::SecurityOutcome::Blocked,
+                Some(principal_id),
+                Some(&cmd.ip_address),
+                Some(&cmd.user_agent),
+                None,
+                Some(serde_json::json!({
+                    "reason": "fingerprint_mismatch",
+                    "message": "Refresh token used from different client"
+                })),
+            );
+
             self.session_store.invalidate_all_principal_tokens(&principal_id.to_string()).await?;
             self.refresh_token_repo.revoke_all_for_principal(principal_id).await?;
             return Err(PlatformError::AuthorizationDenied(

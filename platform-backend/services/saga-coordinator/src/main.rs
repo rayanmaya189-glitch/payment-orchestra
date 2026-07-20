@@ -6,14 +6,14 @@ use std::sync::Arc;
 use tower_http::trace::TraceLayer;
 mod api; mod application; mod domain; mod infrastructure;
 use crate::application::services::SagaServiceImpl;
-use crate::infrastructure::adapters::NoopSagaRepository;
+use crate::infrastructure::adapters::PostgresSagaRepository;
 #[tokio::main]
 async fn main() {
     ServiceLogger::init("saga-coordinator");
     let config = AppConfig::from_env_or_panic("saga-coordinator");
     let db = infrastructure::database::connect(&config.database).await;
     let redis = infrastructure::cache::connect(&config.redis).await;
-    let repo = NoopSagaRepository::new();
+    let repo = PostgresSagaRepository::new(db.clone());
     let service = SagaServiceImpl::new(Box::new(repo), db.clone());
     let app_state = api::AppState::new(service);
     let cors = platform_middleware::cors_layer(&config.cors);

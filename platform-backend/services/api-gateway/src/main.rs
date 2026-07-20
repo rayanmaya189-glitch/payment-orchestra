@@ -6,14 +6,14 @@ use std::sync::Arc;
 use tower_http::trace::TraceLayer;
 mod api; mod application; mod domain; mod infrastructure;
 use crate::application::services::ApiGatewayServiceImpl;
-use crate::infrastructure::adapters::NoopRouteRepository;
+use crate::infrastructure::adapters::PostgresRouteRepository;
 #[tokio::main]
 async fn main() {
     ServiceLogger::init("api-gateway");
     let config = AppConfig::from_env_or_panic("api-gateway");
     let db = infrastructure::database::connect(&config.database).await;
     let redis = infrastructure::cache::connect(&config.redis).await;
-    let repo = NoopRouteRepository::new();
+    let repo = PostgresRouteRepository::new(db.clone());
     let service = ApiGatewayServiceImpl::new(Box::new(repo), db.clone());
     let app_state = api::AppState::new(service);
     let cors = platform_middleware::cors_layer(&config.cors);
