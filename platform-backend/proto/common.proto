@@ -1,0 +1,28 @@
+syntax = "proto3";
+package common;
+
+message Money {
+  int64 amount_minor_units = 1;
+  string currency_code = 2;
+}
+
+message PaginationRequest {
+  string cursor = 1;
+  uint32 limit = 2;
+}
+
+message PaginationResponse {
+  string next_cursor = 1;
+  bool has_more = 2;
+}
+
+enum InternalErrorCode {
+  INTERNAL_ERROR_CODE_UNSPECIFIED = 0;
+  TRANSIENT_FAILURE = 1;
+  PERMANENT_FAILURE = 2;
+  DEGRADED_MODE = 3;
+  RATE_LIMITED = 4;
+  AUTHORIZATION_DENIED = 5;
+  VALIDATION_ERROR = 6;
+  UNAVAILABLE = 7;
+}

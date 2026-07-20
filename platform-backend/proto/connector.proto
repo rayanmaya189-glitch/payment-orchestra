@@ -1,0 +1,81 @@
+syntax = "proto3";
+package connector;
+
+import "common.proto";
+
+service ConnectorGateway {
+  rpc Authorize(AuthorizeRequest) returns (AuthorizeResponse);
+  rpc Capture(CaptureRequest) returns (CaptureResponse);
+  rpc Void(VoidRequest) returns (VoidResponse);
+  rpc Refund(RefundRequest) returns (RefundResponse);
+  rpc StatusCheck(StatusCheckRequest) returns (StatusCheckResponse);
+  rpc GetCapabilities(GetCapabilitiesRequest) returns (CapabilitiesResponse);
+}
+
+message AuthorizeRequest {
+  string connector_id = 1;
+  string payment_method_token = 2;
+  common.Money amount = 3;
+  string idempotency_key = 4;
+  string card_scheme = 5;
+}
+
+message AuthorizeResponse {
+  string status = 1;
+  string acquirer_reference = 2;
+  string decline_reason = 3;
+  uint32 latency_ms = 4;
+}
+
+message CaptureRequest {
+  string connector_id = 1;
+  string acquirer_reference = 2;
+  common.Money amount = 3;
+}
+
+message CaptureResponse {
+  string status = 1;
+  common.Money captured_amount = 2;
+}
+
+message VoidRequest {
+  string connector_id = 1;
+  string acquirer_reference = 2;
+}
+
+message VoidResponse {
+  string status = 1;
+}
+
+message RefundRequest {
+  string connector_id = 1;
+  string acquirer_reference = 2;
+  common.Money amount = 3;
+}
+
+message RefundResponse {
+  string status = 1;
+  string refund_reference = 2;
+}
+
+message StatusCheckRequest {
+  string connector_id = 1;
+  string acquirer_reference = 2;
+}
+
+message StatusCheckResponse {
+  string status = 1;
+  string acquirer_reference = 2;
+}
+
+message GetCapabilitiesRequest {
+  string connector_id = 1;
+}
+
+message CapabilitiesResponse {
+  bool supports_partial_capture = 1;
+  bool supports_partial_refund = 2;
+  bool supports_native_idempotency_key = 3;
+  repeated string supported_card_schemes = 4;
+  repeated string supported_currencies = 5;
+}
