@@ -19,13 +19,13 @@ impl SettlementFormat {
         }
     }
 
-    pub fn from_str(s: &str) -> Self {
+    pub fn from_str(s: &str) -> Result<Self, &'static str> {
         match s {
-            "csv" => Self::Csv,
-            "webhook" => Self::Webhook,
-            "sftp" => Self::Sftp,
-            "api" => Self::Api,
-            _ => Self::Api,
+            "csv" => Ok(Self::Csv),
+            "webhook" => Ok(Self::Webhook),
+            "sftp" => Ok(Self::Sftp),
+            "api" => Ok(Self::Api),
+            _ => Err("unknown settlement format"),
         }
     }
 }
@@ -46,12 +46,12 @@ impl SettlementBatchStatus {
         }
     }
 
-    pub fn from_str(s: &str) -> Self {
+    pub fn from_str(s: &str) -> Result<Self, &'static str> {
         match s {
-            "ingesting" => Self::Ingesting,
-            "processed" => Self::Processed,
-            "quarantined" => Self::Quarantined,
-            _ => Self::Ingesting,
+            "ingesting" => Ok(Self::Ingesting),
+            "processed" => Ok(Self::Processed),
+            "quarantined" => Ok(Self::Quarantined),
+            _ => Err("unknown settlement batch status"),
         }
     }
 }
@@ -72,12 +72,12 @@ impl SettlementMatchOutcome {
         }
     }
 
-    pub fn from_str(s: &str) -> Self {
+    pub fn from_str(s: &str) -> Result<Self, &'static str> {
         match s {
-            "matched" => Self::Matched,
-            "unmatched" => Self::Unmatched,
-            "disputed" => Self::Disputed,
-            _ => Self::Unmatched,
+            "matched" => Ok(Self::Matched),
+            "unmatched" => Ok(Self::Unmatched),
+            "disputed" => Ok(Self::Disputed),
+            _ => Err("unknown settlement match outcome"),
         }
     }
 }

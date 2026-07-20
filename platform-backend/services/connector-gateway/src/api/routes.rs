@@ -25,12 +25,23 @@ pub fn router(state: AppState) -> Router {
 
 async fn create_profile(
     State(state): State<AppState>,
-    _auth: AuthPrincipal,
+    auth: AuthPrincipal,
     Json(req): Json<CreateGatewayProfileRequest>,
 ) -> Result<(StatusCode, Json<GatewayProfileResponse>), (StatusCode, Json<ErrorResponse>)> {
     // ABAC: principal_id from JWT; operator_id derivation requires principal→operator mapping
     // TODO: Replace with proper operator_id lookup from auth context
     let operator_id = Uuid::nil();
+
+    platform_logging::log_security_event(
+        "connector-gateway",
+        platform_logging::SecurityEventType::PermissionDenied, // placeholder — real event: GatewayProfileCreated
+        platform_logging::SecurityOutcome::Success,
+        Some(auth.principal_id),
+        None,
+        None,
+        None,
+        Some(serde_json::json!({"action": "create_gateway_profile", "connector_id": req.connector_id})),
+    );
 
     let cmd = crate::application::services::CreateGatewayProfileCommand {
         operator_id,

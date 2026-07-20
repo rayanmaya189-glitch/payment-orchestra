@@ -6,6 +6,7 @@ edition.workspace = true
 [dependencies]
 platform-db.workspace = true
 platform-middleware.workspace = true
+platform-messaging.workspace = true
 validator.workspace = true
 http.workspace = true
 shared-types.workspace = true

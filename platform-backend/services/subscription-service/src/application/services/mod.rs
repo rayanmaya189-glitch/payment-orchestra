@@ -22,7 +22,8 @@ pub struct SubscriptionResponse { pub subscription_id: Uuid, pub status: String,
 #[async_trait]
 impl SubscriptionService for SubscriptionServiceImpl {
     async fn create_subscription(&self, cmd: CreateSubscriptionCommand) -> Result<SubscriptionResponse, PlatformError> {
-        let interval = BillingInterval::from_str(&cmd.interval);
+        let interval = BillingInterval::from_str(&cmd.interval)
+            .map_err(|e| PlatformError::Validation(platform_error::ValidationError::MissingField(e.to_string())))?;
         let sub = Subscription::new(cmd.operator_id, cmd.customer_id, cmd.amount, interval);
         Ok(sub_to_response(&sub))
     }

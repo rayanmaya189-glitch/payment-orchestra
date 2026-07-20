@@ -16,12 +16,12 @@ impl PaymentLinkStatus {
             Self::Expired => "expired",
         }
     }
-    pub fn from_str(s: &str) -> Self {
+    pub fn from_str(s: &str) -> Result<Self, &'static str> {
         match s {
-            "active" => Self::Active,
-            "inactive" => Self::Inactive,
-            "expired" => Self::Expired,
-            _ => Self::Active,
+            "active" => Ok(Self::Active),
+            "inactive" => Ok(Self::Inactive),
+            "expired" => Ok(Self::Expired),
+            _ => Err("unknown payment link status"),
         }
     }
 }

@@ -39,7 +39,8 @@ impl Model {
             invoice_id: self.invoice_id,
             operator_id: self.operator_id,
             order_reference: self.order_reference.clone(),
-            status: InvoiceStatus::from_str(&self.status),
+            status: InvoiceStatus::from_str(&self.status)
+                .expect("DB contains invalid invoice status"),
             total_amount: Money {
                 amount_minor_units: self.total_amount_minor_units,
                 currency: currency.clone(),

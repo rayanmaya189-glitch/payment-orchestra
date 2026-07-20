@@ -19,7 +19,8 @@ pub struct NotificationResponse { pub notification_id: Uuid, pub status: String,
 #[async_trait]
 impl NotificationService for NotificationServiceImpl {
     async fn send_notification(&self, cmd: SendNotificationCommand) -> Result<NotificationResponse, PlatformError> {
-        let ntype = NotificationType::from_str(&cmd.notification_type);
+        let ntype = NotificationType::from_str(&cmd.notification_type)
+            .map_err(|e| PlatformError::Validation(platform_error::ValidationError::MissingField(e.to_string())))?;
         let mut notification = Notification::new(cmd.operator_id, ntype, cmd.recipient, cmd.subject, cmd.body);
         notification.mark_sent();
         Ok(notification_to_response(&notification))

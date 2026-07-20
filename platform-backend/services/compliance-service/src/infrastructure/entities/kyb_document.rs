@@ -41,7 +41,8 @@ impl Model {
         KybDocument {
             id: self.id,
             kyb_case_id: self.kyb_case_id,
-            document_type: KybDocumentType::from_str(&self.document_type),
+            document_type: KybDocumentType::from_str(&self.document_type)
+                .expect("DB contains invalid KYB document type"),
             file_key: self.file_key.clone(),
             file_hash: self.file_hash.clone(),
             uploaded_at: self.uploaded_at.into(),

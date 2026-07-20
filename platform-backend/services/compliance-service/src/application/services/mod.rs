@@ -73,7 +73,8 @@ impl ComplianceService for ComplianceServiceImpl {
             ));
         }
 
-        let document_type = KybDocumentType::from_str(&cmd.document_type);
+        let document_type = KybDocumentType::from_str(&cmd.document_type)
+            .map_err(|e| PlatformError::Validation(platform_error::ValidationError::MissingField(e.to_string())))?;
 
         let document = KybDocument {
             id: Uuid::now_v7(),
@@ -142,7 +143,8 @@ impl ComplianceService for ComplianceServiceImpl {
             ));
         }
 
-        let decision_status = KybCaseStatus::from_str(&cmd.decision);
+        let decision_status = KybCaseStatus::from_str(&cmd.decision)
+            .map_err(|e| PlatformError::Validation(platform_error::ValidationError::MissingField(e.to_string())))?;
         case.status = decision_status.clone();
         case.decision = Some(crate::domain::aggregates::KybDecision {
             decision: decision_status,

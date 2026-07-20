@@ -5,12 +5,12 @@ use serde::{Deserialize, Serialize};
 pub enum SubscriptionStatus { Active, Paused, Cancelled, PastDue }
 impl SubscriptionStatus {
     pub fn as_str(&self) -> &'static str { match self { Self::Active => "active", Self::Paused => "paused", Self::Cancelled => "cancelled", Self::PastDue => "past_due" } }
-    pub fn from_str(s: &str) -> Self { match s { "active" => Self::Active, "paused" => Self::Paused, "cancelled" => Self::Cancelled, "past_due" => Self::PastDue, _ => Self::Active } }
+    pub fn from_str(s: &str) -> Result<Self, &'static str> { match s { "active" => Ok(Self::Active), "paused" => Ok(Self::Paused), "cancelled" => Ok(Self::Cancelled), "past_due" => Ok(Self::PastDue), _ => Err("unknown subscription status") } }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum BillingInterval { Monthly, Quarterly, Yearly }
 impl BillingInterval {
     pub fn as_str(&self) -> &'static str { match self { Self::Monthly => "monthly", Self::Quarterly => "quarterly", Self::Yearly => "yearly" } }
-    pub fn from_str(s: &str) -> Self { match s { "monthly" => Self::Monthly, "quarterly" => Self::Quarterly, "yearly" => Self::Yearly, _ => Self::Monthly } }
+    pub fn from_str(s: &str) -> Result<Self, &'static str> { match s { "monthly" => Ok(Self::Monthly), "quarterly" => Ok(Self::Quarterly), "yearly" => Ok(Self::Yearly), _ => Err("unknown billing interval") } }
 }

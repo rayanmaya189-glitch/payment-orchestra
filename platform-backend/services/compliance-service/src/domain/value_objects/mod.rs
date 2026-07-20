@@ -25,16 +25,16 @@ impl KybCaseStatus {
         }
     }
 
-    pub fn from_str(s: &str) -> Self {
+    pub fn from_str(s: &str) -> Result<Self, &'static str> {
         match s {
-            "submitted" => Self::Submitted,
-            "under_review" => Self::UnderReview,
-            "documents_requested" => Self::DocumentsRequested,
-            "documents_verified" => Self::DocumentsVerified,
-            "approved" => Self::Approved,
-            "rejected" => Self::Rejected,
-            "suspended" => Self::Suspended,
-            _ => Self::Submitted,
+            "submitted" => Ok(Self::Submitted),
+            "under_review" => Ok(Self::UnderReview),
+            "documents_requested" => Ok(Self::DocumentsRequested),
+            "documents_verified" => Ok(Self::DocumentsVerified),
+            "approved" => Ok(Self::Approved),
+            "rejected" => Ok(Self::Rejected),
+            "suspended" => Ok(Self::Suspended),
+            _ => Err("unknown KYB case status"),
         }
     }
 }
@@ -63,16 +63,16 @@ impl KybDocumentType {
         }
     }
 
-    pub fn from_str(s: &str) -> Self {
+    pub fn from_str(s: &str) -> Result<Self, &'static str> {
         match s {
-            "trade_license" => Self::TradeLicense,
-            "certificate_of_incorporation" => Self::CertificateOfIncorporation,
-            "memorandum_of_association" => Self::MemorandumOfAssociation,
-            "board_resolution" => Self::BoardResolution,
-            "proof_of_address" => Self::ProofOfAddress,
-            "bank_statement" => Self::BankStatement,
-            "ubo_declaration" => Self::UboDeclaration,
-            _ => Self::TradeLicense,
+            "trade_license" => Ok(Self::TradeLicense),
+            "certificate_of_incorporation" => Ok(Self::CertificateOfIncorporation),
+            "memorandum_of_association" => Ok(Self::MemorandumOfAssociation),
+            "board_resolution" => Ok(Self::BoardResolution),
+            "proof_of_address" => Ok(Self::ProofOfAddress),
+            "bank_statement" => Ok(Self::BankStatement),
+            "ubo_declaration" => Ok(Self::UboDeclaration),
+            _ => Err("unknown KYB document type"),
         }
     }
 }

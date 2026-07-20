@@ -69,7 +69,8 @@ impl Model {
             idempotency_key: self.idempotency_key.clone(),
             payment_method_token_id: self.payment_method_token_id,
             routing_policy_id: self.routing_policy_id,
-            purpose: PaymentPurpose::from_str(&self.purpose),
+            purpose: PaymentPurpose::from_str(&self.purpose)
+                .expect("DB contains invalid payment purpose"),
             metadata: self.metadata.as_ref().and_then(|m| serde_json::from_str(m).ok()),
             gateway_profile_id: self.gateway_profile_id,
             gateway_profile_version: self.gateway_profile_version,

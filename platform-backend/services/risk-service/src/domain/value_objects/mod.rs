@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 pub enum RiskDecision { Approve, Review, Reject }
 impl RiskDecision {
     pub fn as_str(&self) -> &'static str { match self { Self::Approve => "approve", Self::Review => "review", Self::Reject => "reject" } }
-    pub fn from_str(s: &str) -> Self { match s { "approve" => Self::Approve, "review" => Self::Review, "reject" => Self::Reject, _ => Self::Review } }
+    pub fn from_str(s: &str) -> Result<Self, &'static str> { match s { "approve" => Ok(Self::Approve), "review" => Ok(Self::Review), "reject" => Ok(Self::Reject), _ => Err("unknown risk decision") } }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

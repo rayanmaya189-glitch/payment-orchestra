@@ -16,10 +16,11 @@ impl PaymentPurpose {
         }
     }
 
-    pub fn from_str(s: &str) -> Self {
+    pub fn from_str(s: &str) -> Result<Self, &'static str> {
         match s {
-            "card_verification" => Self::CardVerification,
-            _ => Self::Payment,
+            "card_verification" => Ok(Self::CardVerification),
+            "payment" => Ok(Self::Payment),
+            _ => Err("unknown payment purpose"),
         }
     }
 }

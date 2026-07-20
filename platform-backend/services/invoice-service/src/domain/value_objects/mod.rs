@@ -23,15 +23,15 @@ impl InvoiceStatus {
         }
     }
 
-    pub fn from_str(s: &str) -> Self {
+    pub fn from_str(s: &str) -> Result<Self, &'static str> {
         match s {
-            "draft" => Self::Draft,
-            "sent" => Self::Sent,
-            "paid" => Self::Paid,
-            "partially_paid" => Self::PartiallyPaid,
-            "overdue" => Self::Overdue,
-            "cancelled" => Self::Cancelled,
-            _ => Self::Draft,
+            "draft" => Ok(Self::Draft),
+            "sent" => Ok(Self::Sent),
+            "paid" => Ok(Self::Paid),
+            "partially_paid" => Ok(Self::PartiallyPaid),
+            "overdue" => Ok(Self::Overdue),
+            "cancelled" => Ok(Self::Cancelled),
+            _ => Err("unknown invoice status"),
         }
     }
 }

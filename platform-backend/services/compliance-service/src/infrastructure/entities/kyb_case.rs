@@ -41,12 +41,14 @@ impl Model {
         KybCase {
             id: self.id,
             operator_id: self.operator_id,
-            status: KybCaseStatus::from_str(&self.status),
+            status: KybCaseStatus::from_str(&self.status)
+                .expect("DB contains invalid KYB case status"),
             assigned_compliance_officer: self.assigned_compliance_officer,
             documents,
             risk_score: self.risk_score,
             decision: self.decision.as_ref().map(|d| crate::domain::aggregates::KybDecision {
-                decision: KybCaseStatus::from_str(d),
+                decision: KybCaseStatus::from_str(d)
+                    .expect("DB contains invalid KYB decision status"),
                 reason: self.decision_reason.clone().unwrap_or_default(),
                 decided_by: self.assigned_compliance_officer.unwrap_or_default(),
                 decided_at: self.decided_at.map(|dt| dt.into()).unwrap_or_default(),

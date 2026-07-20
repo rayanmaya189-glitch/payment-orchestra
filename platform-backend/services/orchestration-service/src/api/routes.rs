@@ -25,7 +25,7 @@ pub fn router(state: AppState) -> Router {
 
 async fn create_payment_intent(
     State(state): State<AppState>,
-    _auth: AuthPrincipal,
+    auth: AuthPrincipal,
     Json(req): Json<CreatePaymentIntentRequest>,
 ) -> Result<(StatusCode, Json<PaymentIntentResponse>), (StatusCode, Json<ErrorResponse>)> {
     // ABAC: TODO derive operator_id from auth.principal_id
@@ -37,6 +37,17 @@ async fn create_payment_intent(
         metadata: req.metadata,
         preferred_gateway_profile_id: req.preferred_gateway_profile_id,
     };
+
+    platform_logging::log_security_event(
+        "orchestration-service",
+        platform_logging::SecurityEventType::LoginSuccess, // placeholder — real event: PaymentIntentCreated
+        platform_logging::SecurityOutcome::Success,
+        Some(auth.principal_id),
+        None,
+        None,
+        None,
+        Some(serde_json::json!({"action": "create_payment_intent"})),
+    );
 
     match state.service.create_payment_intent(cmd).await {
         Ok(response) => Ok((StatusCode::CREATED, Json(response))),

@@ -35,7 +35,8 @@ impl Model {
             acquirer_link_id: self.acquirer_link_id,
             file_checksum: self.file_checksum.clone(),
             file_format: self.file_format.clone(),
-            status: SettlementBatchStatus::from_str(&self.status),
+            status: SettlementBatchStatus::from_str(&self.status)
+                .expect("DB contains invalid settlement batch status"),
             total_records: self.total_records,
             matched_count: self.matched_count,
             unmatched_count: self.unmatched_count,

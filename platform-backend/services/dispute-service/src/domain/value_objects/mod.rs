@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 pub enum DisputeStatus { Open, UnderReview, Resolved, Closed }
 impl DisputeStatus {
     pub fn as_str(&self) -> &'static str { match self { Self::Open => "open", Self::UnderReview => "under_review", Self::Resolved => "resolved", Self::Closed => "closed" } }
-    pub fn from_str(s: &str) -> Self { match s { "open" => Self::Open, "under_review" => Self::UnderReview, "resolved" => Self::Resolved, "closed" => Self::Closed, _ => Self::Open } }
+    pub fn from_str(s: &str) -> Result<Self, &'static str> { match s { "open" => Ok(Self::Open), "under_review" => Ok(Self::UnderReview), "resolved" => Ok(Self::Resolved), "closed" => Ok(Self::Closed), _ => Err("unknown dispute status") } }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
