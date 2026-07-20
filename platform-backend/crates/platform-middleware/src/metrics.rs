@@ -28,7 +28,7 @@ impl MetricsState {
         Self::default()
     }
 
-    pub fn record_request(&self, status: u16, latency_ms: u64) {
+    pub fn record_request(&self, status: u16, _latency_ms: u64) {
         self.requests_total.fetch_add(1, Ordering::Relaxed);
         if status < 400 {
             self.requests_success.fetch_add(1, Ordering::Relaxed);
@@ -107,8 +107,8 @@ where
 
         Box::pin(async move {
             let response = inner.call(req).await?;
-            let latency_ms = start.elapsed().as_millis() as u64;
-            state.record_request(response.status().as_u16(), latency_ms);
+            let _latency_ms = start.elapsed().as_millis() as u64;
+            state.record_request(response.status().as_u16(), _latency_ms);
             Ok(response)
         })
     }

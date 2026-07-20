@@ -1,71 +1,103 @@
 use chrono::{DateTime, Utc};
 use uuid::Uuid;
-
-use crate::domain::value_objects::{KybCaseStatus, KybDocumentType};
+use crate::domain::value_objects::{KybStatus, KybDecision};
 
 #[derive(Debug, Clone)]
 pub struct KybCase {
-    pub id: Uuid,
+    pub case_id: Uuid,
     pub operator_id: Uuid,
-    pub status: KybCaseStatus,
-    pub assigned_compliance_officer: Option<Uuid>,
-    pub documents: Vec<KybDocument>,
+    pub status: KybStatus,
+    pub assigned_officer: Option<Uuid>,
     pub risk_score: Option<f64>,
     pub decision: Option<KybDecision>,
+    pub decision_reason: Option<String>,
     pub notes: Option<String>,
     pub submitted_at: DateTime<Utc>,
     pub reviewed_at: Option<DateTime<Utc>>,
     pub decided_at: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
+    pub documents: Vec<KybDocument>,
+    pub uncommitted_events: Vec<KybEvent>,
 }
 
 #[derive(Debug, Clone)]
 pub struct KybDocument {
-    pub id: Uuid,
+    pub document_id: Uuid,
     pub kyb_case_id: Uuid,
-    pub document_type: KybDocumentType,
+    pub document_type: String,
     pub file_key: String,
     pub file_hash: String,
-    pub uploaded_at: DateTime<Utc>,
     pub verified: bool,
+    pub uploaded_at: DateTime<Utc>,
     pub verified_at: Option<DateTime<Utc>>,
 }
 
 #[derive(Debug, Clone)]
-pub struct KybDecision {
-    pub decision: KybCaseStatus,
-    pub reason: String,
-    pub decided_by: Uuid,
-    pub decided_at: DateTime<Utc>,
+pub enum KybEvent {
+    Submitted { operator_id: Uuid },
+    Assigned { officer_id: Uuid },
+    DocumentUploaded { document_type: String },
+    DocumentVerified { document_id: Uuid },
+    DecisionMade { decision: String, reason: String },
 }
 
 impl KybCase {
     pub fn new(operator_id: Uuid) -> Self {
-        Self {
-            id: Uuid::now_v7(),
+        let now = Utc::now();
+        let mut c = Self {
+            case_id: Uuid::now_v7(),
             operator_id,
-            status: KybCaseStatus::Submitted,
-            assigned_compliance_officer: None,
-            documents: Vec::new(),
+            status: KybStatus::Submitted,
+            assigned_officer: None,
             risk_score: None,
             decision: None,
+            decision_reason: None,
             notes: None,
-            submitted_at: Utc::now(),
+            submitted_at: now,
             reviewed_at: None,
             decided_at: None,
-            created_at: Utc::now(),
+            created_at: now,
+            documents: Vec::new(),
+            uncommitted_events: Vec::new(),
+        };
+        c.apply(KybEvent::Submitted { operator_id });
+        c
+    }
+
+    pub fn apply(&mut self, event: KybEvent) {
+        match &event {
+            KybEvent::Assigned { officer_id } => {
+                self.assigned_officer = Some(*officer_id);
+                self.status = KybStatus::UnderReview;
+                self.reviewed_at = Some(Utc::now());
+            }
+            KybEvent::DecisionMade { decision, .. } => {
+                self.decision = Some(KybDecision::from_str(decision));
+                self.status = match self.decision {
+                    Some(KybDecision::Approved) => KybStatus::Approved,
+                    Some(KybDecision::Rejected) => KybStatus::Rejected,
+                    _ => KybStatus::UnderReview,
+                };
+                self.decided_at = Some(Utc::now());
+            }
+            _ => {}
         }
+        self.uncommitted_events.push(event);
     }
 
-    pub fn can_be_decided(&self) -> bool {
-        matches!(
-            self.status,
-            KybCaseStatus::UnderReview | KybCaseStatus::DocumentsVerified
-        )
+    pub fn take_uncommitted_events(&mut self) -> Vec<KybEvent> {
+        std::mem::take(&mut self.uncommitted_events)
     }
 
-    pub fn all_documents_verified(&self) -> bool {
-        !self.documents.is_empty() && self.documents.iter().all(|d| d.verified)
+    pub fn assign_officer(&mut self, officer_id: Uuid) {
+        self.apply(KybEvent::Assigned { officer_id });
+    }
+
+    pub fn decide(&mut self, decision: &str, reason: &str) {
+        self.apply(KybEvent::DecisionMade {
+            decision: decision.to_string(),
+            reason: reason.to_string(),
+        });
     }
 }
 
@@ -74,73 +106,34 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_kyb_case_new_starts_submitted() {
-        let operator_id = Uuid::now_v7();
-        let case = KybCase::new(operator_id);
-        assert_eq!(case.status, KybCaseStatus::Submitted);
-        assert_eq!(case.operator_id, operator_id);
-        assert!(case.documents.is_empty());
-        assert!(case.decision.is_none());
+    fn test_new_kyb_case() {
+        let c = KybCase::new(Uuid::now_v7());
+        assert_eq!(c.status, KybStatus::Submitted);
+        assert!(c.assigned_officer.is_none());
     }
 
     #[test]
-    fn test_can_be_decided_only_in_review_or_verified() {
-        let mut case = KybCase::new(Uuid::now_v7());
-
-        // Submitted → cannot decide
-        assert!(!case.can_be_decided());
-
-        case.status = KybCaseStatus::UnderReview;
-        assert!(case.can_be_decided());
-
-        case.status = KybCaseStatus::DocumentsVerified;
-        assert!(case.can_be_decided());
-
-        case.status = KybCaseStatus::Approved;
-        assert!(!case.can_be_decided());
-
-        case.status = KybCaseStatus::Rejected;
-        assert!(!case.can_be_decided());
+    fn test_assign_officer() {
+        let mut c = KybCase::new(Uuid::now_v7());
+        c.assign_officer(Uuid::now_v7());
+        assert_eq!(c.status, KybStatus::UnderReview);
+        assert!(c.assigned_officer.is_some());
     }
 
     #[test]
-    fn test_all_documents_verified() {
-        let mut case = KybCase::new(Uuid::now_v7());
-
-        // No documents → false
-        assert!(!case.all_documents_verified());
-
-        // Add unverified document
-        case.documents.push(KybDocument {
-            id: Uuid::now_v7(),
-            kyb_case_id: case.id,
-            document_type: KybDocumentType::TradeLicense,
-            file_key: "key1".to_string(),
-            file_hash: "hash1".to_string(),
-            uploaded_at: Utc::now(),
-            verified: false,
-            verified_at: None,
-        });
-        assert!(!case.all_documents_verified());
-
-        // Verify it
-        case.documents[0].verified = true;
-        assert!(case.all_documents_verified());
+    fn test_approve() {
+        let mut c = KybCase::new(Uuid::now_v7());
+        c.assign_officer(Uuid::now_v7());
+        c.decide("approved", "All documents verified");
+        assert_eq!(c.status, KybStatus::Approved);
+        assert!(c.decided_at.is_some());
     }
 
     #[test]
-    fn test_kyb_document_types() {
-        assert_eq!(KybDocumentType::TradeLicense.as_str(), "trade_license");
-        assert_eq!(KybDocumentType::BoardResolution.as_str(), "board_resolution");
-        assert_eq!(KybDocumentType::UboDeclaration.as_str(), "ubo_declaration");
-    }
-
-    #[test]
-    fn test_kyb_case_status_values() {
-        assert_eq!(KybCaseStatus::Submitted.as_str(), "submitted");
-        assert_eq!(KybCaseStatus::UnderReview.as_str(), "under_review");
-        assert_eq!(KybCaseStatus::Approved.as_str(), "approved");
-        assert_eq!(KybCaseStatus::Rejected.as_str(), "rejected");
-        assert_eq!(KybCaseStatus::Suspended.as_str(), "suspended");
+    fn test_reject() {
+        let mut c = KybCase::new(Uuid::now_v7());
+        c.assign_officer(Uuid::now_v7());
+        c.decide("rejected", "Invalid documents");
+        assert_eq!(c.status, KybStatus::Rejected);
     }
 }

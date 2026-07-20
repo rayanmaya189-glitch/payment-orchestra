@@ -1,2 +1,3 @@
 // Re-export shared EventPublisher from platform-messaging crate
-pub use platform_messaging::EventPublisher;
+// Note: EventPublisher is available via platform_messaging::EventPublisher
+// This module is kept for consistency with other services' structure.

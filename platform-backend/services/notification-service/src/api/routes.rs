@@ -1,22 +1,41 @@
-use axum::{extract::{Path, State}, http::StatusCode, Json, Router};
+use axum::{extract::{Path, State}, routing::{get, post}, Json, Router};
+use serde::Deserialize;
 use uuid::Uuid;
-use super::dto::*;
-use super::AppState;
-use crate::application::services::{NotificationService, NotificationResponse as ServiceResponse};
-use platform_middleware::AuthPrincipal;
+use crate::api::AppState;
+use crate::application::commands::*;
+use crate::application::services::NotificationService;
 
 pub fn router(state: AppState) -> Router {
-    Router::new().route("/notifications", axum::routing::post(send_notification)).route("/notifications/{id}", axum::routing::get(get_notification)).with_state(state)
+    Router::new()
+        .route("/notifications", post(send_notification))
+        .route("/notifications/{notification_id}", get(get_notification))
+        .route("/notifications/{notification_id}/retry", post(retry_notification))
+        .with_state(state)
 }
 
-async fn send_notification(State(state): State<AppState>, _auth: AuthPrincipal, Json(req): Json<SendNotificationRequest>) -> Result<(StatusCode, Json<NotificationResponse>), (StatusCode, Json<ErrorResponse>)> {
-    let cmd = crate::application::services::SendNotificationCommand { operator_id: Uuid::nil(), notification_type: req.notification_type, recipient: req.recipient, subject: req.subject, body: req.body };
-    match state.service.send_notification(cmd).await { Ok(r) => Ok((StatusCode::CREATED, Json(convert_response(r)))), Err(e) => Err(err(e)) }
+#[derive(Deserialize)]
+struct SendNotificationRequest { notification_type: String, recipient: String, subject: Option<String>, body: String }
+
+async fn send_notification(State(state): State<AppState>, Json(req): Json<SendNotificationRequest>) -> Result<(axum::http::StatusCode, Json<serde_json::Value>), (axum::http::StatusCode, Json<serde_json::Value>)> {
+    let cmd = SendNotificationCommand { operator_id: Uuid::nil(), notification_type: req.notification_type, recipient: req.recipient, subject: req.subject, body: req.body, template_id: None, template_data: None };
+    match state.service.send(cmd).await {
+        Ok(id) => Ok((axum::http::StatusCode::CREATED, Json(serde_json::json!({"notification_id": id.to_string()})))),
+        Err(e) => Err((axum::http::StatusCode::BAD_REQUEST, Json(serde_json::json!({"error": e.to_string()})))),
+    }
 }
 
-async fn get_notification(State(state): State<AppState>, Path(id): Path<Uuid>) -> Result<Json<NotificationResponse>, (StatusCode, Json<ErrorResponse>)> {
-    match state.service.get_notification(id).await { Ok(r) => Ok(Json(convert_response(r))), Err(e) => Err(err(e)) }
+async fn get_notification(State(state): State<AppState>, Path(id): Path<String>) -> Result<Json<serde_json::Value>, (axum::http::StatusCode, Json<serde_json::Value>)> {
+    let nid = Uuid::parse_str(&id).unwrap_or(Uuid::nil());
+    match state.service.get(nid).await {
+        Ok(n) => Ok(Json(serde_json::json!({"notification_id": n.notification_id.to_string(), "status": n.status.as_str(), "type": n.notification_type.as_str()}))),
+        Err(e) => Err((axum::http::StatusCode::NOT_FOUND, Json(serde_json::json!({"error": e.to_string()})))),
+    }
 }
 
-fn convert_response(r: ServiceResponse) -> NotificationResponse { NotificationResponse { notification_id: r.notification_id, status: r.status, notification_type: r.notification_type, recipient: r.recipient } }
-fn err(e: platform_error::PlatformError) -> (StatusCode, Json<ErrorResponse>) { let (s,c,m) = match &e { platform_error::PlatformError::NotFound{resource,id} => (StatusCode::NOT_FOUND,"NOT_FOUND",format!("{resource} {id}")), _ => (StatusCode::INTERNAL_SERVER_ERROR,"INTERNAL_ERROR","Internal error".into()) }; (s, Json(ErrorResponse{error:m,code:c.to_string()})) }
+async fn retry_notification(State(state): State<AppState>, Path(id): Path<String>) -> Result<Json<serde_json::Value>, (axum::http::StatusCode, Json<serde_json::Value>)> {
+    let nid = Uuid::parse_str(&id).unwrap_or(Uuid::nil());
+    match state.service.retry(RetryNotificationCommand { notification_id: nid }).await {
+        Ok(()) => Ok(Json(serde_json::json!({"status": "retried"}))),
+        Err(e) => Err((axum::http::StatusCode::BAD_REQUEST, Json(serde_json::json!({"error": e.to_string()})))),
+    }
+}

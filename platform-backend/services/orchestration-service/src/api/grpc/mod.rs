@@ -2,7 +2,7 @@
 //!
 //! Implements the tonic service trait generated from the proto definitions.
 
-use tonic::{Request, Response, Status};
+use tonic;
 use uuid::Uuid;
 
 use crate::application::services::PaymentService;
@@ -29,7 +29,7 @@ impl GrpcOrchestrationService {
         let amount = shared_types::Money {
             amount_minor_units,
             currency: shared_types::CurrencyCode::new(&currency_code)
-                .map_err(|e| PlatformError::Validation(
+                .map_err(|_e| PlatformError::Validation(
                     platform_error::ValidationError::InvalidCurrencyCode
                 ))?,
         };
@@ -71,7 +71,7 @@ impl GrpcOrchestrationService {
             (Some(minor), Some(code)) => Some(shared_types::Money {
                 amount_minor_units: minor,
                 currency: shared_types::CurrencyCode::new(&code)
-                    .map_err(|e| PlatformError::Validation(
+                    .map_err(|_e| PlatformError::Validation(
                         platform_error::ValidationError::InvalidCurrencyCode
                     ))?,
             }),
@@ -108,7 +108,7 @@ impl GrpcOrchestrationService {
         let amount = shared_types::Money {
             amount_minor_units,
             currency: shared_types::CurrencyCode::new(&currency_code)
-                .map_err(|e| PlatformError::Validation(
+                .map_err(|_e| PlatformError::Validation(
                     platform_error::ValidationError::InvalidCurrencyCode
                 ))?,
         };

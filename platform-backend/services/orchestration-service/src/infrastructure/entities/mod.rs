@@ -5,4 +5,3 @@ pub mod event_store;
 
 pub use payment_intent as payment_intent_entity;
 pub use routing_attempt as routing_attempt_entity;
-pub use event_store as event_store_entity;

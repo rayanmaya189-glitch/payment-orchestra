@@ -1,1 +1,2 @@
-// External API integrations
+pub mod postgres_document_repository;
+pub use postgres_document_repository::PostgresDocumentRepository;

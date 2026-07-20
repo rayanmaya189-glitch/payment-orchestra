@@ -1,124 +1,222 @@
-#![allow(dead_code)]
 use chrono::{DateTime, Utc};
 use uuid::Uuid;
 
+use crate::domain::value_objects::{Email, MfaMethod, PrincipalRole, PrincipalStatus};
+
+/// Principal aggregate root — represents a user or service account.
 #[derive(Debug, Clone)]
 pub struct Principal {
-    pub id: Uuid,
+    pub principal_id: Uuid,
     pub principal_type: PrincipalType,
-    pub email: Option<String>,
+    pub email: Option<Email>,
     pub password_hash: Option<Vec<u8>>,
     pub mfa_enrolled: bool,
-    pub mfa_method: Option<String>,
+    pub mfa_method: Option<MfaMethod>,
+    pub mfa_secret: Option<String>,
     pub status: PrincipalStatus,
+    pub role: PrincipalRole,
     pub failed_login_attempts: i32,
     pub locked_until: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
     pub last_login_at: Option<DateTime<Utc>>,
+    pub uncommitted_events: Vec<PrincipalEvent>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PrincipalType {
-    Human,
-    ApiKey,
-    Service,
+    User,
+    ApiClient,
+    System,
 }
 
 impl PrincipalType {
     pub fn as_str(&self) -> &'static str {
         match self {
-            Self::Human => "human",
-            Self::ApiKey => "api_key",
-            Self::Service => "service",
+            Self::User => "user",
+            Self::ApiClient => "api_client",
+            Self::System => "system",
         }
     }
 
-    pub fn from_str(s: &str) -> Result<Self, &'static str> {
+    pub fn from_str(s: &str) -> Self {
         match s {
-            "human" => Ok(Self::Human),
-            "api_key" => Ok(Self::ApiKey),
-            "service" => Ok(Self::Service),
-            _ => Err("unknown principal type"),
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum PrincipalStatus {
-    Active,
-    Suspended,
-    Deleted,
-}
-
-impl PrincipalStatus {
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            Self::Active => "active",
-            Self::Suspended => "suspended",
-            Self::Deleted => "deleted",
-        }
-    }
-
-    pub fn from_str(s: &str) -> Result<Self, &'static str> {
-        match s {
-            "active" => Ok(Self::Active),
-            "suspended" => Ok(Self::Suspended),
-            "deleted" => Ok(Self::Deleted),
-            _ => Err("unknown principal status"),
+            "api_client" => Self::ApiClient,
+            "system" => Self::System,
+            _ => Self::User,
         }
     }
 }
 
 #[derive(Debug, Clone)]
-pub struct PendingChange {
-    pub change_id: Uuid,
-    pub change_type: String,
-    pub maker_id: Uuid,
-    pub checker_id: Option<Uuid>,
-    pub payload: Vec<u8>,
-    pub status: PendingChangeStatus,
-    pub maker_note: Option<String>,
-    pub checker_note: Option<String>,
-    pub requested_at: DateTime<Utc>,
-    pub reviewed_at: Option<DateTime<Utc>>,
-    pub expires_at: DateTime<Utc>,
+pub enum PrincipalEvent {
+    Created {
+        email: Option<String>,
+        principal_type: String,
+    },
+    PasswordSet,
+    LoginSucceeded {
+        ip_address: String,
+        user_agent: String,
+    },
+    LoginFailed {
+        reason: String,
+        ip_address: String,
+    },
+    AccountLocked {
+        locked_until: DateTime<Utc>,
+        reason: String,
+    },
+    AccountUnlocked,
+    MfaEnrolled {
+        method: String,
+    },
+    MfaDisabled,
+    PasswordChanged,
+    ApiKeyCreated {
+        api_key_id: Uuid,
+        name: String,
+    },
+    ApiKeyRevoked {
+        api_key_id: Uuid,
+    },
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum PendingChangeStatus {
-    Pending,
-    Approved,
-    Rejected,
-    Expired,
-}
+impl Principal {
+    pub fn new_user(email: Email, password_hash: Vec<u8>) -> Self {
+        let now = Utc::now();
+        let mut principal = Self {
+            principal_id: Uuid::now_v7(),
+            principal_type: PrincipalType::User,
+            email: Some(email.clone()),
+            password_hash: Some(password_hash),
+            mfa_enrolled: false,
+            mfa_method: None,
+            mfa_secret: None,
+            status: PrincipalStatus::Active,
+            role: PrincipalRole::OperatorAdmin,
+            failed_login_attempts: 0,
+            locked_until: None,
+            created_at: now,
+            last_login_at: None,
+            uncommitted_events: Vec::new(),
+        };
+        principal.apply(PrincipalEvent::Created {
+            email: Some(email.to_string()),
+            principal_type: "user".to_string(),
+        });
+        principal
+    }
 
-impl PendingChangeStatus {
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            Self::Pending => "pending",
-            Self::Approved => "approved",
-            Self::Rejected => "rejected",
-            Self::Expired => "expired",
+    pub fn new_api_client() -> Self {
+        let now = Utc::now();
+        let mut principal = Self {
+            principal_id: Uuid::now_v7(),
+            principal_type: PrincipalType::ApiClient,
+            email: None,
+            password_hash: None,
+            mfa_enrolled: false,
+            mfa_method: None,
+            mfa_secret: None,
+            status: PrincipalStatus::Active,
+            role: PrincipalRole::ApiClient,
+            failed_login_attempts: 0,
+            locked_until: None,
+            created_at: now,
+            last_login_at: None,
+            uncommitted_events: Vec::new(),
+        };
+        principal.apply(PrincipalEvent::Created {
+            email: None,
+            principal_type: "api_client".to_string(),
+        });
+        principal
+    }
+
+    pub fn apply(&mut self, event: PrincipalEvent) {
+        match &event {
+            PrincipalEvent::LoginSucceeded { .. } => {
+                self.failed_login_attempts = 0;
+                self.last_login_at = Some(Utc::now());
+            }
+            PrincipalEvent::LoginFailed { .. } => {
+                self.failed_login_attempts += 1;
+            }
+            PrincipalEvent::AccountLocked { locked_until, .. } => {
+                self.locked_until = Some(*locked_until);
+                self.status = PrincipalStatus::Locked;
+            }
+            PrincipalEvent::AccountUnlocked => {
+                self.locked_until = None;
+                self.failed_login_attempts = 0;
+                self.status = PrincipalStatus::Active;
+            }
+            PrincipalEvent::MfaEnrolled { method } => {
+                self.mfa_enrolled = true;
+                self.mfa_method = Some(MfaMethod::from_str(method));
+            }
+            PrincipalEvent::MfaDisabled => {
+                self.mfa_enrolled = false;
+                self.mfa_method = None;
+                self.mfa_secret = None;
+            }
+            PrincipalEvent::PasswordChanged => {
+                self.failed_login_attempts = 0;
+            }
+            _ => {}
+        }
+        self.uncommitted_events.push(event);
+    }
+
+    pub fn take_uncommitted_events(&mut self) -> Vec<PrincipalEvent> {
+        std::mem::take(&mut self.uncommitted_events)
+    }
+
+    pub fn is_locked(&self) -> bool {
+        match self.locked_until {
+            Some(locked_until) => Utc::now() < locked_until,
+            None => false,
         }
     }
 
-    pub fn from_str(s: &str) -> Result<Self, &'static str> {
-        match s {
-            "pending" => Ok(Self::Pending),
-            "approved" => Ok(Self::Approved),
-            "rejected" => Ok(Self::Rejected),
-            "expired" => Ok(Self::Expired),
-            _ => Err("unknown pending change status"),
-        }
+    pub fn should_lock(&self, lockout_threshold: i32) -> bool {
+        self.failed_login_attempts >= lockout_threshold
+    }
+
+    pub fn record_successful_login(&mut self, ip_address: &str, user_agent: &str) {
+        self.apply(PrincipalEvent::LoginSucceeded {
+            ip_address: ip_address.to_string(),
+            user_agent: user_agent.to_string(),
+        });
+    }
+
+    pub fn record_failed_login(&mut self, reason: &str, ip_address: &str) {
+        self.apply(PrincipalEvent::LoginFailed {
+            reason: reason.to_string(),
+            ip_address: ip_address.to_string(),
+        });
+    }
+
+    pub fn lock_account(&mut self, duration_minutes: i64, reason: &str) {
+        let locked_until = Utc::now() + chrono::Duration::minutes(duration_minutes);
+        self.apply(PrincipalEvent::AccountLocked {
+            locked_until,
+            reason: reason.to_string(),
+        });
+    }
+
+    pub fn unlock_account(&mut self) {
+        self.apply(PrincipalEvent::AccountUnlocked);
     }
 }
 
+/// API Key aggregate.
 #[derive(Debug, Clone)]
 pub struct ApiKey {
-    pub id: Uuid,
+    pub api_key_id: Uuid,
     pub principal_id: Uuid,
     pub name: String,
     pub key_hash: Vec<u8>,
+    pub key_prefix: String,
     pub scopes: Vec<String>,
     pub acquirer_link_ids: Option<Vec<Uuid>>,
     pub expires_at: DateTime<Utc>,
@@ -126,205 +224,221 @@ pub struct ApiKey {
     pub created_at: DateTime<Utc>,
 }
 
-/// WebAuthn credential (SRS AUTH-011: FIDO2/WebAuthn for Admin/Finance MFA).
-#[derive(Debug, Clone)]
-pub struct WebAuthnCredential {
-    pub credential_id: Vec<u8>,
-    pub public_key: Vec<u8>,
-    pub sign_count: u64,
-    pub attestation_object: Vec<u8>,
-    pub created_at: DateTime<Utc>,
-}
-
-/// Backup code for MFA recovery (SRS AUTH-014).
-#[derive(Debug, Clone)]
-pub struct BackupCode {
-    pub code_hash: Vec<u8>,
-    pub used: bool,
-    pub used_at: Option<DateTime<Utc>>,
-}
-
-impl Principal {
-    pub fn is_locked(&self) -> bool {
-        self.locked_until
-            .map(|until| until > Utc::now())
-            .unwrap_or(false)
-    }
-
-    pub fn record_failed_login(&mut self, lockout_15min: i32, lockout_1hr: i32, lockout_suspend: i32) {
-        self.failed_login_attempts += 1;
-        if self.failed_login_attempts == lockout_15min {
-            self.locked_until = Some(Utc::now() + chrono::Duration::minutes(15));
-        } else if self.failed_login_attempts == lockout_1hr {
-            self.locked_until = Some(Utc::now() + chrono::Duration::hours(1));
-        } else if self.failed_login_attempts >= lockout_suspend {
-            self.status = PrincipalStatus::Suspended;
+impl ApiKey {
+    pub fn new(
+        principal_id: Uuid,
+        name: String,
+        key_hash: Vec<u8>,
+        key_prefix: String,
+        scopes: Vec<String>,
+        expires_in_days: u32,
+    ) -> Self {
+        Self {
+            api_key_id: Uuid::now_v7(),
+            principal_id,
+            name,
+            key_hash,
+            key_prefix,
+            scopes,
+            acquirer_link_ids: None,
+            expires_at: Utc::now() + chrono::Duration::days(expires_in_days as i64),
+            revoked_at: None,
+            created_at: Utc::now(),
         }
     }
 
-    pub fn record_successful_login(&mut self) {
-        self.failed_login_attempts = 0;
-        self.locked_until = None;
-        self.last_login_at = Some(Utc::now());
+    pub fn is_valid(&self) -> bool {
+        self.revoked_at.is_none() && Utc::now() < self.expires_at
     }
+
+    pub fn revoke(&mut self) {
+        self.revoked_at = Some(Utc::now());
+    }
+}
+
+/// Refresh token aggregate.
+#[derive(Debug, Clone)]
+pub struct RefreshToken {
+    pub token_id: Uuid,
+    pub principal_id: Uuid,
+    pub role: String,
+    pub client_fingerprint: String,
+    pub status: RefreshTokenStatus,
+    pub created_at: DateTime<Utc>,
+    pub revoked_at: Option<DateTime<Utc>>,
+    pub revoke_reason: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RefreshTokenStatus {
+    Active,
+    Revoked,
+}
+
+impl RefreshTokenStatus {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Active => "active",
+            Self::Revoked => "revoked",
+        }
+    }
+}
+
+impl RefreshToken {
+    pub fn new(principal_id: Uuid, role: String, client_fingerprint: String) -> Self {
+        Self {
+            token_id: Uuid::now_v7(),
+            principal_id,
+            role,
+            client_fingerprint,
+            status: RefreshTokenStatus::Active,
+            created_at: Utc::now(),
+            revoked_at: None,
+            revoke_reason: None,
+        }
+    }
+
+    pub fn revoke(&mut self, reason: &str) {
+        self.status = RefreshTokenStatus::Revoked;
+        self.revoked_at = Some(Utc::now());
+        self.revoke_reason = Some(reason.to_string());
+    }
+}
+
+/// ABAC policy rule.
+#[derive(Debug, Clone)]
+pub struct AbacPolicy {
+    pub policy_id: Uuid,
+    pub principal_id: Uuid,
+    pub resource_type: String,
+    pub action: String,
+    pub effect: AbacEffect,
+    pub conditions: Vec<AbacCondition>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AbacEffect {
+    Allow,
+    Deny,
+}
+
+#[derive(Debug, Clone)]
+pub struct AbacCondition {
+    pub attribute: String,
+    pub operator: AbacOperator,
+    pub value: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AbacOperator {
+    Equals,
+    NotEquals,
+    In,
+    Contains,
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn make_principal() -> Principal {
-        Principal {
-            id: Uuid::now_v7(),
-            principal_type: PrincipalType::Human,
-            email: Some("test@example.com".to_string()),
-            password_hash: Some(vec![1, 2, 3]),
-            mfa_enrolled: false,
-            mfa_method: None,
-            status: PrincipalStatus::Active,
-            failed_login_attempts: 0,
-            locked_until: None,
-            created_at: Utc::now(),
-            last_login_at: None,
-        }
+    fn test_email() -> Email {
+        Email::new("test@example.com").unwrap()
     }
 
     #[test]
-    fn test_principal_not_locked_initially() {
-        let p = make_principal();
-        assert!(!p.is_locked());
-    }
-
-    #[test]
-    fn test_lockout_after_5_failures() {
-        let mut p = make_principal();
-        for _ in 0..5 {
-            p.record_failed_login(5, 10, 20);
-        }
-        assert!(p.is_locked());
-        assert!(p.locked_until.is_some());
-        // Still active, not suspended
+    fn test_new_user_principal() {
+        let p = Principal::new_user(test_email(), vec![1, 2, 3]);
+        assert_eq!(p.principal_type, PrincipalType::User);
         assert_eq!(p.status, PrincipalStatus::Active);
-    }
-
-    #[test]
-    fn test_lockout_after_10_failures() {
-        let mut p = make_principal();
-        for _ in 0..10 {
-            p.record_failed_login(5, 10, 20);
-        }
-        assert!(p.is_locked());
-        // 10 failures = 1hr lockout (overrides 15min)
-        let locked_until = p.locked_until.unwrap();
-        let now = Utc::now();
-        let diff = locked_until - now;
-        assert!(diff.num_minutes() > 50 && diff.num_minutes() <= 60);
-    }
-
-    #[test]
-    fn test_suspension_after_20_failures() {
-        let mut p = make_principal();
-        for _ in 0..20 {
-            p.record_failed_login(5, 10, 20);
-        }
-        assert_eq!(p.status, PrincipalStatus::Suspended);
-    }
-
-    #[test]
-    fn test_successful_login_resets_counters() {
-        let mut p = make_principal();
-        for _ in 0..4 {
-            p.record_failed_login(5, 10, 20);
-        }
-        assert_eq!(p.failed_login_attempts, 4);
-        assert!(!p.is_locked());
-
-        p.record_successful_login();
         assert_eq!(p.failed_login_attempts, 0);
-        assert!(p.locked_until.is_none());
+        assert!(!p.is_locked());
+        assert_eq!(p.uncommitted_events.len(), 1);
+    }
+
+    #[test]
+    fn test_new_api_client() {
+        let p = Principal::new_api_client();
+        assert_eq!(p.principal_type, PrincipalType::ApiClient);
+        assert!(p.email.is_none());
+    }
+
+    #[test]
+    fn test_successful_login_resets_counter() {
+        let mut p = Principal::new_user(test_email(), vec![1, 2, 3]);
+        p.failed_login_attempts = 3;
+        p.record_successful_login("1.2.3.4", "Mozilla/5.0");
+        assert_eq!(p.failed_login_attempts, 0);
         assert!(p.last_login_at.is_some());
     }
 
     #[test]
-    fn test_principal_type_from_str() {
-        assert_eq!(PrincipalType::from_str("human").unwrap(), PrincipalType::Human);
-        assert_eq!(PrincipalType::from_str("api_key").unwrap(), PrincipalType::ApiKey);
-        assert_eq!(PrincipalType::from_str("service").unwrap(), PrincipalType::Service);
-        assert!(PrincipalType::from_str("unknown").is_err());
+    fn test_failed_login_increments_counter() {
+        let mut p = Principal::new_user(test_email(), vec![1, 2, 3]);
+        p.record_failed_login("bad password", "1.2.3.4");
+        assert_eq!(p.failed_login_attempts, 1);
     }
 
     #[test]
-    fn test_principal_status_from_str() {
-        assert_eq!(PrincipalStatus::from_str("active").unwrap(), PrincipalStatus::Active);
-        assert_eq!(PrincipalStatus::from_str("suspended").unwrap(), PrincipalStatus::Suspended);
-        assert_eq!(PrincipalStatus::from_str("deleted").unwrap(), PrincipalStatus::Deleted);
-        assert!(PrincipalStatus::from_str("unknown").is_err());
-    }
-
-    #[test]
-    fn test_pending_change_status_from_str() {
-        assert_eq!(PendingChangeStatus::from_str("pending").unwrap(), PendingChangeStatus::Pending);
-        assert_eq!(PendingChangeStatus::from_str("approved").unwrap(), PendingChangeStatus::Approved);
-        assert_eq!(PendingChangeStatus::from_str("rejected").unwrap(), PendingChangeStatus::Rejected);
-        assert_eq!(PendingChangeStatus::from_str("expired").unwrap(), PendingChangeStatus::Expired);
-        assert!(PendingChangeStatus::from_str("unknown").is_err());
-    }
-
-    #[test]
-    fn test_lockout_with_custom_thresholds() {
-        let mut p = make_principal();
-        // Custom: 3 → 15min, 5 → 1hr, 8 → suspend
-        for _ in 0..3 {
-            p.record_failed_login(3, 5, 8);
-        }
+    fn test_lock_account() {
+        let mut p = Principal::new_user(test_email(), vec![1, 2, 3]);
+        p.lock_account(15, "Too many failures");
         assert!(p.is_locked());
+        assert_eq!(p.status, PrincipalStatus::Locked);
+    }
+
+    #[test]
+    fn test_unlock_account() {
+        let mut p = Principal::new_user(test_email(), vec![1, 2, 3]);
+        p.lock_account(15, "Too many failures");
+        p.unlock_account();
+        assert!(!p.is_locked());
         assert_eq!(p.status, PrincipalStatus::Active);
-
-        // Reset
-        p.record_successful_login();
-
-        // 8 suspends
-        for _ in 0..8 {
-            p.record_failed_login(3, 5, 8);
-        }
-        assert_eq!(p.status, PrincipalStatus::Suspended);
     }
 
     #[test]
-    fn test_webauthn_credential_creation() {
-        let cred = WebAuthnCredential {
-            credential_id: vec![1, 2, 3, 4],
-            public_key: vec![5, 6, 7, 8],
-            sign_count: 0,
-            attestation_object: vec![9, 10, 11, 12],
-            created_at: Utc::now(),
-        };
-        assert_eq!(cred.credential_id, vec![1, 2, 3, 4]);
-        assert_eq!(cred.sign_count, 0);
-        assert!(!cred.credential_id.is_empty());
+    fn test_should_lock() {
+        let mut p = Principal::new_user(test_email(), vec![1, 2, 3]);
+        assert!(!p.should_lock(5));
+        p.failed_login_attempts = 5;
+        assert!(p.should_lock(5));
     }
 
     #[test]
-    fn test_backup_code_creation() {
-        let code = BackupCode {
-            code_hash: vec![1, 2, 3],
-            used: false,
-            used_at: None,
-        };
-        assert!(!code.used);
-        assert!(code.used_at.is_none());
+    fn test_api_key_valid() {
+        let key = ApiKey::new(
+            Uuid::now_v7(),
+            "test".to_string(),
+            vec![1, 2, 3],
+            "pk_test".to_string(),
+            vec!["read".to_string()],
+            90,
+        );
+        assert!(key.is_valid());
     }
 
     #[test]
-    fn test_backup_code_mark_used() {
-        let mut code = BackupCode {
-            code_hash: vec![1, 2, 3],
-            used: false,
-            used_at: None,
-        };
-        code.used = true;
-        code.used_at = Some(Utc::now());
-        assert!(code.used);
-        assert!(code.used_at.is_some());
+    fn test_api_key_revoked() {
+        let mut key = ApiKey::new(
+            Uuid::now_v7(),
+            "test".to_string(),
+            vec![1, 2, 3],
+            "pk_test".to_string(),
+            vec!["read".to_string()],
+            90,
+        );
+        key.revoke();
+        assert!(!key.is_valid());
+    }
+
+    #[test]
+    fn test_refresh_token_revoked() {
+        let mut token = RefreshToken::new(
+            Uuid::now_v7(),
+            "operator_admin".to_string(),
+            "fp_123".to_string(),
+        );
+        assert_eq!(token.status, RefreshTokenStatus::Active);
+        token.revoke("logout");
+        assert_eq!(token.status, RefreshTokenStatus::Revoked);
     }
 }

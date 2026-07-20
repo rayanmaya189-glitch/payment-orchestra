@@ -44,17 +44,28 @@ dependencies = [
 name = "ai-assistant-service"
 version = "0.1.0"
 dependencies = [
+ "async-nats",
  "async-trait",
  "axum 0.8.9",
  "chrono",
+ "hex",
+ "http",
  "platform-config",
+ "platform-db",
  "platform-error",
  "platform-logging",
+ "platform-messaging",
+ "platform-middleware",
+ "redis",
+ "reqwest",
  "sea-orm",
  "serde",
  "serde_json",
+ "sha2 0.10.9",
  "shared-types",
  "tokio",
+ "tower 0.5.3",
+ "tower-http",
  "tracing",
  "uuid",
 ]
@@ -63,17 +74,26 @@ dependencies = [
 name = "ai-gateway"
 version = "0.1.0"
 dependencies = [
+ "async-nats",
  "async-trait",
  "axum 0.8.9",
  "chrono",
+ "http",
  "platform-config",
+ "platform-db",
  "platform-error",
  "platform-logging",
+ "platform-messaging",
+ "platform-middleware",
+ "redis",
+ "regex",
  "sea-orm",
  "serde",
  "serde_json",
  "shared-types",
  "tokio",
+ "tower 0.5.3",
+ "tower-http",
  "tracing",
  "uuid",
 ]
@@ -94,17 +114,25 @@ checksum = "683d7910e743518b0e34f1186f92494becacb047c7b6bf616c96772180fef923"
 name = "analytics-service"
 version = "0.1.0"
 dependencies = [
+ "async-nats",
  "async-trait",
  "axum 0.8.9",
  "chrono",
+ "http",
  "platform-config",
+ "platform-db",
  "platform-error",
  "platform-logging",
+ "platform-messaging",
+ "platform-middleware",
+ "redis",
  "sea-orm",
  "serde",
  "serde_json",
  "shared-types",
  "tokio",
+ "tower 0.5.3",
+ "tower-http",
  "tracing",
  "uuid",
 ]
@@ -178,14 +206,19 @@ checksum = "330a5ed07fa54e4702c9d6c4174f74427fc0ef6e214bbd677ae50a5099946470"
 name = "api-gateway"
 version = "0.1.0"
 dependencies = [
+ "async-nats",
  "async-trait",
  "axum 0.8.9",
  "chrono",
+ "http",
  "platform-api",
  "platform-config",
+ "platform-db",
  "platform-error",
  "platform-logging",
+ "platform-messaging",
  "platform-middleware",
+ "redis",
  "sea-orm",
  "serde",
  "serde_json",
@@ -708,6 +741,7 @@ dependencies = [
 name = "compliance-service"
 version = "0.1.0"
 dependencies = [
+ "async-nats",
  "async-trait",
  "axum 0.8.9",
  "chrono",
@@ -1089,6 +1123,7 @@ dependencies = [
 name = "dispute-service"
 version = "0.1.0"
 dependencies = [
+ "async-nats",
  "async-trait",
  "axum 0.8.9",
  "chrono",
@@ -1124,17 +1159,27 @@ dependencies = [
 name = "document-service"
 version = "0.1.0"
 dependencies = [
+ "async-nats",
  "async-trait",
  "axum 0.8.9",
  "chrono",
+ "hex",
+ "http",
  "platform-config",
+ "platform-db",
  "platform-error",
  "platform-logging",
+ "platform-messaging",
+ "platform-middleware",
+ "redis",
  "sea-orm",
  "serde",
  "serde_json",
+ "sha2 0.10.9",
  "shared-types",
  "tokio",
+ "tower 0.5.3",
+ "tower-http",
  "tracing",
  "uuid",
 ]
@@ -1688,6 +1733,7 @@ name = "iam-service"
 version = "0.1.0"
 dependencies = [
  "argon2",
+ "async-nats",
  "async-trait",
  "axum 0.8.9",
  "chrono",
@@ -2208,6 +2254,7 @@ dependencies = [
 name = "notification-service"
 version = "0.1.0"
 dependencies = [
+ "async-nats",
  "async-trait",
  "axum 0.8.9",
  "chrono",
@@ -2365,6 +2412,7 @@ dependencies = [
  "async-trait",
  "axum 0.8.9",
  "chrono",
+ "hex",
  "http",
  "platform-config",
  "platform-db",
@@ -2374,6 +2422,7 @@ dependencies = [
  "platform-middleware",
  "platform-proto",
  "redis",
+ "reqwest",
  "sea-orm",
  "serde",
  "serde_json",
@@ -2486,6 +2535,7 @@ checksum = "df94ce210e5bc13cb6651479fa48d14f601d9858cfe0467f43ae157023b938d3"
 name = "payment-link-service"
 version = "0.1.0"
 dependencies = [
+ "async-nats",
  "async-trait",
  "axum 0.8.9",
  "chrono",
@@ -2495,6 +2545,7 @@ dependencies = [
  "platform-error",
  "platform-logging",
  "platform-middleware",
+ "rand 0.8.7",
  "redis",
  "sea-orm",
  "serde",
@@ -3063,6 +3114,7 @@ dependencies = [
 name = "reconciliation-service"
 version = "0.1.0"
 dependencies = [
+ "async-nats",
  "async-trait",
  "axum 0.8.9",
  "chrono",
@@ -3224,6 +3276,7 @@ dependencies = [
 name = "risk-service"
 version = "0.1.0"
 dependencies = [
+ "async-nats",
  "async-trait",
  "axum 0.8.9",
  "chrono",
@@ -3480,15 +3533,25 @@ checksum = "9774ba4a74de5f7b1c1451ed6cd5285a32eddb5cccb8cc655a4e50009e06477f"
 name = "saga-coordinator"
 version = "0.1.0"
 dependencies = [
+ "async-nats",
  "async-trait",
+ "axum 0.8.9",
  "chrono",
+ "http",
  "platform-config",
+ "platform-db",
  "platform-error",
  "platform-logging",
+ "platform-messaging",
+ "platform-middleware",
+ "redis",
+ "sea-orm",
  "serde",
  "serde_json",
  "shared-types",
  "tokio",
+ "tower 0.5.3",
+ "tower-http",
  "tracing",
  "uuid",
 ]
@@ -4230,6 +4293,7 @@ checksum = "8fec0f0aef304996cf250b31b5a10dee7980c85da9d759361292b8bca5a18f06"
 name = "subscription-service"
 version = "0.1.0"
 dependencies = [
+ "async-nats",
  "async-trait",
  "axum 0.8.9",
  "chrono",

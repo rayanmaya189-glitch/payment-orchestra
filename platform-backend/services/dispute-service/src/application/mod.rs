@@ -1,2 +1,1 @@
-#![allow(dead_code)]
-pub mod services;
+pub mod commands; pub mod services;

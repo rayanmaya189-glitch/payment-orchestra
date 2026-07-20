@@ -1,6 +1,5 @@
 use chrono::{DateTime, Utc};
 use uuid::Uuid;
-use serde::{Deserialize, Serialize};
 
 use crate::domain::value_objects::{FailoverConfig, PaymentPurpose, RoutingRule};
 use shared_types::{Money, PaymentStatus};

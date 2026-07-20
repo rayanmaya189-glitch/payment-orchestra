@@ -1,86 +1,35 @@
 use chrono::{DateTime, Utc};
 use uuid::Uuid;
 
-use crate::domain::value_objects::{MetricType, TimeGranularity};
-
-/// Analytics dashboard widget configuration.
 #[derive(Debug, Clone)]
-pub struct DashboardWidget {
-    pub widget_id: Uuid,
-    pub operator_id: Uuid,
-    pub widget_type: MetricType,
-    pub title: String,
-    pub granularity: TimeGranularity,
-    pub filters: Option<serde_json::Value>,
-    pub created_at: DateTime<Utc>,
+pub struct PaymentAnalytics {
+    pub period_start: DateTime<Utc>, pub period_end: DateTime<Utc>,
+    pub total_volume: i64, pub total_count: i64,
+    pub success_count: i64, pub failure_count: i64,
+    pub success_rate: f64, pub avg_latency_ms: f64,
+    pub revenue: i64, pub refund_amount: i64,
 }
 
-impl DashboardWidget {
-    pub fn new(operator_id: Uuid, widget_type: MetricType, title: String, granularity: TimeGranularity) -> Self {
-        Self {
-            widget_id: Uuid::now_v7(),
-            operator_id,
-            widget_type,
-            title,
-            granularity,
-            filters: None,
-            created_at: Utc::now(),
-        }
-    }
-}
-
-/// Analytics data point — a single metric value.
-#[derive(Debug, Clone)]
-pub struct MetricDataPoint {
-    pub timestamp: DateTime<Utc>,
-    pub value: f64,
-    pub label: Option<String>,
-}
-
-/// Analytics query result — aggregated metrics.
-#[derive(Debug, Clone)]
-pub struct AnalyticsResult {
-    pub query_id: Uuid,
-    pub widget_id: Uuid,
-    pub data_points: Vec<MetricDataPoint>,
-    pub total: Option<f64>,
-    pub period_start: DateTime<Utc>,
-    pub period_end: DateTime<Utc>,
-}
-
-impl AnalyticsResult {
-    pub fn new(widget_id: Uuid, period_start: DateTime<Utc>, period_end: DateTime<Utc>) -> Self {
-        Self {
-            query_id: Uuid::now_v7(),
-            widget_id,
-            data_points: Vec::new(),
-            total: None,
-            period_start,
-            period_end,
-        }
+impl PaymentAnalytics {
+    pub fn new(period_start: DateTime<Utc>, period_end: DateTime<Utc>) -> Self {
+        Self { period_start, period_end, total_volume: 0, total_count: 0, success_count: 0, failure_count: 0, success_rate: 0.0, avg_latency_ms: 0.0, revenue: 0, refund_amount: 0 }
     }
 
-    pub fn calculate_total(&mut self) {
-        self.total = Some(self.data_points.iter().map(|dp| dp.value).sum());
+    pub fn calculate_rates(&mut self) {
+        self.success_rate = if self.total_count > 0 { (self.success_count as f64 / self.total_count as f64) * 100.0 } else { 0.0 };
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
     #[test]
-    fn test_new_widget() {
-        let w = DashboardWidget::new(Uuid::now_v7(), MetricType::AuthorizationRate, "Auth Rate".into(), TimeGranularity::Hourly);
-        assert_eq!(w.title, "Auth Rate");
-    }
-
-    #[test]
-    fn test_analytics_result() {
-        let mut r = AnalyticsResult::new(Uuid::now_v7(), Utc::now() - chrono::Duration::hours(24), Utc::now());
-        r.data_points.push(MetricDataPoint { timestamp: Utc::now(), value: 100.0, label: None });
-        r.data_points.push(MetricDataPoint { timestamp: Utc::now(), value: 200.0, label: None });
-        r.calculate_total();
-        assert_eq!(r.total, Some(300.0));
+    fn test_analytics() {
+        let mut a = PaymentAnalytics::new(Utc::now() - chrono::Duration::hours(24), Utc::now());
+        a.total_count = 100;
+        a.success_count = 95;
+        a.failure_count = 5;
+        a.calculate_rates();
+        assert_eq!(a.success_rate, 95.0);
     }
 }

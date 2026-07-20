@@ -1,214 +1,66 @@
 use chrono::{DateTime, Utc};
 use uuid::Uuid;
-
-use crate::domain::value_objects::{SettlementBatchStatus, SettlementMatchOutcome, SettlementRecord};
+use shared_types::Money;
+use crate::domain::value_objects::SettlementStatus;
 
 #[derive(Debug, Clone)]
 pub struct SettlementBatch {
-    pub settlement_batch_id: Uuid,
-    pub operator_id: Uuid,
-    pub acquirer_link_id: Uuid,
-    pub file_checksum: String,
-    pub file_format: String,
-    pub status: SettlementBatchStatus,
-    pub total_records: i32,
-    pub matched_count: i32,
-    pub unmatched_count: i32,
-    pub total_amount_minor_units: i64,
-    pub ingested_at: DateTime<Utc>,
-    pub processed_at: Option<DateTime<Utc>>,
+    pub batch_id: Uuid, pub operator_id: Uuid, pub connector_id: String,
+    pub status: SettlementStatus, pub total_amount: Money,
+    pub total_records: i32, pub matched_count: i32, pub unmatched_count: i32, pub exception_count: i32,
+    pub period_start: String, pub period_end: String,
+    pub exceptions: Option<serde_json::Value>,
+    pub polled_at: Option<DateTime<Utc>>, pub matched_at: Option<DateTime<Utc>>,
+    pub settled_at: Option<DateTime<Utc>>,
+    pub created_at: DateTime<Utc>, pub updated_at: DateTime<Utc>,
 }
 
 impl SettlementBatch {
-    pub fn new(
-        operator_id: Uuid,
-        acquirer_link_id: Uuid,
-        file_checksum: String,
-        file_format: String,
-    ) -> Self {
-        Self {
-            settlement_batch_id: Uuid::now_v7(),
-            operator_id,
-            acquirer_link_id,
-            file_checksum,
-            file_format,
-            status: SettlementBatchStatus::Ingesting,
-            total_records: 0,
-            matched_count: 0,
-            unmatched_count: 0,
-            total_amount_minor_units: 0,
-            ingested_at: Utc::now(),
-            processed_at: None,
-        }
+    pub fn new(operator_id: Uuid, connector_id: String, period_start: String, period_end: String) -> Self {
+        let now = Utc::now();
+        Self { batch_id: Uuid::now_v7(), operator_id, connector_id, status: SettlementStatus::Pending,
+            total_amount: Money { amount_minor_units: 0, currency: shared_types::CurrencyCode::new("AED").unwrap() },
+            total_records: 0, matched_count: 0, unmatched_count: 0, exception_count: 0,
+            period_start, period_end, exceptions: None, polled_at: None, matched_at: None,
+            settled_at: None, created_at: now, updated_at: now }
     }
 
-    pub fn record_match(&mut self) {
-        self.matched_count += 1;
+    pub fn mark_polled(&mut self, records: i32, total_amount: i64) {
+        self.status = SettlementStatus::Polled;
+        self.total_records = records;
+        self.total_amount.amount_minor_units = total_amount;
+        self.polled_at = Some(Utc::now());
+        self.updated_at = Utc::now();
     }
 
-    pub fn record_unmatch(&mut self) {
-        self.unmatched_count += 1;
+    pub fn mark_matched(&mut self, matched: i32, unmatched: i32) {
+        self.status = SettlementStatus::Matched;
+        self.matched_count = matched;
+        self.unmatched_count = unmatched;
+        self.matched_at = Some(Utc::now());
+        self.updated_at = Utc::now();
     }
 
-    pub fn complete(&mut self) {
-        self.status = SettlementBatchStatus::Processed;
-        self.processed_at = Some(Utc::now());
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct LedgerEntry {
-    pub entry_id: Uuid,
-    pub transaction_id: Uuid,
-    pub entry_type: String,
-    pub debit_amount_minor_units: i64,
-    pub credit_amount_minor_units: i64,
-    pub currency: String,
-    pub source_acquirer: String,
-    pub reconciliation_batch_id: Option<Uuid>,
-    pub reconciled: bool,
-    pub created_at: DateTime<Utc>,
-}
-
-impl LedgerEntry {
-    pub fn new(
-        transaction_id: Uuid,
-        entry_type: String,
-        debit: i64,
-        credit: i64,
-        currency: String,
-        source_acquirer: String,
-    ) -> Self {
-        Self {
-            entry_id: Uuid::now_v7(),
-            transaction_id,
-            entry_type,
-            debit_amount_minor_units: debit,
-            credit_amount_minor_units: credit,
-            currency,
-            source_acquirer,
-            reconciliation_batch_id: None,
-            reconciled: false,
-            created_at: Utc::now(),
-        }
-    }
-}
-
-pub struct ReconciliationMatcher {
-    pub auto_confirm_threshold: f64,
-    pub review_threshold: f64,
-}
-
-impl Default for ReconciliationMatcher {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl ReconciliationMatcher {
-    pub fn new() -> Self {
-        Self {
-            auto_confirm_threshold: 0.95,
-            review_threshold: 0.70,
-        }
-    }
-
-    pub fn match_record(
-        &self,
-        record: &SettlementRecord,
-        acquirer_references: &[(Uuid, String)], // (payment_intent_id, acquirer_reference)
-    ) -> crate::domain::value_objects::MatchResult {
-        // Exact match by acquirer reference
-        for (intent_id, reference) in acquirer_references {
-            if reference == &record.acquirer_reference {
-                return crate::domain::value_objects::MatchResult {
-                    payment_intent_id: Some(*intent_id),
-                    confidence: 1.0,
-                    outcome: SettlementMatchOutcome::Matched,
-                    auto_confirm: true,
-                };
-            }
-        }
-
-        // No match found
-        crate::domain::value_objects::MatchResult {
-            payment_intent_id: None,
-            confidence: 0.0,
-            outcome: SettlementMatchOutcome::Unmatched,
-            auto_confirm: false,
-        }
+    pub fn mark_settled(&mut self) {
+        self.status = SettlementStatus::Settled;
+        self.settled_at = Some(Utc::now());
+        self.updated_at = Utc::now();
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use shared_types::Money;
-
     #[test]
-    fn test_new_batch_is_ingesting() {
-        let b = SettlementBatch::new(Uuid::now_v7(), Uuid::now_v7(), "checksum123".into(), "csv".into());
-        assert_eq!(b.status, SettlementBatchStatus::Ingesting);
-        assert_eq!(b.total_records, 0);
+    fn test_new_batch() {
+        let b = SettlementBatch::new(Uuid::now_v7(), "ni".into(), "2024-01-01".into(), "2024-01-31".into());
+        assert_eq!(b.status, SettlementStatus::Pending);
     }
-
     #[test]
-    fn test_record_match_and_unmatch() {
-        let mut b = SettlementBatch::new(Uuid::now_v7(), Uuid::now_v7(), "checksum".into(), "csv".into());
-        b.record_match();
-        b.record_match();
-        b.record_unmatch();
-        assert_eq!(b.matched_count, 2);
-        assert_eq!(b.unmatched_count, 1);
-    }
-
-    #[test]
-    fn test_complete_sets_processed() {
-        let mut b = SettlementBatch::new(Uuid::now_v7(), Uuid::now_v7(), "checksum".into(), "csv".into());
-        b.complete();
-        assert_eq!(b.status, SettlementBatchStatus::Processed);
-        assert!(b.processed_at.is_some());
-    }
-
-    #[test]
-    fn test_ledger_entry_new() {
-        let e = LedgerEntry::new(Uuid::now_v7(), "debit".into(), 5000, 0, "AED".into(), "NI".into());
-        assert_eq!(e.debit_amount_minor_units, 5000);
-        assert_eq!(e.credit_amount_minor_units, 0);
-        assert!(!e.reconciled);
-    }
-
-    #[test]
-    fn test_matcher_exact_match() {
-        let matcher = ReconciliationMatcher::new();
-        let intent_id = Uuid::now_v7();
-        let record = SettlementRecord {
-            acquirer_reference: "NI_abc123".into(),
-            amount_minor_units: 10000,
-            currency: "AED".into(),
-            settled_at: Utc::now(),
-            fee_minor_units: None,
-        };
-        let refs = vec![(intent_id, "NI_abc123".to_string())];
-        let result = matcher.match_record(&record, &refs);
-        assert_eq!(result.outcome, SettlementMatchOutcome::Matched);
-        assert_eq!(result.confidence, 1.0);
-        assert!(result.auto_confirm);
-    }
-
-    #[test]
-    fn test_matcher_no_match() {
-        let matcher = ReconciliationMatcher::new();
-        let record = SettlementRecord {
-            acquirer_reference: "NI_unknown".into(),
-            amount_minor_units: 10000,
-            currency: "AED".into(),
-            settled_at: Utc::now(),
-            fee_minor_units: None,
-        };
-        let refs = vec![(Uuid::now_v7(), "NI_abc123".to_string())];
-        let result = matcher.match_record(&record, &refs);
-        assert_eq!(result.outcome, SettlementMatchOutcome::Unmatched);
-        assert_eq!(result.confidence, 0.0);
+    fn test_mark_polled() {
+        let mut b = SettlementBatch::new(Uuid::now_v7(), "ni".into(), "2024-01-01".into(), "2024-01-31".into());
+        b.mark_polled(10, 100000);
+        assert_eq!(b.status, SettlementStatus::Polled);
+        assert_eq!(b.total_records, 10);
     }
 }

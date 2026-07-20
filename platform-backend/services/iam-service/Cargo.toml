@@ -31,6 +31,7 @@ jsonwebtoken.workspace = true
 ipnet.workspace = true
 redis.workspace = true
 sha2.workspace = true
+async-nats.workspace = true
 hex.workspace = true
 rand = "0.8"
 validator.workspace = true

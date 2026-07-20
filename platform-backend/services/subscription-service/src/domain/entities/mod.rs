@@ -1,1 +1,1 @@
-// Entities within aggregates
+// Domain entities for subscription service.

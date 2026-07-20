@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use sea_orm::{DatabaseConnection, EntityTrait, QueryFilter, ColumnTrait, ActiveModelTrait, QueryOrder};
+use sea_orm::{DatabaseConnection, EntityTrait, QueryFilter, ColumnTrait, QueryOrder};
 use uuid::Uuid;
 
 use crate::infrastructure::entities::event_store;

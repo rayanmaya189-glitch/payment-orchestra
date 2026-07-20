@@ -25,3 +25,4 @@ tracing.workspace = true
 async-trait.workspace = true
 redis.workspace = true
 sha2.workspace = true
+async-nats.workspace = true

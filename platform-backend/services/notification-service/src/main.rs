@@ -11,71 +11,28 @@ mod domain;
 mod infrastructure;
 
 use crate::application::services::NotificationServiceImpl;
+use crate::infrastructure::adapters::PostgresNotificationRepository;
 
 #[tokio::main]
 async fn main() {
     ServiceLogger::init("notification-service");
-
-    let config = AppConfig::from_env("notification-service")
-        .expect("Failed to load config from environment");
-
-    // Connect to Postgres with retry
+    let config = AppConfig::from_env_or_panic("notification-service");
     let db = infrastructure::database::connect(&config.database).await;
-
-    // Connect to Redis with retry
     let redis = infrastructure::cache::connect(&config.redis).await;
-
-    // Create service
-    let service = NotificationServiceImpl::new(db.clone());
-    let app_state = api::AppState { service: Arc::new(service) };
-
-    // Build shared middleware stack
+    let repo = PostgresNotificationRepository::new(db.clone());
+    let service = NotificationServiceImpl::new(Box::new(repo), db.clone());
+    let app_state = api::AppState::new(service);
     let cors = platform_middleware::cors_layer(&config.cors);
-    let rate_limit = platform_middleware::RateLimitLayer::new(
-        redis.clone(),
-        platform_middleware::RateLimitLayerConfig { endpoint_overrides: vec![],
-            login_per_ip_per_minute: config.rate_limit.login_per_ip_per_minute,
-            api_per_principal_per_second: config.rate_limit.api_per_principal_per_second,
-        },
-    );
-
+    let rate_limit = platform_middleware::RateLimitLayer::new(redis, platform_middleware::RateLimitLayerConfig::default());
     let app = Router::new()
         .route("/healthz", get(healthz))
-        .route("/readyz", get(readyz))
-        .nest("/v1", api::routes::router(app_state)
-            .layer(platform_middleware::JwtAuthLayer::new(config.auth.clone())))
-        .layer(platform_middleware::SecurityHeadersLayer)
-        .layer(platform_middleware::RequestIdLayer)
-        .layer(rate_limit)
-        .layer(cors)
-        .layer(TraceLayer::new_for_http());
-
-    let addr = SocketAddr::new(
-        config.server.host.parse().unwrap(),
-        config.server.port,
-    );
-
+        .nest("/v1", api::routes::router(app_state).layer(platform_middleware::JwtAuthLayer::new(config.auth.clone())))
+        .layer(platform_middleware::SecurityHeadersLayer).layer(platform_middleware::RequestIdLayer)
+        .layer(rate_limit).layer(cors).layer(TraceLayer::new_for_http());
+    let addr = SocketAddr::new(config.server.host.parse().unwrap(), config.server.port);
     tracing::info!("Notification service listening on {addr}");
-
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
-
-    let shutdown_signal = platform_middleware::shutdown_signal(
-        platform_middleware::ShutdownConfig::standard("notification-service"),
-    );
-
-    axum::serve(listener, app)
-        .with_graceful_shutdown(shutdown_signal)
-        .await
-        .unwrap();
+    let shutdown = platform_middleware::shutdown_signal(platform_middleware::ShutdownConfig::standard("notification-service"));
+    axum::serve(listener, app).with_graceful_shutdown(shutdown).await.unwrap();
 }
-
-async fn healthz() -> &'static str {
-    "ok"
-}
-
-async fn readyz() -> axum::Json<serde_json::Value> {
-    axum::Json(serde_json::json!({
-        "status": "ok",
-        "checks": { "postgres": "not_checked", "redis": "not_checked" }
-    }))
-}
+async fn healthz() -> &'static str { "ok" }

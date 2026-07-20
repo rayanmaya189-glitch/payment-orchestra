@@ -28,3 +28,4 @@ tracing.workspace = true
 thiserror.workspace = true
 async-trait.workspace = true
 redis.workspace = true
+async-nats.workspace = true

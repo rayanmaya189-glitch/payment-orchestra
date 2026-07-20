@@ -10,8 +10,9 @@ mod application;
 mod domain;
 mod infrastructure;
 
-use crate::application::services::AuthServiceImpl;
-use crate::infrastructure::adapters::{PostgresApiKeyRepository, PostgresPendingChangeRepository, PostgresPrincipalRepository};
+use crate::application::services::IamServiceImpl;
+use crate::infrastructure::adapters::{PostgresPrincipalRepository, PostgresApiKeyRepository, PostgresRefreshTokenRepository};
+use crate::infrastructure::cache::RedisSessionStore;
 
 #[tokio::main]
 async fn main() {
@@ -19,37 +20,33 @@ async fn main() {
 
     let config = AppConfig::from_env_or_panic("iam-service");
 
-    // Connect to Postgres with retry
     let db = infrastructure::database::connect(&config.database).await;
-
-    // Connect to Redis with retry (for refresh tokens + rate limiting)
     let redis = infrastructure::cache::connect(&config.redis).await;
 
-    // Create repositories
     let principal_repo = PostgresPrincipalRepository::new(db.clone());
     let api_key_repo = PostgresApiKeyRepository::new(db.clone());
-    let pending_change_repo = PostgresPendingChangeRepository::new(db.clone());
+    let refresh_token_repo = PostgresRefreshTokenRepository::new(db.clone());
+    let session_store = RedisSessionStore::new(redis.clone());
 
-    // Create service with AuthConfig (JWT secret from environment, NOT hardcoded)
-    let service = AuthServiceImpl::new(
+    let service = IamServiceImpl::new(
         Box::new(principal_repo),
         Box::new(api_key_repo),
-        Box::new(pending_change_repo),
+        Box::new(refresh_token_repo),
+        session_store,
         db.clone(),
-        redis.clone(),
         config.auth.clone(),
     );
 
-    // Create app state
-    let app_state = api::AppState {
-        service: Arc::new(service),
-    };
+    let app_state = api::AppState::new(service, config.auth.clone());
 
-    // Build shared middleware stack
     let cors = platform_middleware::cors_layer(&config.cors);
     let rate_limit = platform_middleware::RateLimitLayer::new(
-        redis.clone(),
-        platform_middleware::RateLimitLayerConfig { endpoint_overrides: vec![],
+        redis,
+        platform_middleware::RateLimitLayerConfig {
+            endpoint_overrides: vec![
+                ("/v1/auth/login".into(), 10, 60),
+                ("/v1/auth/refresh".into(), 30, 60),
+            ],
             login_per_ip_per_minute: config.rate_limit.login_per_ip_per_minute,
             api_per_principal_per_second: config.rate_limit.api_per_principal_per_second,
         },
@@ -58,8 +55,7 @@ async fn main() {
     let app = Router::new()
         .route("/healthz", get(healthz))
         .route("/readyz", get(readyz))
-        .nest("/v1", api::routes::router(app_state)
-            .layer(platform_middleware::JwtAuthLayer::optional(config.auth.clone())))
+        .nest("/v1", api::routes::router(app_state))
         .layer(platform_middleware::SecurityHeadersLayer)
         .layer(platform_middleware::RequestIdLayer)
         .layer(rate_limit)
@@ -74,7 +70,6 @@ async fn main() {
     tracing::info!("IAM service listening on {addr}");
 
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
-
     let shutdown_signal = platform_middleware::shutdown_signal(
         platform_middleware::ShutdownConfig::critical("iam-service"),
     );
@@ -92,9 +87,6 @@ async fn healthz() -> &'static str {
 async fn readyz() -> axum::Json<serde_json::Value> {
     axum::Json(serde_json::json!({
         "status": "ok",
-        "checks": {
-            "postgres": "not_checked",
-            "redis": "not_checked"
-        }
+        "checks": { "postgres": "not_checked", "redis": "not_checked" }
     }))
 }

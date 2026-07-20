@@ -27,3 +27,5 @@ async-trait.workspace = true
 tonic.workspace = true
 platform-proto.workspace = true
 redis.workspace = true
+reqwest.workspace = true
+hex.workspace = true

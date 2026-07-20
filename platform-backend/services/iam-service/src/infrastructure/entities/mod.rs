@@ -1,8 +1,7 @@
-pub mod principal;
-pub mod api_key;
-pub mod pending_change;
-pub mod role_assignment;
+pub mod principal_entity;
+pub mod api_key_entity;
+pub mod refresh_token_entity;
 
-pub use principal as principal_entity;
-pub use api_key as api_key_entity;
-pub use role_assignment as role_assignment_entity;
+pub use principal_entity::Entity as PrincipalEntity;
+pub use api_key_entity::Entity as ApiKeyEntity;
+pub use refresh_token_entity::Entity as RefreshTokenEntity;

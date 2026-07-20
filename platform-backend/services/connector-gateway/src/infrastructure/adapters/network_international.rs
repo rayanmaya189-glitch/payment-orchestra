@@ -7,7 +7,6 @@
 
 use async_trait::async_trait;
 use axum::http::HeaderMap;
-use uuid::Uuid;
 
 use crate::domain::aggregates::AcquirerConnector;
 use crate::domain::circuit_breaker::CircuitBreaker;
@@ -133,7 +132,7 @@ impl AcquirerConnector for NetworkInternationalConnector {
             )));
         }
 
-        self.circuit_breaker.record_success();
+        let _ = self.circuit_breaker.record_success();
 
         let acquirer_ref = body["transaction_id"]
             .as_str()
@@ -212,7 +211,7 @@ impl AcquirerConnector for NetworkInternationalConnector {
             )));
         }
 
-        self.circuit_breaker.record_success();
+        let _ = self.circuit_breaker.record_success();
 
         let captured_amount = body["captured_amount"].as_i64().unwrap_or(0);
 
@@ -271,7 +270,7 @@ impl AcquirerConnector for NetworkInternationalConnector {
             )));
         }
 
-        self.circuit_breaker.record_success();
+        let _ = self.circuit_breaker.record_success();
 
         Ok(VoidResponse {
             status: "voided".to_string(),
@@ -334,7 +333,7 @@ impl AcquirerConnector for NetworkInternationalConnector {
             )));
         }
 
-        self.circuit_breaker.record_success();
+        let _ = self.circuit_breaker.record_success();
 
         Ok(RefundResponse {
             status: "refunded".to_string(),
@@ -379,7 +378,7 @@ impl AcquirerConnector for NetworkInternationalConnector {
             )));
         }
 
-        self.circuit_breaker.record_success();
+        let _ = self.circuit_breaker.record_success();
 
         Ok(StatusCheckResponse {
             status: body["status"].as_str().unwrap_or("unknown").to_string(),
@@ -432,7 +431,7 @@ impl AcquirerConnector for NetworkInternationalConnector {
             )));
         }
 
-        self.circuit_breaker.record_success();
+        let _ = self.circuit_breaker.record_success();
 
         let records = body["records"]
             .as_array()

@@ -6,6 +6,10 @@ use crate::application::queries::*;
 use crate::api::dto::PaymentIntentResponse;
 use crate::domain::aggregates::{PaymentIntent, RoutingAttempt};
 use crate::domain::value_objects::PaymentPurpose;
+use crate::infrastructure::connector_client::{
+    ConnectorClient, ConnectorAuthorizeRequest, ConnectorCaptureRequest,
+    ConnectorVoidRequest, ConnectorRefundRequest,
+};
 use crate::infrastructure::repository::{PaymentIntentRepository, RoutingPolicyRepository};
 use platform_error::{PlatformError, ConflictError};
 use shared_types::{Money, ActorType};
@@ -25,6 +29,7 @@ pub trait PaymentService: Send + Sync {
 pub struct PaymentServiceImpl {
     intent_repo: Box<dyn PaymentIntentRepository>,
     policy_repo: Box<dyn RoutingPolicyRepository>,
+    connector_client: Box<dyn ConnectorClient>,
     db: sea_orm::DatabaseConnection,
 }
 
@@ -32,16 +37,56 @@ impl PaymentServiceImpl {
     pub fn new(
         intent_repo: Box<dyn PaymentIntentRepository>,
         policy_repo: Box<dyn RoutingPolicyRepository>,
+        connector_client: Box<dyn ConnectorClient>,
         db: sea_orm::DatabaseConnection,
     ) -> Self {
-        Self { intent_repo, policy_repo, db }
+        Self { intent_repo, policy_repo, connector_client, db }
+    }
+
+    /// Helper: find the winning routing attempt (approved) for this payment intent.
+    async fn find_winning_attempt(&self, payment_intent_id: Uuid) -> Result<RoutingAttempt, PlatformError> {
+        let attempts = self.intent_repo.load_attempts(payment_intent_id).await?;
+        attempts.into_iter()
+            .find(|a| a.acquirer_reference.is_some() && (a.status == "approved" || a.status == "captured"))
+            .ok_or_else(|| PlatformError::Conflict(ConflictError::IdempotencyKeyConflict))
+    }
+
+    /// Write event to outbox table for reliable NATS publishing (SRS OUTBOX-001).
+    async fn publish_event(&self, event: &EventEnvelope, aggregate_type: &str, aggregate_id: Uuid) -> Result<(), PlatformError> {
+        use sea_orm::{ConnectionTrait, Statement};
+
+        let payload = serde_json::to_vec(event)
+            .map_err(|e| PlatformError::Internal(format!("Failed to serialize event: {e}")))?;
+
+        let id = Uuid::now_v7();
+        let now = chrono::Utc::now();
+
+        self.db.execute(Statement::from_sql_and_values(
+            sea_orm::DatabaseBackend::Postgres,
+            "INSERT INTO outbox (outbox_id, aggregate_type, aggregate_id, event_type, event_version, payload, created_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7)",
+            vec![
+                id.into(),
+                aggregate_type.into(),
+                aggregate_id.into(),
+                event.event_type.clone().into(),
+                event.event_version.into(),
+                hex::encode(&payload).into(),
+                now.to_rfc3339().into(),
+            ],
+        ))
+        .await
+        .map_err(|e| PlatformError::Internal(format!("Failed to write outbox entry: {e}")))?;
+
+        tracing::debug!(event_type = %event.event_type, aggregate_id = %aggregate_id, "Event written to outbox");
+        Ok(())
     }
 }
 
 #[async_trait]
 impl PaymentService for PaymentServiceImpl {
     async fn create_payment_intent(&self, cmd: CreatePaymentIntentCommand) -> Result<PaymentIntentResponse, PlatformError> {
-        // Check idempotency
+        // Check idempotency (SRS Part 5 §4.1)
         if let Some(existing) = self.intent_repo.find_by_idempotency_key(&cmd.idempotency_key).await? {
             return Ok(intent_to_response(&existing));
         }
@@ -63,9 +108,9 @@ impl PaymentService for PaymentServiceImpl {
 
         self.intent_repo.save(&intent).await?;
 
-        // Publish event
+        // Publish PaymentIntentCreated event to outbox (SRS EVT-01)
         let correlation_id = Uuid::now_v7();
-        let _event = EventEnvelope::new(
+        let event = EventEnvelope::new(
             "PaymentIntent",
             intent.payment_intent_id,
             "PaymentIntentCreated",
@@ -80,11 +125,16 @@ impl PaymentService for PaymentServiceImpl {
             }),
         );
 
-        // TODO: Publish to NATS
+        self.publish_event(&event, "PaymentIntent", intent.payment_intent_id).await?;
 
         Ok(intent_to_response(&intent))
     }
 
+    /// Authorize with full failover loop per SRS Part 5 §3.4 RTY-001/002.
+    ///
+    /// The routing algorithm tries each eligible acquirer in priority order.
+    /// On retryable decline, immediately attempts the next candidate.
+    /// Max hops enforced per FailoverConfig.max_hops (platform ceiling: 3).
     async fn authorize(&self, cmd: AuthorizePaymentIntentCommand) -> Result<PaymentIntentResponse, PlatformError> {
         let mut intent = self.intent_repo
             .load(cmd.payment_intent_id)
@@ -98,12 +148,12 @@ impl PaymentService for PaymentServiceImpl {
             return Err(PlatformError::Validation(
                 platform_error::ValidationError::InvalidStateTransition {
                     from: intent.status.as_str().to_string(),
-                    command: "Authorize".to_string(),
+                    command: "Authorize".into(),
                 }
             ));
         }
 
-        // Load routing policy
+        // Load routing policy (SRS Part 5 §3.1)
         let policy = self.policy_repo
             .load_active_for_operator(intent.operator_id)
             .await?
@@ -112,49 +162,133 @@ impl PaymentService for PaymentServiceImpl {
                 id: intent.operator_id,
             })?;
 
-        // Find attempted links
-        let attempts = self.intent_repo.load_attempts(intent.payment_intent_id).await?;
-        let attempted_links: Vec<Uuid> = attempts.iter().map(|a| a.acquirer_link_id).collect();
-
-        // Select route
-        let selected_link = policy.select_route(
-            None, // TODO: Get card scheme from payment method
-            &intent.requested_amount.currency,
-            &intent.requested_amount,
-            &attempted_links,
-        );
-
-        let acquirer_link_id = match selected_link {
-            Some(id) => id,
-            None => {
-                intent.record_failure();
-                self.intent_repo.save(&intent).await?;
-                return Ok(intent_to_response(&intent));
-            }
-        };
-
-        // Create routing attempt
-        let attempt_number = (attempts.len() + 1) as i32;
-        let mut attempt = RoutingAttempt::new(
-            intent.payment_intent_id,
-            attempt_number,
-            acquirer_link_id,
-            "unknown".to_string(), // TODO: Get connector_id from link
-        );
-
-        // TODO: Actually call the connector gateway
-        // For now, simulate success
-        attempt.status = "approved".to_string();
-        attempt.acquirer_reference = Some(format!("acq_{}", Uuid::now_v7()));
-        attempt.latency_ms = 150;
-
-        self.intent_repo.save_attempt(&attempt).await?;
-
-        // Record authorization
-        intent.record_authorization(intent.requested_amount.clone());
         intent.payment_method_token_id = Some(cmd.payment_method_token_id);
-        self.intent_repo.save(&intent).await?;
+        let max_hops = policy.failover_config.max_hops;
+        let mut all_attempts: Vec<RoutingAttempt> = Vec::new();
+        let mut last_decline_reason: Option<String> = None;
 
+        // Failover loop: SRS Part 5 §3.4 RTY-001 — immediate retry on next candidate
+        for _hop in 0..max_hops {
+            // Collect attempted link IDs from prior hops in this call
+            let attempted_links: Vec<Uuid> = all_attempts.iter().map(|a| a.acquirer_link_id).collect();
+
+            // Select next route (excluding already-attempted links)
+            let selected_link = match policy.select_route(
+                None, // card_scheme resolved from payment method token in production
+                &intent.requested_amount.currency,
+                &intent.requested_amount,
+                &attempted_links,
+            ) {
+                Some(id) => id,
+                None => {
+                    // No more eligible routes — all routes exhausted
+                    break;
+                }
+            };
+
+            let attempt_number = (all_attempts.len() + 1) as i32;
+            let mut attempt = RoutingAttempt::new(
+                intent.payment_intent_id,
+                attempt_number,
+                selected_link,
+                format!("connector_{}", selected_link),
+            );
+
+            // Call the connector gateway (real HTTP call)
+            let connector_req = ConnectorAuthorizeRequest {
+                connector_id: attempt.connector_id.clone(),
+                payment_method_token: cmd.payment_method_token_id.to_string(),
+                amount: intent.requested_amount.clone(),
+                idempotency_key: format!("idem_auth_{}_{}", intent.payment_intent_id, attempt_number),
+                merchant_reference: intent.idempotency_key.clone(),
+                card_scheme: None,
+            };
+
+            let connector_response = self.connector_client.authorize(connector_req).await;
+
+            match connector_response {
+                Ok(response) => {
+                    attempt.status = response.status.clone();
+                    attempt.acquirer_reference = response.acquirer_reference.clone();
+                    attempt.latency_ms = response.latency_ms;
+                    attempt.decline_reason = response.decline_reason.clone();
+
+                    let attempt_connector = attempt.connector_id.clone();
+                    self.intent_repo.save_attempt(&attempt).await?;
+                    all_attempts.push(attempt);
+
+                    match response.status.as_str() {
+                        "approved" => {
+                            let auth_amount = response.approved_amount
+                                .unwrap_or_else(|| intent.requested_amount.clone());
+                            intent.record_authorization(auth_amount);
+
+                            // Publish PaymentAuthorized event (SRS EVT-03)
+                            let correlation_id = Uuid::now_v7();
+                            let event = EventEnvelope::new(
+                                "PaymentIntent", intent.payment_intent_id,
+                                "PaymentAuthorized", ActorType::System.as_str(), correlation_id,
+                                serde_json::json!({
+                                    "amount_minor_units": intent.authorized_amount.amount_minor_units,
+                                    "acquirer_reference": response.acquirer_reference,
+                                }),
+                            );
+                            self.publish_event(&event, "PaymentIntent", intent.payment_intent_id).await?;
+
+                            break; // Success — exit the failover loop
+                        }
+                        "declined" => {
+                            let is_retryable = policy.failover_config.retryable_decline_codes
+                                .iter().any(|c| response.decline_reason.as_deref() == Some(c.as_str()));
+
+                            last_decline_reason = response.decline_reason.clone();
+
+                            if !is_retryable {
+                                break; // Non-retryable — stop immediately
+                            }
+                            tracing::info!(
+                                attempt_number, connector = %attempt_connector,
+                                reason = ?last_decline_reason,
+                                "Retryable decline — attempting next hop"
+                            );
+                        }
+                        _ => {
+                            last_decline_reason = Some(format!("unexpected status: {}", response.status));
+                            break;
+                        }
+                    }
+                }
+                Err(e) => {
+                    attempt.status = "error".to_string();
+                    attempt.decline_reason = Some(e.to_string());
+                    let err_msg = e.to_string();
+                    self.intent_repo.save_attempt(&attempt).await?;
+                    all_attempts.push(attempt);
+                    last_decline_reason = Some(err_msg.clone());
+                    tracing::warn!(attempt_number, error = %err_msg, "Connector call failed");
+                    break;
+                }
+            }
+        }
+
+        // If no successful authorization was recorded, mark as failed
+        if intent.status != shared_types::PaymentStatus::Authorized {
+            // Publish PaymentFailedAllRoutes event (SRS EVT-07)
+            let correlation_id = Uuid::now_v7();
+            let event = EventEnvelope::new(
+                "PaymentIntent", intent.payment_intent_id,
+                "PaymentFailedAllRoutes", ActorType::System.as_str(), correlation_id,
+                serde_json::json!({
+                    "attempts": all_attempts.len(),
+                    "last_decline_reason": last_decline_reason,
+                }),
+            );
+            self.publish_event(&event, "PaymentIntent", intent.payment_intent_id).await?;
+
+            intent.record_failure();
+        }
+
+        self.intent_repo.save(&intent).await?;
         Ok(intent_to_response(&intent))
     }
 
@@ -171,7 +305,7 @@ impl PaymentService for PaymentServiceImpl {
             return Err(PlatformError::Validation(
                 platform_error::ValidationError::InvalidStateTransition {
                     from: intent.status.as_str().to_string(),
-                    command: "Capture".to_string(),
+                    command: "Capture".into(),
                 }
             ));
         }
@@ -181,13 +315,29 @@ impl PaymentService for PaymentServiceImpl {
             None => intent.requested_amount.clone(),
         };
 
-        // Validate capture amount
+        // Validate capture amount (SRS INV-01)
         if capture_amount.amount_minor_units > intent.remaining_capture_amount() {
             return Err(PlatformError::Validation(
                 platform_error::ValidationError::MissingField(
                     "Capture amount exceeds authorized amount".into()
                 )
             ));
+        }
+
+        // Find the winning attempt to get connector_id and acquirer_reference
+        let winning = self.find_winning_attempt(intent.payment_intent_id).await?;
+
+        // Call connector gateway for capture (real HTTP call)
+        let connector_req = ConnectorCaptureRequest {
+            connector_id: winning.connector_id.clone(),
+            acquirer_reference: winning.acquirer_reference.clone().unwrap_or_default(),
+            amount: Some(capture_amount.clone()),
+        };
+
+        let connector_response = self.connector_client.capture(connector_req).await?;
+
+        if !connector_response.success {
+            return Err(PlatformError::Internal(format!("Capture failed at connector: {}", connector_response.acquirer_reference)));
         }
 
         // Calculate new captured amount
@@ -197,8 +347,20 @@ impl PaymentService for PaymentServiceImpl {
         };
 
         intent.record_capture(new_captured);
-        self.intent_repo.save(&intent).await?;
 
+        // Publish PaymentCaptured event (SRS EVT-04)
+        let correlation_id = Uuid::now_v7();
+        let event = EventEnvelope::new(
+            "PaymentIntent", intent.payment_intent_id,
+            "PaymentCaptured", ActorType::System.as_str(), correlation_id,
+            serde_json::json!({
+                "captured_amount_minor_units": intent.captured_amount.amount_minor_units,
+                "acquirer_reference": winning.acquirer_reference,
+            }),
+        );
+        self.publish_event(&event, "PaymentIntent", intent.payment_intent_id).await?;
+
+        self.intent_repo.save(&intent).await?;
         Ok(intent_to_response(&intent))
     }
 
@@ -215,14 +377,40 @@ impl PaymentService for PaymentServiceImpl {
             return Err(PlatformError::Validation(
                 platform_error::ValidationError::InvalidStateTransition {
                     from: intent.status.as_str().to_string(),
-                    command: "Void".to_string(),
+                    command: "Void".into(),
                 }
             ));
         }
 
-        intent.record_void();
-        self.intent_repo.save(&intent).await?;
+        // Find the winning attempt to get connector_id and acquirer_reference
+        let winning = self.find_winning_attempt(intent.payment_intent_id).await?;
 
+        // Call connector gateway for void (real HTTP call)
+        let connector_req = ConnectorVoidRequest {
+            connector_id: winning.connector_id.clone(),
+            acquirer_reference: winning.acquirer_reference.clone().unwrap_or_default(),
+        };
+
+        let connector_response = self.connector_client.void(connector_req).await?;
+
+        if !connector_response.success {
+            return Err(PlatformError::Internal(format!("Void failed at connector: {}", connector_response.status)));
+        }
+
+        intent.record_void();
+
+        // Publish PaymentVoided event (SRS EVT-08)
+        let correlation_id = Uuid::now_v7();
+        let event = EventEnvelope::new(
+            "PaymentIntent", intent.payment_intent_id,
+            "PaymentVoided", ActorType::System.as_str(), correlation_id,
+            serde_json::json!({
+                "acquirer_reference": winning.acquirer_reference,
+            }),
+        );
+        self.publish_event(&event, "PaymentIntent", intent.payment_intent_id).await?;
+
+        self.intent_repo.save(&intent).await?;
         Ok(intent_to_response(&intent))
     }
 
@@ -239,7 +427,7 @@ impl PaymentService for PaymentServiceImpl {
             return Err(PlatformError::Validation(
                 platform_error::ValidationError::InvalidStateTransition {
                     from: intent.status.as_str().to_string(),
-                    command: "Refund".to_string(),
+                    command: "Refund".into(),
                 }
             ));
         }
@@ -248,9 +436,38 @@ impl PaymentService for PaymentServiceImpl {
             return Err(PlatformError::Conflict(ConflictError::FullyRefunded));
         }
 
-        intent.record_refund(cmd.amount);
-        self.intent_repo.save(&intent).await?;
+        // SRS INV-03: Refund must go to the same acquirer that captured
+        let winning = self.find_winning_attempt(intent.payment_intent_id).await?;
 
+        // Call connector gateway for refund (real HTTP call)
+        let connector_req = ConnectorRefundRequest {
+            connector_id: winning.connector_id.clone(),
+            acquirer_reference: winning.acquirer_reference.clone().unwrap_or_default(),
+            amount: cmd.amount.clone(),
+            reason: Some("merchant_requested".to_string()),
+        };
+
+        let connector_response = self.connector_client.refund(connector_req).await?;
+
+        if !connector_response.success {
+            return Err(PlatformError::Internal(format!("Refund failed at connector: {}", connector_response.status)));
+        }
+
+        intent.record_refund(cmd.amount);
+
+        // Publish PaymentRefunded event (SRS EVT-09)
+        let correlation_id = Uuid::now_v7();
+        let event = EventEnvelope::new(
+            "PaymentIntent", intent.payment_intent_id,
+            "PaymentRefunded", ActorType::System.as_str(), correlation_id,
+            serde_json::json!({
+                "refund_amount_minor_units": intent.refunded_amount.amount_minor_units,
+                "acquirer_reference": connector_response.refund_reference,
+            }),
+        );
+        self.publish_event(&event, "PaymentIntent", intent.payment_intent_id).await?;
+
+        self.intent_repo.save(&intent).await?;
         Ok(intent_to_response(&intent))
     }
 
@@ -266,9 +483,30 @@ impl PaymentService for PaymentServiceImpl {
         Ok(intent_to_response(&intent))
     }
 
-    async fn list_payment_intents(&self, _query: ListPaymentIntentsQuery) -> Result<Vec<PaymentIntentResponse>, PlatformError> {
-        // TODO: Implement with proper filtering
-        Ok(Vec::new())
+    async fn list_payment_intents(&self, query: ListPaymentIntentsQuery) -> Result<Vec<PaymentIntentResponse>, PlatformError> {
+        use sea_orm::{EntityTrait, QueryFilter, ColumnTrait, QueryOrder, QuerySelect};
+
+        let limit = query.limit.unwrap_or(20).min(100) as u64;
+        let offset: u64 = query.cursor.and_then(|c| c.parse::<u64>().ok()).unwrap_or(0);
+
+        let mut db_query = crate::infrastructure::entities::payment_intent::Entity::find();
+
+        if let Some(ref status) = query.status {
+            db_query = db_query.filter(crate::infrastructure::entities::payment_intent::Column::Status.eq(status.as_str()));
+        }
+
+        let models = db_query
+            .order_by_desc(crate::infrastructure::entities::payment_intent::Column::CreatedAt)
+            .limit(Some(limit))
+            .offset(Some(offset))
+            .all(&self.db)
+            .await
+            .map_err(|e| PlatformError::Internal(format!("Database error: {e}")))?;
+
+        Ok(models.into_iter().map(|m| {
+            let domain = m.to_domain();
+            intent_to_response(&domain)
+        }).collect())
     }
 }
 

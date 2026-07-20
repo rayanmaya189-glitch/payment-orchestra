@@ -1,2 +1,7 @@
-//! Delegates to platform-db for connection with retry logic.
-pub use platform_db::connect_database as connect;
+use platform_config::DatabaseConfig;
+use platform_db::connect_database;
+use sea_orm::DatabaseConnection;
+
+pub async fn connect(config: &DatabaseConfig) -> DatabaseConnection {
+    connect_database(config).await
+}

@@ -1,4 +1,5 @@
-#![allow(dead_code)]
-pub mod repository;
-pub mod messaging;
+pub mod database;
+pub mod cache;
 pub mod adapters;
+pub mod entities;
+pub mod messaging;

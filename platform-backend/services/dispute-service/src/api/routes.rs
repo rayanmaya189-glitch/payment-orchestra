@@ -1,55 +1,54 @@
-use axum::{extract::{Path, State}, http::StatusCode, Json, Router};
+use axum::{extract::{Path, State}, routing::{get, post}, Json, Router};
 use uuid::Uuid;
-use super::dto::*;
-use super::AppState;
-use crate::application::services::{DisputeService, DisputeResponse as ServiceResponse};
-use platform_middleware::AuthPrincipal;
+use crate::api::AppState;
+use crate::application::commands::*;
+use crate::application::services::DisputeService;
 
 pub fn router(state: AppState) -> Router {
     Router::new()
-        .route("/disputes", axum::routing::post(open_dispute))
-        .route("/disputes/{id}", axum::routing::get(get_dispute))
-        .route("/disputes/{id}/evidence", axum::routing::post(submit_evidence))
-        .route("/disputes/{id}/resolve", axum::routing::post(resolve_dispute))
+        .route("/disputes", post(open_dispute))
+        .route("/disputes/{dispute_id}", get(get_dispute))
+        .route("/disputes/{dispute_id}/evidence", post(submit_evidence))
+        .route("/disputes/{dispute_id}/resolve", post(resolve_dispute))
         .with_state(state)
 }
 
-async fn open_dispute(State(state): State<AppState>, _auth: AuthPrincipal, Json(req): Json<OpenDisputeRequest>) -> Result<(StatusCode, Json<DisputeResponse>), (StatusCode, Json<ErrorResponse>)> {
-    let cmd = crate::application::services::OpenDisputeCommand {
-        operator_id: Uuid::nil(),
-        payment_intent_id: req.payment_intent_id,
-        reason: req.reason,
-        amount: req.amount,
+async fn open_dispute(State(state): State<AppState>, Json(req): Json<serde_json::Value>) -> Result<(axum::http::StatusCode, Json<serde_json::Value>), (axum::http::StatusCode, Json<serde_json::Value>)> {
+    let cmd = OpenDisputeCommand {
+        payment_intent_id: req["payment_intent_id"].as_str().and_then(|s| Uuid::parse_str(s).ok()).unwrap_or(Uuid::nil()),
+        operator_id: req["operator_id"].as_str().and_then(|s| Uuid::parse_str(s).ok()).unwrap_or(Uuid::nil()),
+        reason: req["reason"].as_str().unwrap_or("unknown").to_string(),
+        amount_minor_units: req["amount_minor_units"].as_i64().unwrap_or(0),
+        currency: req["currency"].as_str().unwrap_or("AED").to_string(),
+        acquirer_reference: req["acquirer_reference"].as_str().unwrap_or("").to_string(),
+        connector_id: req["connector_id"].as_str().unwrap_or("").to_string(),
     };
-    match state.service.open_dispute(cmd).await {
-        Ok(r) => Ok((StatusCode::CREATED, Json(convert_response(r)))),
-        Err(e) => Err(err(e)),
+    match state.service.open(cmd).await {
+        Ok(id) => Ok((axum::http::StatusCode::CREATED, Json(serde_json::json!({"dispute_id": id.to_string()})))),
+        Err(e) => Err((axum::http::StatusCode::BAD_REQUEST, Json(serde_json::json!({"error": e.to_string()})))),
     }
 }
 
-async fn get_dispute(State(state): State<AppState>, Path(id): Path<Uuid>) -> Result<Json<DisputeResponse>, (StatusCode, Json<ErrorResponse>)> {
-    match state.service.get_dispute(id).await {
-        Ok(r) => Ok(Json(convert_response(r))),
-        Err(e) => Err(err(e)),
+async fn get_dispute(State(state): State<AppState>, Path(id): Path<String>) -> Result<Json<serde_json::Value>, (axum::http::StatusCode, Json<serde_json::Value>)> {
+    let did = Uuid::parse_str(&id).unwrap_or(Uuid::nil());
+    match state.service.get(did).await {
+        Ok(d) => Ok(Json(serde_json::json!({"dispute_id": d.dispute_id.to_string(), "status": d.status.as_str(), "reason": d.reason}))),
+        Err(e) => Err((axum::http::StatusCode::NOT_FOUND, Json(serde_json::json!({"error": e.to_string()})))),
     }
 }
 
-async fn submit_evidence(State(state): State<AppState>, Path(id): Path<Uuid>, Json(req): Json<SubmitEvidenceRequest>) -> Result<StatusCode, (StatusCode, Json<ErrorResponse>)> {
-    match state.service.submit_evidence(id, req.evidence).await { Ok(()) => Ok(StatusCode::OK), Err(e) => Err(err(e)) }
+async fn submit_evidence(State(state): State<AppState>, Path(id): Path<String>, Json(req): Json<serde_json::Value>) -> Result<Json<serde_json::Value>, (axum::http::StatusCode, Json<serde_json::Value>)> {
+    let did = Uuid::parse_str(&id).unwrap_or(Uuid::nil());
+    match state.service.submit_evidence(SubmitEvidenceCommand { dispute_id: did, evidence: req }).await {
+        Ok(()) => Ok(Json(serde_json::json!({"status": "evidence_submitted"}))),
+        Err(e) => Err((axum::http::StatusCode::BAD_REQUEST, Json(serde_json::json!({"error": e.to_string()})))),
+    }
 }
 
-async fn resolve_dispute(State(state): State<AppState>, Path(id): Path<Uuid>) -> Result<StatusCode, (StatusCode, Json<ErrorResponse>)> {
-    match state.service.resolve_dispute(id).await { Ok(()) => Ok(StatusCode::OK), Err(e) => Err(err(e)) }
-}
-
-fn convert_response(r: ServiceResponse) -> DisputeResponse {
-    DisputeResponse { dispute_id: r.dispute_id, status: r.status, reason: r.reason, amount: r.amount, currency: r.currency }
-}
-
-fn err(e: platform_error::PlatformError) -> (StatusCode, Json<ErrorResponse>) {
-    let (s, c, m) = match &e {
-        platform_error::PlatformError::NotFound { resource, id } => (StatusCode::NOT_FOUND, "NOT_FOUND", format!("{resource} {id}")),
-        _ => (StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL_ERROR", "Internal error".into()),
-    };
-    (s, Json(ErrorResponse { error: m, code: c.to_string() }))
+async fn resolve_dispute(State(state): State<AppState>, Path(id): Path<String>, Json(req): Json<serde_json::Value>) -> Result<Json<serde_json::Value>, (axum::http::StatusCode, Json<serde_json::Value>)> {
+    let did = Uuid::parse_str(&id).unwrap_or(Uuid::nil());
+    match state.service.resolve(ResolveDisputeCommand { dispute_id: did, decision: req["decision"].as_str().unwrap_or("won").to_string(), reason: req["reason"].as_str().unwrap_or("").to_string() }).await {
+        Ok(()) => Ok(Json(serde_json::json!({"status": "resolved"}))),
+        Err(e) => Err((axum::http::StatusCode::BAD_REQUEST, Json(serde_json::json!({"error": e.to_string()})))),
+    }
 }

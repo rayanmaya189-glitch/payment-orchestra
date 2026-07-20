@@ -1,134 +1,59 @@
 use chrono::{DateTime, Utc};
 use uuid::Uuid;
+use crate::domain::value_objects::{DocumentStatus, VerificationStatus};
 
-use crate::domain::value_objects::{DocumentStatus, DocumentType};
-
-/// Document aggregate — represents a stored document (KYB evidence, reports, etc).
 #[derive(Debug, Clone)]
 pub struct Document {
-    pub document_id: Uuid,
-    pub operator_id: Uuid,
-    pub document_type: DocumentType,
-    pub filename: String,
-    pub content_type: String,
-    pub file_size_bytes: i64,
-    pub storage_key: String,
-    pub checksum_sha256: String,
-    pub status: DocumentStatus,
-    pub metadata: Option<serde_json::Value>,
-    pub uploaded_by: Uuid,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
+    pub document_id: Uuid, pub operator_id: Uuid, pub document_type: String,
+    pub status: DocumentStatus, pub filename: String, pub content_type: String,
+    pub file_size: i64, pub storage_key: String, pub file_hash: String,
+    pub ocr_result: Option<serde_json::Value>, pub metadata: Option<serde_json::Value>,
+    pub uploaded_by: String, pub verification_status: VerificationStatus,
+    pub verification_notes: Option<String>, pub verified_at: Option<DateTime<Utc>>,
+    pub created_at: DateTime<Utc>, pub updated_at: DateTime<Utc>,
 }
 
 impl Document {
-    pub fn new(
-        operator_id: Uuid,
-        document_type: DocumentType,
-        filename: String,
-        content_type: String,
-        file_size_bytes: i64,
-        storage_key: String,
-        checksum_sha256: String,
-        uploaded_by: Uuid,
-    ) -> Self {
+    pub fn new(operator_id: Uuid, document_type: String, filename: String, content_type: String, file_size: i64, storage_key: String, file_hash: String, uploaded_by: String) -> Self {
         let now = Utc::now();
-        Self {
-            document_id: Uuid::now_v7(),
-            operator_id,
-            document_type,
-            filename,
-            content_type,
-            file_size_bytes,
-            storage_key,
-            checksum_sha256,
-            status: DocumentStatus::Uploaded,
-            metadata: None,
-            uploaded_by,
-            created_at: now,
-            updated_at: now,
-        }
+        Self { document_id: Uuid::now_v7(), operator_id, document_type, status: DocumentStatus::Uploaded,
+            filename, content_type, file_size, storage_key, file_hash,
+            ocr_result: None, metadata: None, uploaded_by,
+            verification_status: VerificationStatus::Pending, verification_notes: None,
+            verified_at: None, created_at: now, updated_at: now }
     }
 
-    pub fn mark_processing(&mut self) {
-        self.status = DocumentStatus::Processing;
+    pub fn verify(&mut self, notes: &str) {
+        self.verification_status = VerificationStatus::Verified;
+        self.verification_notes = Some(notes.to_string());
+        self.verified_at = Some(Utc::now());
+        self.status = DocumentStatus::Verified;
         self.updated_at = Utc::now();
     }
 
-    pub fn mark_completed(&mut self, metadata: serde_json::Value) {
-        self.status = DocumentStatus::Completed;
-        self.metadata = Some(metadata);
+    pub fn reject(&mut self, notes: &str) {
+        self.verification_status = VerificationStatus::Rejected;
+        self.verification_notes = Some(notes.to_string());
+        self.status = DocumentStatus::Rejected;
         self.updated_at = Utc::now();
-    }
-
-    pub fn mark_failed(&mut self, error: &str) {
-        self.status = DocumentStatus::Failed;
-        self.metadata = Some(serde_json::json!({"error": error}));
-        self.updated_at = Utc::now();
-    }
-
-    pub fn can_delete(&self) -> bool {
-        matches!(self.status, DocumentStatus::Uploaded | DocumentStatus::Failed)
-    }
-
-    pub fn max_file_size_bytes() -> i64 {
-        10 * 1024 * 1024 // 10MB per SRS
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
     #[test]
-    fn test_new_document_is_uploaded() {
-        let doc = Document::new(
-            Uuid::now_v7(), DocumentType::TradeLicense, "license.pdf".into(),
-            "application/pdf".into(), 1024, "bucket/license.pdf".into(),
-            "abc123".into(), Uuid::now_v7(),
-        );
-        assert_eq!(doc.status, DocumentStatus::Uploaded);
-        assert!(doc.can_delete());
+    fn test_new_document() {
+        let d = Document::new(Uuid::now_v7(), "trade_license".into(), "license.pdf".into(), "application/pdf".into(), 1024, "key123".into(), "hash123".into(), "user1".into());
+        assert_eq!(d.status, DocumentStatus::Uploaded);
+        assert_eq!(d.verification_status, VerificationStatus::Pending);
     }
 
     #[test]
-    fn test_mark_processing() {
-        let mut doc = Document::new(
-            Uuid::now_v7(), DocumentType::TradeLicense, "license.pdf".into(),
-            "application/pdf".into(), 1024, "bucket/license.pdf".into(),
-            "abc123".into(), Uuid::now_v7(),
-        );
-        doc.mark_processing();
-        assert_eq!(doc.status, DocumentStatus::Processing);
-        assert!(!doc.can_delete());
-    }
-
-    #[test]
-    fn test_mark_completed() {
-        let mut doc = Document::new(
-            Uuid::now_v7(), DocumentType::TradeLicense, "license.pdf".into(),
-            "application/pdf".into(), 1024, "bucket/license.pdf".into(),
-            "abc123".into(), Uuid::now_v7(),
-        );
-        doc.mark_completed(serde_json::json!({"ocr_text": "Trade License"}));
-        assert_eq!(doc.status, DocumentStatus::Completed);
-        assert!(doc.metadata.is_some());
-    }
-
-    #[test]
-    fn test_mark_failed() {
-        let mut doc = Document::new(
-            Uuid::now_v7(), DocumentType::TradeLicense, "license.pdf".into(),
-            "application/pdf".into(), 1024, "bucket/license.pdf".into(),
-            "abc123".into(), Uuid::now_v7(),
-        );
-        doc.mark_failed("OCR failed");
-        assert_eq!(doc.status, DocumentStatus::Failed);
-        assert!(doc.can_delete());
-    }
-
-    #[test]
-    fn test_max_file_size() {
-        assert_eq!(Document::max_file_size_bytes(), 10 * 1024 * 1024);
+    fn test_verify() {
+        let mut d = Document::new(Uuid::now_v7(), "trade_license".into(), "license.pdf".into(), "application/pdf".into(), 1024, "key123".into(), "hash123".into(), "user1".into());
+        d.verify("All checks passed");
+        assert_eq!(d.verification_status, VerificationStatus::Verified);
+        assert!(d.verified_at.is_some());
     }
 }

@@ -1,194 +1,123 @@
 use chrono::{DateTime, Utc};
 use uuid::Uuid;
+use crate::domain::value_objects::{SagaStatus, SagaStepStatus};
 
-use crate::domain::value_objects::{SagaStatus, SagaStepStatus, SagaType};
-
-/// Saga instance — orchestrates a cross-service workflow.
 #[derive(Debug, Clone)]
 pub struct SagaInstance {
-    pub saga_id: Uuid,
-    pub saga_type: SagaType,
-    pub aggregate_id: Uuid,
-    pub aggregate_type: String,
-    pub status: SagaStatus,
-    pub current_step: u32,
-    pub total_steps: u32,
-    pub steps: Vec<SagaStep>,
+    pub saga_id: Uuid, pub saga_type: String, pub status: SagaStatus,
+    pub current_step: u32, pub total_steps: u32,
+    pub steps: Vec<SagaStep>, pub payload: serde_json::Value,
     pub compensation_data: Option<serde_json::Value>,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
+    pub created_at: DateTime<Utc>, pub updated_at: DateTime<Utc>,
     pub completed_at: Option<DateTime<Utc>>,
 }
 
+#[derive(Debug, Clone)]
+pub struct SagaStep {
+    pub step_number: u32, pub name: String, pub service: String,
+    pub action: String, pub compensation_action: Option<String>,
+    pub status: SagaStepStatus, pub error: Option<String>,
+    pub started_at: Option<DateTime<Utc>>, pub completed_at: Option<DateTime<Utc>>,
+}
+
 impl SagaInstance {
-    pub fn new(saga_type: SagaType, aggregate_id: Uuid, aggregate_type: String, steps: Vec<SagaStep>) -> Self {
-        let total_steps = steps.len() as u32;
+    pub fn new(saga_type: String, steps: Vec<SagaStep>, payload: serde_json::Value) -> Self {
+        let total = steps.len() as u32;
         let now = Utc::now();
-        Self {
-            saga_id: Uuid::now_v7(),
-            saga_type,
-            aggregate_id,
-            aggregate_type,
-            status: SagaStatus::Pending,
-            current_step: 0,
-            total_steps,
-            steps,
-            compensation_data: None,
-            created_at: now,
-            updated_at: now,
-            completed_at: None,
+        Self { saga_id: Uuid::now_v7(), saga_type, status: SagaStatus::Running,
+            current_step: 1, total_steps: total, steps, payload,
+            compensation_data: None, created_at: now, updated_at: now, completed_at: None }
+    }
+
+    pub fn advance_step(&mut self) -> Option<&SagaStep> {
+        if self.current_step <= self.total_steps {
+            let step = &mut self.steps[(self.current_step - 1) as usize];
+            step.status = SagaStepStatus::Running;
+            step.started_at = Some(Utc::now());
+            self.updated_at = Utc::now();
+            Some(&self.steps[(self.current_step - 1) as usize])
+        } else {
+            None
         }
     }
 
-    /// Start the saga.
-    pub fn start(&mut self) {
-        self.status = SagaStatus::Running;
-        self.updated_at = Utc::now();
-    }
-
-    /// Advance to the next step.
-    pub fn advance_step(&mut self) -> Result<(), String> {
-        if self.status != SagaStatus::Running {
-            return Err("Saga is not running".into());
-        }
-        if self.current_step >= self.total_steps {
-            return Err("Saga already completed".into());
-        }
-
-        self.steps[self.current_step as usize].status = SagaStepStatus::Completed;
+    pub fn complete_step(&mut self) {
+        let idx = (self.current_step - 1) as usize;
+        self.steps[idx].status = SagaStepStatus::Completed;
+        self.steps[idx].completed_at = Some(Utc::now());
         self.current_step += 1;
         self.updated_at = Utc::now();
-
-        if self.current_step >= self.total_steps {
+        if self.current_step > self.total_steps {
             self.status = SagaStatus::Completed;
             self.completed_at = Some(Utc::now());
         }
-
-        Ok(())
     }
 
-    /// Fail the current step and start compensation.
     pub fn fail_step(&mut self, error: &str) {
-        if self.current_step < self.total_steps {
-            self.steps[self.current_step as usize].status = SagaStepStatus::Failed;
-            self.steps[self.current_step as usize].error = Some(error.to_string());
-        }
-        self.status = SagaStatus::Compensating;
+        let idx = (self.current_step - 1) as usize;
+        self.steps[idx].status = SagaStepStatus::Failed;
+        self.steps[idx].error = Some(error.to_string());
+        self.status = SagaStatus::Failed;
         self.updated_at = Utc::now();
     }
 
-    /// Compensate (undo) completed steps in reverse order.
     pub fn compensate(&mut self) {
+        self.status = SagaStatus::Compensating;
         for step in self.steps.iter_mut().rev() {
             if step.status == SagaStepStatus::Completed && step.compensation_action.is_some() {
                 step.status = SagaStepStatus::Compensated;
             }
         }
         self.status = SagaStatus::Compensated;
-        self.completed_at = Some(Utc::now());
         self.updated_at = Utc::now();
-    }
-
-    pub fn is_terminal(&self) -> bool {
-        matches!(self.status, SagaStatus::Completed | SagaStatus::Compensated | SagaStatus::Failed)
-    }
-}
-
-/// A single step within a saga.
-#[derive(Debug, Clone)]
-pub struct SagaStep {
-    pub step_id: u32,
-    pub name: String,
-    pub service: String,
-    pub action: String,
-    pub compensation_action: Option<String>,
-    pub status: SagaStepStatus,
-    pub error: Option<String>,
-    pub started_at: Option<DateTime<Utc>>,
-    pub completed_at: Option<DateTime<Utc>>,
-}
-
-impl SagaStep {
-    pub fn new(step_id: u32, name: String, service: String, action: String, compensation_action: Option<String>) -> Self {
-        Self {
-            step_id,
-            name,
-            service,
-            action,
-            compensation_action,
-            status: SagaStepStatus::Pending,
-            error: None,
-            started_at: None,
-            completed_at: None,
-        }
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
     fn make_steps() -> Vec<SagaStep> {
         vec![
-            SagaStep::new(0, "Create Order".into(), "order-service".into(), "create_order".into(), None),
-            SagaStep::new(1, "Process Payment".into(), "orchestration-service".into(), "authorize_payment".into(), Some("void_payment".into())),
-            SagaStep::new(2, "Ship Items".into(), "shipping-service".into(), "ship".into(), None),
+            SagaStep { step_number: 1, name: "charge".into(), service: "orchestration".into(), action: "authorize".into(), compensation_action: Some("void".into()), status: SagaStepStatus::Pending, error: None, started_at: None, completed_at: None },
+            SagaStep { step_number: 2, name: "notify".into(), service: "notification".into(), action: "send".into(), compensation_action: None, status: SagaStepStatus::Pending, error: None, started_at: None, completed_at: None },
         ]
     }
 
     #[test]
-    fn test_new_saga_is_pending() {
-        let s = SagaInstance::new(SagaType::PaymentLifecycle, Uuid::now_v7(), "PaymentIntent".into(), make_steps());
-        assert_eq!(s.status, SagaStatus::Pending);
-        assert_eq!(s.total_steps, 3);
-    }
-
-    #[test]
-    fn test_start_saga() {
-        let mut s = SagaInstance::new(SagaType::PaymentLifecycle, Uuid::now_v7(), "PaymentIntent".into(), make_steps());
-        s.start();
+    fn test_new_saga() {
+        let s = SagaInstance::new("payment".into(), make_steps(), serde_json::json!({}));
         assert_eq!(s.status, SagaStatus::Running);
+        assert_eq!(s.total_steps, 2);
     }
 
     #[test]
-    fn test_advance_step() {
-        let mut s = SagaInstance::new(SagaType::PaymentLifecycle, Uuid::now_v7(), "PaymentIntent".into(), make_steps());
-        s.start();
-        s.advance_step().unwrap();
-        assert_eq!(s.current_step, 1);
-        assert_eq!(s.steps[0].status, SagaStepStatus::Completed);
-    }
-
-    #[test]
-    fn test_complete_saga() {
-        let mut s = SagaInstance::new(SagaType::PaymentLifecycle, Uuid::now_v7(), "PaymentIntent".into(), make_steps());
-        s.start();
-        s.advance_step().unwrap();
-        s.advance_step().unwrap();
-        s.advance_step().unwrap();
+    fn test_advance_and_complete() {
+        let mut s = SagaInstance::new("payment".into(), make_steps(), serde_json::json!({}));
+        s.advance_step();
+        s.complete_step();
+        assert_eq!(s.current_step, 2);
+        assert_eq!(s.status, SagaStatus::Running);
+        s.advance_step();
+        s.complete_step();
         assert_eq!(s.status, SagaStatus::Completed);
-        assert!(s.completed_at.is_some());
-        assert!(s.is_terminal());
     }
 
     #[test]
     fn test_fail_step() {
-        let mut s = SagaInstance::new(SagaType::PaymentLifecycle, Uuid::now_v7(), "PaymentIntent".into(), make_steps());
-        s.start();
-        s.advance_step().unwrap();
-        s.fail_step("Payment declined");
-        assert_eq!(s.status, SagaStatus::Compensating);
-        assert_eq!(s.steps[1].error, Some("Payment declined".into()));
+        let mut s = SagaInstance::new("payment".into(), make_steps(), serde_json::json!({}));
+        s.advance_step();
+        s.fail_step("timeout");
+        assert_eq!(s.status, SagaStatus::Failed);
     }
 
     #[test]
     fn test_compensate() {
-        let mut s = SagaInstance::new(SagaType::PaymentLifecycle, Uuid::now_v7(), "PaymentIntent".into(), make_steps());
-        s.start();
-        s.advance_step().unwrap();
-        s.fail_step("Payment declined");
+        let mut s = SagaInstance::new("payment".into(), make_steps(), serde_json::json!({}));
+        s.advance_step();
+        s.complete_step();
+        s.advance_step();
+        s.fail_step("error");
         s.compensate();
         assert_eq!(s.status, SagaStatus::Compensated);
-        assert!(s.is_terminal());
     }
 }

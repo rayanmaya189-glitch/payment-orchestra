@@ -12,6 +12,7 @@ mod infrastructure;
 
 use crate::application::services::PaymentServiceImpl;
 use crate::infrastructure::adapters::{PostgresPaymentIntentRepository, PostgresRoutingPolicyRepository};
+use crate::infrastructure::connector_client::HttpConnectorClient;
 
 #[tokio::main]
 async fn main() {
@@ -29,10 +30,16 @@ async fn main() {
     let intent_repo = PostgresPaymentIntentRepository::new(db.clone());
     let policy_repo = PostgresRoutingPolicyRepository::new(db.clone());
 
+    // Create connector client (real HTTP calls to connector-gateway service)
+    let connector_url = std::env::var("CONNECTOR_GATEWAY_URL")
+        .unwrap_or_else(|_| "http://localhost:8084".to_string());
+    let connector_client = HttpConnectorClient::new(connector_url);
+
     // Create service
     let service = PaymentServiceImpl::new(
         Box::new(intent_repo),
         Box::new(policy_repo),
+        Box::new(connector_client),
         db.clone(),
     );
 

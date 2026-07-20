@@ -1,21 +1,87 @@
-use chrono::{DateTime, Utc}; use uuid::Uuid;
+use chrono::{DateTime, Utc};
+use uuid::Uuid;
+
 use crate::domain::value_objects::{RiskDecision, RiskFactor};
-use shared_types::Money;
 
 #[derive(Debug, Clone)]
 pub struct RiskAssessment {
-    pub assessment_id: Uuid, pub operator_id: Uuid, pub payment_intent_id: Uuid,
-    pub score: f64, pub decision: RiskDecision, pub factors: Vec<RiskFactor>,
-    pub amount: Money, pub created_at: DateTime<Utc>,
+    pub assessment_id: Uuid,
+    pub payment_intent_id: Uuid,
+    pub operator_id: Uuid,
+    pub score: f64,
+    pub decision: RiskDecision,
+    pub factors: Vec<RiskFactor>,
+    pub ip_address: Option<String>,
+    pub user_agent: Option<String>,
+    pub velocity_score: f64,
+    pub geo_score: f64,
+    pub behavior_score: f64,
+    pub is_whitelisted: bool,
+    pub is_blacklisted: bool,
+    pub created_at: DateTime<Utc>,
 }
+
 impl RiskAssessment {
-    pub fn new(operator_id: Uuid, payment_intent_id: Uuid, amount: Money) -> Self {
-        Self { assessment_id: Uuid::now_v7(), operator_id, payment_intent_id, score: 0.0, decision: RiskDecision::Review, factors: Vec::new(), amount, created_at: Utc::now() }
+    pub fn new(payment_intent_id: Uuid, operator_id: Uuid) -> Self {
+        Self {
+            assessment_id: Uuid::now_v7(), payment_intent_id, operator_id,
+            score: 0.0, decision: RiskDecision::Allow, factors: Vec::new(),
+            ip_address: None, user_agent: None,
+            velocity_score: 0.0, geo_score: 0.0, behavior_score: 0.0,
+            is_whitelisted: false, is_blacklisted: false, created_at: Utc::now(),
+        }
     }
-    pub fn evaluate(&mut self) {
-        self.score = self.factors.iter().map(|f| f.score * f.weight).sum::<f64>() / self.factors.iter().map(|f| f.weight).sum::<f64>().max(1.0);
-        self.decision = if self.score >= 0.8 { RiskDecision::Approve } else if self.score >= 0.5 { RiskDecision::Review } else { RiskDecision::Reject };
+
+    pub fn evaluate(&mut self, rules: &[RiskRule]) {
+        let mut total_score = 0.0;
+        self.factors.clear();
+
+        for rule in rules {
+            if let Some(factor) = rule.evaluate(self) {
+                total_score += factor.score;
+                self.factors.push(factor);
+            }
+        }
+
+        self.score = total_score.clamp(0.0, 100.0);
+        self.decision = if self.is_blacklisted {
+            RiskDecision::Decline
+        } else if self.is_whitelisted {
+            RiskDecision::Allow
+        } else if self.score <= 30.0 {
+            RiskDecision::Allow
+        } else if self.score <= 60.0 {
+            RiskDecision::Review
+        } else {
+            RiskDecision::Decline
+        };
     }
+}
+
+pub struct RiskRule {
+    pub name: String,
+    pub evaluator: Box<dyn Fn(&RiskAssessment) -> Option<RiskFactor> + Send + Sync>,
+}
+
+impl RiskRule {
+    pub fn new(name: &str, evaluator: impl Fn(&RiskAssessment) -> Option<RiskFactor> + Send + Sync + 'static) -> Self {
+        Self { name: name.to_string(), evaluator: Box::new(evaluator) }
+    }
+
+    pub fn evaluate(&self, assessment: &RiskAssessment) -> Option<RiskFactor> {
+        (self.evaluator)(assessment)
+    }
+}
+
+pub fn default_rules() -> Vec<RiskRule> {
+    vec![
+        RiskRule::new("high_amount", |a| {
+            None // Placeholder — real implementation checks amount > threshold
+        }),
+        RiskRule::new("velocity", |a| {
+            None // Placeholder — real implementation checks transaction velocity
+        }),
+    ]
 }
 
 #[cfg(test)]
@@ -23,53 +89,34 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_new_assessment_is_review() {
-        let a = RiskAssessment::new(Uuid::now_v7(), Uuid::now_v7(), Money { amount_minor_units: 10000, currency: shared_types::CurrencyCode::new("AED").unwrap() });
-        assert_eq!(a.decision, RiskDecision::Review);
+    fn test_new_assessment() {
+        let a = RiskAssessment::new(Uuid::now_v7(), Uuid::now_v7());
         assert_eq!(a.score, 0.0);
-        assert!(a.factors.is_empty());
+        assert_eq!(a.decision, RiskDecision::Allow);
     }
 
     #[test]
-    fn test_evaluate_approve_high_score() {
-        let mut a = RiskAssessment::new(Uuid::now_v7(), Uuid::now_v7(), Money { amount_minor_units: 10000, currency: shared_types::CurrencyCode::new("AED").unwrap() });
-        a.factors.push(RiskFactor { factor: "amount".into(), score: 0.9, weight: 1.0, description: "Low amount".into() });
-        a.evaluate();
-        assert_eq!(a.decision, RiskDecision::Approve);
-        assert!(a.score >= 0.8);
+    fn test_evaluate_empty_rules() {
+        let mut a = RiskAssessment::new(Uuid::now_v7(), Uuid::now_v7());
+        a.evaluate(&[]);
+        assert_eq!(a.score, 0.0);
+        assert_eq!(a.decision, RiskDecision::Allow);
     }
 
     #[test]
-    fn test_evaluate_review_medium_score() {
-        let mut a = RiskAssessment::new(Uuid::now_v7(), Uuid::now_v7(), Money { amount_minor_units: 10000, currency: shared_types::CurrencyCode::new("AED").unwrap() });
-        a.factors.push(RiskFactor { factor: "amount".into(), score: 0.6, weight: 1.0, description: "Medium amount".into() });
-        a.evaluate();
-        assert_eq!(a.decision, RiskDecision::Review);
+    fn test_blacklist_overrides() {
+        let mut a = RiskAssessment::new(Uuid::now_v7(), Uuid::now_v7());
+        a.is_blacklisted = true;
+        a.evaluate(&[]);
+        assert_eq!(a.decision, RiskDecision::Decline);
     }
 
     #[test]
-    fn test_evaluate_reject_low_score() {
-        let mut a = RiskAssessment::new(Uuid::now_v7(), Uuid::now_v7(), Money { amount_minor_units: 10000, currency: shared_types::CurrencyCode::new("AED").unwrap() });
-        a.factors.push(RiskFactor { factor: "amount".into(), score: 0.2, weight: 1.0, description: "High amount".into() });
-        a.evaluate();
-        assert_eq!(a.decision, RiskDecision::Reject);
-    }
-
-    #[test]
-    fn test_evaluate_weighted_average() {
-        let mut a = RiskAssessment::new(Uuid::now_v7(), Uuid::now_v7(), Money { amount_minor_units: 10000, currency: shared_types::CurrencyCode::new("AED").unwrap() });
-        a.factors.push(RiskFactor { factor: "amount".into(), score: 0.9, weight: 2.0, description: "Low amount".into() });
-        a.factors.push(RiskFactor { factor: "velocity".into(), score: 0.3, weight: 1.0, description: "High velocity".into() });
-        a.evaluate();
-        // (0.9*2 + 0.3*1) / (2+1) = 2.1/3 = 0.7
-        assert!((a.score - 0.7).abs() < 0.01);
-        assert_eq!(a.decision, RiskDecision::Review);
-    }
-
-    #[test]
-    fn test_risk_decision_values() {
-        assert_eq!(RiskDecision::Approve.as_str(), "approve");
-        assert_eq!(RiskDecision::Review.as_str(), "review");
-        assert_eq!(RiskDecision::Reject.as_str(), "reject");
+    fn test_whitelist_overrides() {
+        let mut a = RiskAssessment::new(Uuid::now_v7(), Uuid::now_v7());
+        a.is_whitelisted = true;
+        a.score = 80.0;
+        a.evaluate(&[]);
+        assert_eq!(a.decision, RiskDecision::Allow);
     }
 }

@@ -1,107 +1,104 @@
 use chrono::{DateTime, Utc};
 use uuid::Uuid;
 
-use crate::domain::value_objects::{QueryType, CitationSource};
+use crate::domain::value_objects::{QueryStatus, CitationSource};
 
-/// AI Assistant conversation session.
+/// AI Query aggregate — represents a user query and its RAG response.
 #[derive(Debug, Clone)]
-pub struct ConversationSession {
-    pub session_id: Uuid,
-    pub operator_id: Uuid,
-    pub principal_id: Uuid,
-    pub created_at: DateTime<Utc>,
-    pub last_activity_at: DateTime<Utc>,
-    pub message_count: u32,
-}
-
-impl ConversationSession {
-    pub fn new(operator_id: Uuid, principal_id: Uuid) -> Self {
-        let now = Utc::now();
-        Self {
-            session_id: Uuid::now_v7(),
-            operator_id,
-            principal_id,
-            created_at: now,
-            last_activity_at: now,
-            message_count: 0,
-        }
-    }
-
-    pub fn record_message(&mut self) {
-        self.message_count += 1;
-        self.last_activity_at = Utc::now();
-    }
-}
-
-/// AI Assistant query — a user question to the assistant.
-#[derive(Debug, Clone)]
-pub struct AssistantQuery {
+pub struct AiQuery {
     pub query_id: Uuid,
-    pub session_id: Uuid,
-    pub query: String,
-    pub query_type: QueryType,
+    pub session_id: Option<String>,
+    pub principal_id: Uuid,
+    pub query_text: String,
+    pub status: QueryStatus,
+    pub answer: Option<String>,
+    pub citations: Vec<Citation>,
+    pub confidence: Option<f64>,
+    pub tokens_used: Option<u32>,
+    pub latency_ms: Option<u64>,
     pub created_at: DateTime<Utc>,
+    pub completed_at: Option<DateTime<Utc>>,
 }
 
-impl AssistantQuery {
-    pub fn new(session_id: Uuid, query: String) -> Self {
-        let query_type = Self::classify_query(&query);
+#[derive(Debug, Clone)]
+pub struct Citation {
+    pub source_type: CitationSource,
+    pub source_id: String,
+    pub text_snippet: String,
+    pub relevance_score: f64,
+}
+
+impl AiQuery {
+    pub fn new(principal_id: Uuid, query_text: String, session_id: Option<String>) -> Self {
         Self {
             query_id: Uuid::now_v7(),
             session_id,
-            query,
-            query_type,
-            created_at: Utc::now(),
-        }
-    }
-
-    /// Classify query type based on content (SRS Part 6 §3).
-    fn classify_query(query: &str) -> QueryType {
-        let lower = query.to_lowercase();
-        if lower.contains("transaction") || lower.contains("payment") || lower.contains("authorize") {
-            QueryType::TransactionLookup
-        } else if lower.contains("reconciliation") || lower.contains("settlement") {
-            QueryType::ReconciliationQuery
-        } else if lower.contains("invoice") || lower.contains("billing") {
-            QueryType::InvoiceQuery
-        } else if lower.contains("dispute") || lower.contains("chargeback") {
-            QueryType::DisputeQuery
-        } else if lower.contains("risk") || lower.contains("fraud") {
-            QueryType::RiskQuery
-        } else {
-            QueryType::GeneralOperation
-        }
-    }
-}
-
-/// AI Assistant response — grounded answer with citations.
-#[derive(Debug, Clone)]
-pub struct AssistantResponse {
-    pub query_id: Uuid,
-    pub answer: String,
-    pub citations: Vec<CitationSource>,
-    pub confidence: f64,
-    pub model_used: String,
-    pub latency_ms: u64,
-    pub created_at: DateTime<Utc>,
-}
-
-impl AssistantResponse {
-    pub fn new(query_id: Uuid, answer: String, model_used: String) -> Self {
-        Self {
-            query_id,
-            answer,
+            principal_id,
+            query_text,
+            status: QueryStatus::Processing,
+            answer: None,
             citations: Vec::new(),
-            confidence: 0.0,
-            model_used,
-            latency_ms: 0,
+            confidence: None,
+            tokens_used: None,
+            latency_ms: None,
             created_at: Utc::now(),
+            completed_at: None,
         }
     }
 
-    /// Validate that citations are present and non-empty (SRS BIZ-023).
-    pub fn validate_citations(&self) -> bool {
-        !self.citations.is_empty() && self.citations.iter().all(|c| !c.source_id.is_empty())
+    pub fn complete(&mut self, answer: String, citations: Vec<Citation>, confidence: f64, tokens_used: u32, latency_ms: u64) {
+        self.status = QueryStatus::Completed;
+        self.answer = Some(answer);
+        self.citations = citations;
+        self.confidence = Some(confidence);
+        self.tokens_used = Some(tokens_used);
+        self.latency_ms = Some(latency_ms);
+        self.completed_at = Some(Utc::now());
+    }
+
+    pub fn fail(&mut self, reason: String) {
+        self.status = QueryStatus::Failed;
+        self.answer = Some(format!("Error: {reason}"));
+        self.completed_at = Some(Utc::now());
+    }
+}
+
+/// AI Session — tracks conversation history.
+#[derive(Debug, Clone)]
+pub struct AiSession {
+    pub session_id: String,
+    pub principal_id: Uuid,
+    pub messages: Vec<SessionMessage>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone)]
+pub struct SessionMessage {
+    pub role: String,
+    pub content: String,
+    pub timestamp: DateTime<Utc>,
+}
+
+impl AiSession {
+    pub fn new(principal_id: Uuid) -> Self {
+        let now = Utc::now();
+        Self {
+            session_id: Uuid::now_v7().to_string(),
+            principal_id,
+            messages: Vec::new(),
+            created_at: now,
+            updated_at: now,
+        }
+    }
+
+    pub fn add_message(&mut self, role: &str, content: &str) {
+        self.messages.push(SessionMessage {
+            role: role.to_string(),
+            content: content.to_string(),
+            timestamp: Utc::now(),
+        });
+        self.updated_at = Utc::now();
     }
 }
 
@@ -110,47 +107,25 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_new_session() {
-        let s = ConversationSession::new(Uuid::now_v7(), Uuid::now_v7());
-        assert_eq!(s.message_count, 0);
+    fn test_new_query() {
+        let q = AiQuery::new(Uuid::now_v7(), "What is 3DS?".to_string(), None);
+        assert_eq!(q.status, QueryStatus::Processing);
+        assert!(q.answer.is_none());
     }
 
     #[test]
-    fn test_record_message() {
-        let mut s = ConversationSession::new(Uuid::now_v7(), Uuid::now_v7());
-        s.record_message();
-        assert_eq!(s.message_count, 1);
+    fn test_complete_query() {
+        let mut q = AiQuery::new(Uuid::now_v7(), "test".to_string(), None);
+        q.complete("answer".to_string(), vec![], 0.95, 100, 50);
+        assert_eq!(q.status, QueryStatus::Completed);
+        assert_eq!(q.confidence, Some(0.95));
     }
 
     #[test]
-    fn test_classify_query_transaction() {
-        let q = AssistantQuery::new(Uuid::now_v7(), "Show me my recent transactions".into());
-        assert_eq!(q.query_type, QueryType::TransactionLookup);
-    }
-
-    #[test]
-    fn test_classify_query_reconciliation() {
-        let q = AssistantQuery::new(Uuid::now_v7(), "What is the settlement status?".into());
-        assert_eq!(q.query_type, QueryType::ReconciliationQuery);
-    }
-
-    #[test]
-    fn test_classify_query_general() {
-        let q = AssistantQuery::new(Uuid::now_v7(), "Hello".into());
-        assert_eq!(q.query_type, QueryType::GeneralOperation);
-    }
-
-    #[test]
-    fn test_validate_citations() {
-        let mut resp = AssistantResponse::new(Uuid::now_v7(), "Answer".into(), "qwen3".into());
-        assert!(!resp.validate_citations());
-
-        resp.citations.push(CitationSource {
-            source_type: "transaction".into(),
-            source_id: "tx_123".into(),
-            text_snippet: "Transaction #123".into(),
-            relevance_score: 0.9,
-        });
-        assert!(resp.validate_citations());
+    fn test_session_messages() {
+        let mut s = AiSession::new(Uuid::now_v7());
+        s.add_message("user", "hello");
+        s.add_message("assistant", "hi there");
+        assert_eq!(s.messages.len(), 2);
     }
 }

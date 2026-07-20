@@ -1,38 +1,48 @@
 use async_trait::async_trait;
+use sea_orm::DatabaseConnection;
 use uuid::Uuid;
+use crate::application::commands::*;
 use crate::domain::aggregates::PaymentLink;
+use crate::domain::rules::PaymentLinkRepository;
 use platform_error::PlatformError;
+use shared_types::{CurrencyCode, Money};
+
+pub struct PaymentLinkServiceImpl { repo: Box<dyn PaymentLinkRepository>, db: DatabaseConnection }
+impl PaymentLinkServiceImpl {
+    pub fn new(repo: Box<dyn PaymentLinkRepository>, db: DatabaseConnection) -> Self { Self { repo, db } }
+}
 
 #[async_trait]
 pub trait PaymentLinkService: Send + Sync {
-    async fn create_link(&self, cmd: CreatePaymentLinkCommand) -> Result<PaymentLinkResponse, PlatformError>;
-    async fn get_link(&self, link_id: Uuid) -> Result<PaymentLinkResponse, PlatformError>;
-    async fn deactivate_link(&self, link_id: Uuid) -> Result<(), PlatformError>;
+    async fn create(&self, cmd: CreatePaymentLinkCommand) -> Result<PaymentLink, PlatformError>;
+    async fn use_link(&self, cmd: UsePaymentLinkCommand) -> Result<PaymentLink, PlatformError>;
+    async fn get_by_id(&self, id: Uuid) -> Result<PaymentLink, PlatformError>;
+    async fn get_by_token(&self, token: &str) -> Result<PaymentLink, PlatformError>;
 }
-
-pub struct PaymentLinkServiceImpl { db: sea_orm::DatabaseConnection }
-impl PaymentLinkServiceImpl { pub fn new(db: sea_orm::DatabaseConnection) -> Self { Self { db } } }
-
-pub struct CreatePaymentLinkCommand { pub operator_id: Uuid, pub amount: shared_types::Money, pub description: String, pub merchant_name: String, pub expires_at: Option<chrono::DateTime<chrono::Utc>>, pub max_uses: Option<i32> }
-
-#[derive(Debug, Clone)]
-pub struct PaymentLinkResponse { pub link_id: Uuid, pub status: String, pub amount: i64, pub currency: String, pub description: String, pub merchant_name: String, pub current_uses: i32, pub created_at: String }
 
 #[async_trait]
 impl PaymentLinkService for PaymentLinkServiceImpl {
-    async fn create_link(&self, cmd: CreatePaymentLinkCommand) -> Result<PaymentLinkResponse, PlatformError> {
-        let mut link = PaymentLink::new(cmd.operator_id, cmd.amount.clone(), cmd.description, cmd.merchant_name);
-        link.expires_at = cmd.expires_at;
-        link.max_uses = cmd.max_uses;
-        // TODO: Save to DB
-        Ok(link_to_response(&link))
+    async fn create(&self, cmd: CreatePaymentLinkCommand) -> Result<PaymentLink, PlatformError> {
+        let amount = Money { amount_minor_units: cmd.amount_minor_units, currency: CurrencyCode::new(&cmd.currency).map_err(|_| PlatformError::Validation(platform_error::ValidationError::InvalidCurrencyCode))? };
+        let expires_at = cmd.expires_in_hours.map(|h| chrono::Utc::now() + chrono::Duration::hours(h));
+        let mut link = PaymentLink::new(cmd.operator_id, cmd.description, cmd.merchant_name, amount, cmd.max_uses, expires_at);
+        self.repo.save(&link).await?;
+        Ok(link)
     }
-    async fn get_link(&self, _link_id: Uuid) -> Result<PaymentLinkResponse, PlatformError> {
-        Err(PlatformError::NotFound { resource: "PaymentLink".into(), id: _link_id })
-    }
-    async fn deactivate_link(&self, _link_id: Uuid) -> Result<(), PlatformError> { Ok(()) }
-}
 
-fn link_to_response(l: &PaymentLink) -> PaymentLinkResponse {
-    PaymentLinkResponse { link_id: l.link_id, status: l.status.as_str().to_string(), amount: l.amount.amount_minor_units, currency: l.amount.currency.0.clone(), description: l.description.clone(), merchant_name: l.merchant_name.clone(), current_uses: l.current_uses, created_at: l.created_at.to_rfc3339() }
+    async fn use_link(&self, cmd: UsePaymentLinkCommand) -> Result<PaymentLink, PlatformError> {
+        let mut link = self.repo.find_by_token(&cmd.public_token).await?
+            .ok_or_else(|| PlatformError::NotFound { resource: "payment_link".into(), id: Uuid::nil() })?;
+        link.use_link().map_err(|e| PlatformError::Validation(platform_error::ValidationError::InvalidStateTransition { from: "active".into(), command: e.into() }))?;
+        self.repo.save(&link).await?;
+        Ok(link)
+    }
+
+    async fn get_by_id(&self, id: Uuid) -> Result<PaymentLink, PlatformError> {
+        self.repo.find_by_id(id).await?.ok_or_else(|| PlatformError::NotFound { resource: "payment_link".into(), id })
+    }
+
+    async fn get_by_token(&self, token: &str) -> Result<PaymentLink, PlatformError> {
+        self.repo.find_by_token(token).await?.ok_or_else(|| PlatformError::NotFound { resource: "payment_link".into(), id: Uuid::nil() })
+    }
 }

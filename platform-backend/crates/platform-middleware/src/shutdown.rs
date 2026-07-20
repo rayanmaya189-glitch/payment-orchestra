@@ -4,7 +4,6 @@
 //! Returns a future that resolves when shutdown is complete.
 
 use std::time::Duration;
-use tokio::signal::unix::{signal, SignalKind};
 
 /// Shutdown configuration per SRS SHUTDOWN-003.
 pub struct ShutdownConfig {
@@ -34,27 +33,43 @@ impl ShutdownConfig {
 
 /// Returns a shutdown future that resolves on SIGTERM or Ctrl+C.
 /// After signal, logs the drain timeout and waits for `axum::serve` to drain.
+/// Cross-platform: uses tokio::signal::ctrl_c on all platforms, plus SIGTERM on Unix.
 pub fn shutdown_signal(config: ShutdownConfig) -> impl std::future::Future<Output = ()> {
     async move {
         let ctrl_c = tokio::signal::ctrl_c();
-        let mut sigterm = signal(SignalKind::terminate())
-            .expect("Failed to install SIGTERM handler");
 
-        tokio::select! {
-            _ = ctrl_c => {
-                tracing::info!(
-                    service = %config.service_name,
-                    drain_timeout_secs = config.drain_timeout.as_secs(),
-                    "Shutdown signal (Ctrl+C) received, draining in-flight requests..."
-                );
+        #[cfg(unix)]
+        {
+            use tokio::signal::unix::{signal, SignalKind};
+            let mut sigterm = signal(SignalKind::terminate())
+                .expect("Failed to install SIGTERM handler");
+
+            tokio::select! {
+                _ = ctrl_c => {
+                    tracing::info!(
+                        service = %config.service_name,
+                        drain_timeout_secs = config.drain_timeout.as_secs(),
+                        "Shutdown signal (Ctrl+C) received, draining in-flight requests..."
+                    );
+                }
+                _ = sigterm.recv() => {
+                    tracing::info!(
+                        service = %config.service_name,
+                        drain_timeout_secs = config.drain_timeout.as_secs(),
+                        "Shutdown signal (SIGTERM) received, draining in-flight requests..."
+                    );
+                }
             }
-            _ = sigterm.recv() => {
-                tracing::info!(
-                    service = %config.service_name,
-                    drain_timeout_secs = config.drain_timeout.as_secs(),
-                    "Shutdown signal (SIGTERM) received, draining in-flight requests..."
-                );
-            }
+        }
+
+        #[cfg(not(unix))]
+        {
+            ctrl_c.await.expect("Failed to listen for Ctrl+C");
+            tracing::info!(
+                service = %config.service_name,
+                drain_timeout_secs = config.drain_timeout.as_secs(),
+                "Shutdown signal (Ctrl+C) received, draining in-flight requests..."
+            );
         }
 
         // Give in-flight requests time to complete (drain timeout)

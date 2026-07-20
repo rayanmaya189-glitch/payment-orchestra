@@ -6,7 +6,7 @@ use uuid::Uuid;
 
 use crate::domain::aggregates::{PaymentIntent, PaymentIntentEvent, RoutingAttempt, RoutingPolicy};
 use crate::infrastructure::entities::{payment_intent, routing_attempt, routing_policy};
-use crate::infrastructure::repository::{PaymentIntentRepository, RoutingPolicyRepository};
+use crate::infrastructure::repository::PaymentIntentRepository;
 use platform_error::PlatformError;
 
 /// Event-sourced PaymentIntent repository.
@@ -275,7 +275,7 @@ impl PostgresRoutingPolicyRepository {
 }
 
 #[async_trait]
-impl RoutingPolicyRepository for PostgresRoutingPolicyRepository {
+impl crate::infrastructure::repository::RoutingPolicyRepository for PostgresRoutingPolicyRepository {
     async fn load_active_for_operator(&self, operator_id: Uuid) -> Result<Option<RoutingPolicy>, PlatformError> {
         let model = routing_policy::Entity::find()
             .filter(routing_policy::Column::OperatorId.eq(operator_id))

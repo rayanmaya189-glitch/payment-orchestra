@@ -1,1 +1,3 @@
-// External API integrations
+pub mod postgres_subscription_repository;
+
+pub use postgres_subscription_repository::PostgresSubscriptionRepository;
