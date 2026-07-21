@@ -19,6 +19,7 @@ pub struct SubmitEvidenceCommand {
     pub evidence: serde_json::Value,
     pub principal_id: Uuid,
     pub role: String,
+    pub operator_id: Uuid,
 }
 
 #[derive(Debug, Clone)]

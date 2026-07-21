@@ -11,7 +11,9 @@ mod domain;
 mod infrastructure;
 
 use crate::application::services::NotificationServiceImpl;
-use crate::infrastructure::adapters::PostgresNotificationRepository;
+use crate::infrastructure::adapters::{
+    MockEmailProvider, MockSmsProvider, MockWebhookProvider, PostgresNotificationRepository,
+};
 
 #[tokio::main]
 async fn main() {
@@ -19,20 +21,52 @@ async fn main() {
     let config = AppConfig::from_env_or_panic("notification-service");
     let db = infrastructure::database::connect(&config.database).await;
     let redis = infrastructure::cache::connect(&config.redis).await;
+
     let repo = PostgresNotificationRepository::new(db.clone());
-    let service = NotificationServiceImpl::new(Box::new(repo), db.clone());
+    let email_provider = MockEmailProvider::new();
+    let sms_provider = MockSmsProvider::new();
+    let webhook_provider = MockWebhookProvider::new();
+
+    let service = NotificationServiceImpl::new(
+        Box::new(repo),
+        Box::new(email_provider),
+        Box::new(sms_provider),
+        Box::new(webhook_provider),
+        db.clone(),
+    );
     let app_state = api::AppState::new(service);
+
     let cors = platform_middleware::cors_layer(&config.cors);
-    let rate_limit = platform_middleware::RateLimitLayer::new(redis, platform_middleware::RateLimitLayerConfig::default());
+    let rate_limit = platform_middleware::RateLimitLayer::new(
+        redis,
+        platform_middleware::RateLimitLayerConfig::default(),
+    );
+
     let app = Router::new()
         .route("/healthz", get(healthz))
-        .nest("/v1", api::routes::router(app_state).layer(platform_middleware::JwtAuthLayer::new(config.auth.clone())))
-        .layer(platform_middleware::SecurityHeadersLayer).layer(platform_middleware::RequestIdLayer)
-        .layer(rate_limit).layer(cors).layer(TraceLayer::new_for_http());
+        .nest(
+            "/v1",
+            api::routes::router(app_state)
+                .layer(platform_middleware::JwtAuthLayer::new(config.auth.clone())),
+        )
+        .layer(platform_middleware::SecurityHeadersLayer)
+        .layer(platform_middleware::RequestIdLayer)
+        .layer(rate_limit)
+        .layer(cors)
+        .layer(TraceLayer::new_for_http());
+
     let addr = SocketAddr::new(config.server.host.parse().unwrap(), config.server.port);
     tracing::info!("Notification service listening on {addr}");
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
-    let shutdown = platform_middleware::shutdown_signal(platform_middleware::ShutdownConfig::standard("notification-service"));
-    axum::serve(listener, app).with_graceful_shutdown(shutdown).await.unwrap();
+    let shutdown = platform_middleware::shutdown_signal(
+        platform_middleware::ShutdownConfig::standard("notification-service"),
+    );
+    axum::serve(listener, app)
+        .with_graceful_shutdown(shutdown)
+        .await
+        .unwrap();
 }
-async fn healthz() -> &'static str { "ok" }
+
+async fn healthz() -> &'static str {
+    "ok"
+}

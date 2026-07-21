@@ -1,10 +1,15 @@
 use async_trait::async_trait;
-use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, Set};
+use sea_orm::{
+    ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter,
+    QueryOrder, QuerySelect, Set,
+};
 use uuid::Uuid;
 
 use crate::domain::aggregates::Subscription;
+use crate::domain::rules::{
+    PaginationParams, SubscriptionFilter, SubscriptionRepository,
+};
 use crate::domain::value_objects::{SubscriptionInterval, SubscriptionStatus};
-use crate::domain::rules::SubscriptionRepository;
 use crate::infrastructure::entities::subscription_entity;
 use platform_error::PlatformError;
 use shared_types::{CurrencyCode, Money};
@@ -14,21 +19,25 @@ pub struct PostgresSubscriptionRepository {
 }
 
 impl PostgresSubscriptionRepository {
-    pub fn new(db: DatabaseConnection) -> Self { Self { db } }
+    pub fn new(db: DatabaseConnection) -> Self {
+        Self { db }
+    }
 }
 
 #[async_trait]
 impl SubscriptionRepository for PostgresSubscriptionRepository {
     async fn find_by_id(&self, id: Uuid) -> Result<Option<Subscription>, PlatformError> {
         let model = subscription_entity::Entity::find_by_id(id)
-            .one(&self.db).await
+            .one(&self.db)
+            .await
             .map_err(|e| PlatformError::Internal(format!("DB query failed: {e}")))?;
         Ok(model.map(|m| m.into()))
     }
 
     async fn save(&self, sub: &Subscription) -> Result<(), PlatformError> {
         let existing = subscription_entity::Entity::find_by_id(sub.subscription_id)
-            .one(&self.db).await
+            .one(&self.db)
+            .await
             .map_err(|e| PlatformError::Internal(format!("DB query failed: {e}")))?;
 
         if let Some(model) = existing {
@@ -41,8 +50,9 @@ impl SubscriptionRepository for PostgresSubscriptionRepository {
             active.failed_payment_intent_id = Set(sub.failed_payment_intent_id);
             active.canceled_at = Set(sub.canceled_at.map(|dt| dt.into()));
             active.updated_at = Set(sub.updated_at.into());
-            active.update(&self.db).await
-                .map_err(|e| PlatformError::Internal(format!("DB update failed: {e}")))?;
+            active.update(&self.db).await.map_err(|e| {
+                PlatformError::Internal(format!("DB update failed: {e}"))
+            })?;
         } else {
             let active = subscription_entity::ActiveModel {
                 subscription_id: Set(sub.subscription_id),
@@ -64,26 +74,87 @@ impl SubscriptionRepository for PostgresSubscriptionRepository {
                 created_at: Set(sub.created_at.into()),
                 updated_at: Set(sub.updated_at.into()),
             };
-            active.insert(&self.db).await
-                .map_err(|e| PlatformError::Internal(format!("DB insert failed: {e}")))?;
+            active.insert(&self.db).await.map_err(|e| {
+                PlatformError::Internal(format!("DB insert failed: {e}"))
+            })?;
         }
         Ok(())
     }
 
-    async fn list_by_customer(&self, customer_id: Uuid) -> Result<Vec<Subscription>, PlatformError> {
+    async fn list_by_customer(
+        &self,
+        customer_id: Uuid,
+    ) -> Result<Vec<Subscription>, PlatformError> {
         let models = subscription_entity::Entity::find()
             .filter(subscription_entity::Column::CustomerId.eq(customer_id))
-            .all(&self.db).await
+            .order_by_desc(subscription_entity::Column::CreatedAt)
+            .all(&self.db)
+            .await
             .map_err(|e| PlatformError::Internal(format!("DB query failed: {e}")))?;
+        Ok(models.into_iter().map(|m| m.into()).collect())
+    }
+
+    async fn list_by_operator(
+        &self,
+        operator_id: Uuid,
+        filter: &SubscriptionFilter,
+        pagination: &PaginationParams,
+    ) -> Result<Vec<Subscription>, PlatformError> {
+        let mut query = subscription_entity::Entity::find()
+            .filter(subscription_entity::Column::OperatorId.eq(operator_id));
+
+        if let Some(ref status) = filter.status {
+            query = query.filter(subscription_entity::Column::Status.eq(status.as_str()));
+        }
+
+        if let Some(customer_id) = filter.customer_id {
+            query = query.filter(subscription_entity::Column::CustomerId.eq(customer_id));
+        }
+
+        if let Some(min_amount) = filter.min_amount {
+            query = query.filter(subscription_entity::Column::AmountMinorUnits.gte(min_amount));
+        }
+
+        if let Some(max_amount) = filter.max_amount {
+            query = query.filter(subscription_entity::Column::AmountMinorUnits.lte(max_amount));
+        }
+
+        let models = query
+            .order_by_desc(subscription_entity::Column::CreatedAt)
+            .offset(pagination.offset as u64)
+            .limit(pagination.limit as u64)
+            .all(&self.db)
+            .await
+            .map_err(|e| PlatformError::Internal(format!("DB query failed: {e}")))?;
+
         Ok(models.into_iter().map(|m| m.into()).collect())
     }
 
     async fn find_due_subscriptions(&self) -> Result<Vec<Subscription>, PlatformError> {
         let now = chrono::Utc::now();
         let models = subscription_entity::Entity::find()
-            .filter(subscription_entity::Column::Status.is_in(vec!["active", "past_due"]))
+            .filter(
+                subscription_entity::Column::Status
+                    .is_in(vec!["active", "past_due", "trialing"]),
+            )
             .filter(subscription_entity::Column::CurrentPeriodEnd.lte(now))
-            .all(&self.db).await
+            .order_by_asc(subscription_entity::Column::CurrentPeriodEnd)
+            .all(&self.db)
+            .await
+            .map_err(|e| PlatformError::Internal(format!("DB query failed: {e}")))?;
+        Ok(models.into_iter().map(|m| m.into()).collect())
+    }
+
+    async fn find_canceled_since(
+        &self,
+        since: chrono::DateTime<chrono::Utc>,
+    ) -> Result<Vec<Subscription>, PlatformError> {
+        let models = subscription_entity::Entity::find()
+            .filter(subscription_entity::Column::Status.eq("canceled"))
+            .filter(subscription_entity::Column::CanceledAt.gte(since))
+            .order_by_desc(subscription_entity::Column::CanceledAt)
+            .all(&self.db)
+            .await
             .map_err(|e| PlatformError::Internal(format!("DB query failed: {e}")))?;
         Ok(models.into_iter().map(|m| m.into()).collect())
     }

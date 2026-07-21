@@ -1,24 +1,39 @@
 use async_trait::async_trait;
-use sea_orm::{ActiveModelTrait, DatabaseConnection, EntityTrait, Set};
+use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, Set};
 use uuid::Uuid;
 use crate::domain::aggregates::Dispute;
-use crate::domain::value_objects::DisputeStatus;
+use crate::domain::value_objects::{DisputeDecision, DisputeStatus};
 use crate::domain::rules::DisputeRepository;
 use crate::infrastructure::entities::dispute_entity;
 use platform_error::PlatformError;
 use shared_types::{CurrencyCode, Money};
 
-pub struct PostgresDisputeRepository { db: DatabaseConnection }
-impl PostgresDisputeRepository { pub fn new(db: DatabaseConnection) -> Self { Self { db } } }
+pub struct PostgresDisputeRepository {
+    db: DatabaseConnection,
+}
+
+impl PostgresDisputeRepository {
+    pub fn new(db: DatabaseConnection) -> Self {
+        Self { db }
+    }
+}
 
 #[async_trait]
 impl DisputeRepository for PostgresDisputeRepository {
     async fn find_by_id(&self, id: Uuid) -> Result<Option<Dispute>, PlatformError> {
-        let m = dispute_entity::Entity::find_by_id(id).one(&self.db).await.map_err(|e| PlatformError::Internal(format!("DB: {e}")))?;
-        Ok(m.map(|m| m.into()))
+        let m = dispute_entity::Entity::find_by_id(id)
+            .one(&self.db)
+            .await
+            .map_err(|e| PlatformError::Internal(format!("DB: {e}")))?;
+        Ok(m.map(Dispute::from))
     }
+
     async fn save(&self, d: &Dispute) -> Result<(), PlatformError> {
-        let existing = dispute_entity::Entity::find_by_id(d.dispute_id).one(&self.db).await.map_err(|e| PlatformError::Internal(format!("DB: {e}")))?;
+        let existing = dispute_entity::Entity::find_by_id(d.dispute_id)
+            .one(&self.db)
+            .await
+            .map_err(|e| PlatformError::Internal(format!("DB: {e}")))?;
+
         if let Some(model) = existing {
             let mut a = dispute_entity::ActiveModel::from(model);
             a.status = Set(d.status.as_str().to_string());
@@ -27,12 +42,17 @@ impl DisputeRepository for PostgresDisputeRepository {
             a.decision_reason = Set(d.decision_reason.clone());
             a.resolved_at = Set(d.resolved_at.map(|dt| dt.into()));
             a.updated_at = Set(d.updated_at.into());
-            a.update(&self.db).await.map_err(|e| PlatformError::Internal(format!("DB: {e}")))?;
+            a.update(&self.db)
+                .await
+                .map_err(|e| PlatformError::Internal(format!("DB: {e}")))?;
         } else {
             let a = dispute_entity::ActiveModel {
-                dispute_id: Set(d.dispute_id), payment_intent_id: Set(d.payment_intent_id),
-                operator_id: Set(d.operator_id), status: Set(d.status.as_str().to_string()),
-                reason: Set(d.reason.clone()), reason_code: Set(d.reason_code.clone()),
+                dispute_id: Set(d.dispute_id),
+                payment_intent_id: Set(d.payment_intent_id),
+                operator_id: Set(d.operator_id),
+                status: Set(d.status.as_str().to_string()),
+                reason: Set(d.reason.clone()),
+                reason_code: Set(d.reason_code.clone()),
                 disputed_amount_minor_units: Set(d.disputed_amount.amount_minor_units),
                 currency: Set(d.disputed_amount.currency.0.clone()),
                 acquirer_reference: Set(d.acquirer_reference.clone()),
@@ -41,30 +61,56 @@ impl DisputeRepository for PostgresDisputeRepository {
                 evidence: Set(d.evidence.as_ref().and_then(|v| serde_json::to_value(v).ok())),
                 decision: Set(d.decision.as_ref().map(|dec| dec.as_str().to_string())),
                 decision_reason: Set(d.decision_reason.clone()),
-                opened_at: Set(d.opened_at.into()), respond_by: Set(d.respond_by.map(|dt| dt.into())),
+                opened_at: Set(d.opened_at.into()),
+                respond_by: Set(d.respond_by.map(|dt| dt.into())),
                 resolved_at: Set(d.resolved_at.map(|dt| dt.into())),
-                created_at: Set(d.created_at.into()), updated_at: Set(d.updated_at.into()),
+                created_at: Set(d.created_at.into()),
+                updated_at: Set(d.updated_at.into()),
             };
-            a.insert(&self.db).await.map_err(|e| PlatformError::Internal(format!("DB: {e}")))?;
+            a.insert(&self.db)
+                .await
+                .map_err(|e| PlatformError::Internal(format!("DB: {e}")))?;
         }
         Ok(())
+    }
+
+    async fn list_by_operator(&self, operator_id: Uuid) -> Result<Vec<Dispute>, PlatformError> {
+        let models = dispute_entity::Entity::find()
+            .filter(dispute_entity::Column::OperatorId.eq(operator_id))
+            .all(&self.db)
+            .await
+            .map_err(|e| PlatformError::Internal(format!("DB: {e}")))?;
+        Ok(models.into_iter().map(Dispute::from).collect())
     }
 }
 
 impl From<dispute_entity::Model> for Dispute {
     fn from(m: dispute_entity::Model) -> Self {
+        let status = DisputeStatus::from_str(&m.status).unwrap_or(DisputeStatus::Opened);
+        let decision = m.decision.as_deref().and_then(DisputeDecision::from_str);
+
         Dispute {
-            dispute_id: m.dispute_id, payment_intent_id: m.payment_intent_id, operator_id: m.operator_id,
-            status: DisputeStatus::Opened, reason: m.reason, reason_code: m.reason_code,
-            disputed_amount: Money { amount_minor_units: m.disputed_amount_minor_units, currency: CurrencyCode::new(&m.currency).unwrap() },
-            acquirer_reference: m.acquirer_reference, connector_id: m.connector_id,
+            dispute_id: m.dispute_id,
+            payment_intent_id: m.payment_intent_id,
+            operator_id: m.operator_id,
+            status,
+            reason: m.reason,
+            reason_code: m.reason_code,
+            disputed_amount: Money {
+                amount_minor_units: m.disputed_amount_minor_units,
+                currency: CurrencyCode::new(&m.currency).unwrap(),
+            },
+            acquirer_reference: m.acquirer_reference,
+            connector_id: m.connector_id,
             acquirer_dispute_id: m.acquirer_dispute_id,
             evidence: m.evidence.and_then(|v| serde_json::from_value(v.into()).ok()),
-            decision: None,
+            decision,
             decision_reason: m.decision_reason,
-            opened_at: m.opened_at.into(), respond_by: m.respond_by.map(|dt| dt.into()),
+            opened_at: m.opened_at.into(),
+            respond_by: m.respond_by.map(|dt| dt.into()),
             resolved_at: m.resolved_at.map(|dt| dt.into()),
-            created_at: m.created_at.into(), updated_at: m.updated_at.into(),
+            created_at: m.created_at.into(),
+            updated_at: m.updated_at.into(),
         }
     }
 }

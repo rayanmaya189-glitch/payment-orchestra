@@ -4,8 +4,8 @@
 //! (Postfix, SendGrid, AWS SES via SMTP, Mailgun, etc.).
 
 use async_trait::async_trait;
-use crate::domain::rules::EmailProvider;
-use platform_error::PlatformError;
+
+use crate::domain::rules::{EmailProvider, ProviderError, ProviderResult};
 
 /// SMTP email provider configuration.
 #[derive(Debug, Clone)]
@@ -39,9 +39,14 @@ impl SmtpEmailProvider {
 
 #[async_trait]
 impl EmailProvider for SmtpEmailProvider {
-    async fn send_email(&self, to: &str, subject: &str, body: &str) -> Result<String, PlatformError> {
+    async fn send_email(
+        &self,
+        to: &str,
+        subject: &str,
+        body: &str,
+    ) -> Result<ProviderResult, ProviderError> {
         // Build RFC 2822 compliant email
-        let email = format!(
+        let _email = format!(
             "From: {} <{}>\r\nTo: {}\r\nSubject: {}\r\nMIME-Version: 1.0\r\nContent-Type: text/html; charset=UTF-8\r\n\r\n{}",
             self.config.from_name, self.config.from_email, to, subject, body
         );
@@ -65,28 +70,27 @@ impl EmailProvider for SmtpEmailProvider {
         //     .subject(subject)
         //     .header(ContentType::TEXT_HTML)
         //     .body(body.to_string())
-        //     .map_err(|e| PlatformError::Internal(format!("Email build failed: {e}")))?;
+        //     .map_err(|e| ProviderError::Permanent(format!("Email build failed: {e}")))?;
         //
         // let creds = Credentials::new(self.config.username.clone(), self.config.password.clone());
         //
         // let mailer = if self.config.use_tls {
         //     SmtpTransport::relay(&self.config.host)
-        //         .map_err(|e| PlatformError::Internal(format!("SMTP relay failed: {e}")))?
+        //         .map_err(|e| ProviderError::Unavailable(format!("SMTP relay failed: {e}")))?
         //         .port(self.config.port)
         //         .credentials(creds)
         //         .build()
         // } else {
         //     SmtpTransport::starttls_relay(&self.config.host)
-        //         .map_err(|e| PlatformError::Internal(format!("SMTP STARTTLS failed: {e}")))?
+        //         .map_err(|e| ProviderError::Unavailable(format!("SMTP STARTTLS failed: {e}")))?
         //         .port(self.config.port)
         //         .credentials(creds)
         //         .build()
         // };
         //
         // mailer.send(&email)
-        //     .map_err(|e| PlatformError::Internal(format!("SMTP send failed: {e}")))?;
+        //     .map_err(|e| ProviderError::Transient(format!("SMTP send failed: {e}")))?;
 
-        // For now, log and return a message ID
         let message_id = format!("smtp_{}", uuid::Uuid::now_v7());
         tracing::info!(
             message_id = %message_id,
@@ -94,7 +98,13 @@ impl EmailProvider for SmtpEmailProvider {
             "Email queued for delivery (SMTP provider active)"
         );
 
-        Ok(message_id)
+        Ok(ProviderResult {
+            message_id,
+            metadata: Some(serde_json::json!({
+                "provider": "smtp",
+                "host": self.config.host,
+            })),
+        })
     }
 }
 
@@ -115,5 +125,25 @@ mod tests {
         };
         let provider = SmtpEmailProvider::new(config);
         assert_eq!(provider.config.port, 587);
+    }
+
+    #[tokio::test]
+    async fn test_smtp_send_email() {
+        let config = SmtpConfig {
+            host: "smtp.example.com".to_string(),
+            port: 587,
+            username: "user".to_string(),
+            password: "pass".to_string(),
+            from_email: "noreply@example.com".to_string(),
+            from_name: "Test".to_string(),
+            use_tls: true,
+        };
+        let provider = SmtpEmailProvider::new(config);
+        let result = provider
+            .send_email("test@example.com", "Hello", "Body")
+            .await
+            .unwrap();
+        assert!(result.message_id.starts_with("smtp_"));
+        assert!(result.metadata.is_some());
     }
 }

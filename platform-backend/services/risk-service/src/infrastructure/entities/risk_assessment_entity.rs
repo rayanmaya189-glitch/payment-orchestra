@@ -11,13 +11,9 @@ pub struct Model {
     pub score: f64,
     pub decision: String,
     pub factors: Json,
+    pub breakdown: Json,
     pub ip_address: Option<String>,
     pub user_agent: Option<String>,
-    pub velocity_score: f64,
-    pub geo_score: f64,
-    pub behavior_score: f64,
-    pub is_whitelisted: bool,
-    pub is_blacklisted: bool,
     pub created_at: DateTimeWithTimeZone,
 }
 

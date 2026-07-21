@@ -14,6 +14,8 @@ pub struct Model {
     pub credit_amount_minor_units: i64,
     pub currency: String,
     pub source_acquirer: String,
+    pub fee_amount_minor_units: Option<i64>,
+    pub fee_currency: Option<String>,
     pub reconciliation_batch_id: Option<Uuid>,
     pub reconciled: bool,
     pub created_at: DateTimeWithTimeZone,
@@ -21,7 +23,6 @@ pub struct Model {
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {}
-
 impl ActiveModelBehavior for ActiveModel {}
 
 impl Model {
@@ -34,6 +35,13 @@ impl Model {
             credit_amount_minor_units: self.credit_amount_minor_units,
             currency: self.currency.clone(),
             source_acquirer: self.source_acquirer.clone(),
+            fee: self.fee_amount_minor_units.map(|amt| shared_types::Money {
+                amount_minor_units: amt,
+                currency: shared_types::CurrencyCode::new(
+                    self.fee_currency.as_deref().unwrap_or("AED"),
+                )
+                .unwrap_or_else(|_| shared_types::CurrencyCode::new("AED").unwrap()),
+            }),
             reconciliation_batch_id: self.reconciliation_batch_id,
             reconciled: self.reconciled,
             created_at: self.created_at.into(),
@@ -51,6 +59,8 @@ impl From<LedgerEntry> for ActiveModel {
             credit_amount_minor_units: sea_orm::Set(e.credit_amount_minor_units),
             currency: sea_orm::Set(e.currency),
             source_acquirer: sea_orm::Set(e.source_acquirer),
+            fee_amount_minor_units: sea_orm::Set(e.fee.as_ref().map(|f| f.amount_minor_units)),
+            fee_currency: sea_orm::Set(e.fee.as_ref().map(|f| f.currency.0.clone())),
             reconciliation_batch_id: sea_orm::Set(e.reconciliation_batch_id),
             reconciled: sea_orm::Set(e.reconciled),
             created_at: sea_orm::Set(e.created_at.into()),

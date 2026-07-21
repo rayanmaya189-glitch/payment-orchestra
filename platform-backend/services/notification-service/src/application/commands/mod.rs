@@ -15,3 +15,9 @@ pub struct SendNotificationCommand {
 pub struct RetryNotificationCommand {
     pub notification_id: Uuid,
 }
+
+#[derive(Debug, Clone)]
+pub struct BatchRetryCommand {
+    pub max_age_secs: Option<u64>,
+    pub limit: Option<u32>,
+}

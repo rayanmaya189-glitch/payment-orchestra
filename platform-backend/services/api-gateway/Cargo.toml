@@ -27,3 +27,4 @@ async-trait.workspace = true
 redis.workspace = true
 async-nats.workspace = true
 utoipa-swagger-ui = { workspace = true, features = ["axum"] }
+base64 = "0.22.1"

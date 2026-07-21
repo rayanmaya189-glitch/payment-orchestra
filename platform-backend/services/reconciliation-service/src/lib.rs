@@ -1,5 +1,5 @@
 #![allow(dead_code)]
-// reconciliation-service - Placeholder
-pub mod domain;
+pub mod api;
 pub mod application;
+pub mod domain;
 pub mod infrastructure;

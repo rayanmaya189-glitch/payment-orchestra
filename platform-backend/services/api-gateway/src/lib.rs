@@ -1,5 +1,4 @@
 #![allow(dead_code)]
-// api-gateway - Placeholder
 pub mod domain;
 pub mod application;
 pub mod infrastructure;

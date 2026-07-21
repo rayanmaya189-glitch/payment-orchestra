@@ -40,8 +40,11 @@ async fn main() {
     let app = Router::new()
         .route("/healthz", get(healthz))
         .route("/readyz", get(readyz))
-        .nest("/v1", api::routes::router(app_state)
-            .layer(platform_middleware::JwtAuthLayer::new(config.auth.clone())))
+        .nest(
+            "/v1",
+            api::routes::router(app_state)
+                .layer(platform_middleware::JwtAuthLayer::new(config.auth.clone())),
+        )
         .layer(platform_middleware::SecurityHeadersLayer)
         .layer(platform_middleware::RequestIdLayer)
         .layer(rate_limit)

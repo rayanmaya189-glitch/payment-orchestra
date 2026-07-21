@@ -11,7 +11,8 @@ mod domain;
 mod infrastructure;
 
 use crate::application::services::DocumentServiceImpl;
-use crate::infrastructure::adapters::PostgresDocumentRepository;
+use crate::infrastructure::adapters::{PostgresDocumentRepository, LocalStorageProvider};
+use std::path::PathBuf;
 
 #[tokio::main]
 async fn main() {
@@ -23,7 +24,12 @@ async fn main() {
     let redis = infrastructure::cache::connect(&config.redis).await;
 
     let repo = PostgresDocumentRepository::new(db.clone());
-    let service = DocumentServiceImpl::new(Box::new(repo), db.clone());
+    let storage = LocalStorageProvider::new(
+        std::env::var("DOCUMENT_STORAGE_PATH")
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| PathBuf::from("/tmp/document-storage")),
+    );
+    let service = DocumentServiceImpl::new(Box::new(repo), Box::new(storage), db.clone());
 
     let app_state = api::AppState::new(service);
 
@@ -40,8 +46,11 @@ async fn main() {
     let app = Router::new()
         .route("/healthz", get(healthz))
         .route("/readyz", get(readyz))
-        .nest("/v1", api::routes::router(app_state)
-            .layer(platform_middleware::JwtAuthLayer::new(config.auth.clone())))
+        .nest(
+            "/v1",
+            api::routes::router(app_state)
+                .layer(platform_middleware::JwtAuthLayer::new(config.auth.clone())),
+        )
         .layer(platform_middleware::SecurityHeadersLayer)
         .layer(platform_middleware::RequestIdLayer)
         .layer(rate_limit)

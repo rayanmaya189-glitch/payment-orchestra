@@ -1,1 +1,1 @@
-// Query handlers
+// Query handlers — currently folded into service methods.
