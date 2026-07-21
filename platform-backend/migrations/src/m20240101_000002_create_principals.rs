@@ -19,6 +19,7 @@ impl MigrationTrait for Migration {
                     .col(boolean(Principal::MfaEnrolled).not_null().default(false))
                     .col(string(Principal::MfaMethod).null())
                     .col(string(Principal::Status).not_null().default("active"))
+                    .col(string(Principal::Role).not_null().default("operator_admin"))
                     .col(integer(Principal::FailedLoginAttempts).not_null().default(0))
                     .col(timestamp_with_time_zone(Principal::LockedUntil).null())
                     .col(timestamp_with_time_zone(Principal::CreatedAt).not_null())
@@ -58,6 +59,7 @@ enum Principal {
     MfaEnrolled,
     MfaMethod,
     Status,
+    Role,
     FailedLoginAttempts,
     LockedUntil,
     CreatedAt,

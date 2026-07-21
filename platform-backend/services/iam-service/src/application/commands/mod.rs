@@ -9,7 +9,19 @@ pub struct LoginCommand {
     pub user_agent: String,
 }
 
-/// Login response.
+/// Login result — either fully authenticated or MFA challenge required.
+#[derive(Debug, Clone)]
+pub enum LoginResult {
+    /// Fully authenticated — tokens issued.
+    Authenticated(LoginResponse),
+    /// MFA required — client must verify TOTP with this challenge token.
+    MfaChallenge {
+        challenge_token: String,
+        principal_id: Uuid,
+    },
+}
+
+/// Login response (only returned when fully authenticated).
 #[derive(Debug, Clone)]
 pub struct LoginResponse {
     pub access_token: String,

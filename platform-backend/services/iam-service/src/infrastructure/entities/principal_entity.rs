@@ -12,6 +12,7 @@ pub struct Model {
     pub mfa_enrolled: bool,
     pub mfa_method: Option<String>,
     pub status: String,
+    pub role: String,
     pub failed_login_attempts: i32,
     pub locked_until: Option<DateTimeWithTimeZone>,
     pub created_at: DateTimeWithTimeZone,

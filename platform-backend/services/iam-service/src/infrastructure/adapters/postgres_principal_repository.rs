@@ -52,6 +52,7 @@ impl PrincipalRepository for PostgresPrincipalRepository {
             active.mfa_enrolled = Set(principal.mfa_enrolled);
             active.mfa_method = Set(principal.mfa_method.as_ref().map(|m| m.as_str().to_string()));
             active.status = Set(principal.status.as_str().to_string());
+            active.role = Set(principal.role.as_str().to_string());
             active.failed_login_attempts = Set(principal.failed_login_attempts);
             active.locked_until = Set(principal.locked_until.map(|dt| dt.into()));
             active.last_login_at = Set(principal.last_login_at.map(|dt| dt.into()));
@@ -68,6 +69,7 @@ impl PrincipalRepository for PostgresPrincipalRepository {
                 mfa_enrolled: Set(principal.mfa_enrolled),
                 mfa_method: Set(principal.mfa_method.as_ref().map(|m| m.as_str().to_string())),
                 status: Set(principal.status.as_str().to_string()),
+                role: Set(principal.role.as_str().to_string()),
                 failed_login_attempts: Set(principal.failed_login_attempts),
                 locked_until: Set(principal.locked_until.map(|dt| dt.into())),
                 created_at: Set(principal.created_at.into()),
@@ -107,7 +109,7 @@ impl From<principal_entity::Model> for Principal {
             mfa_method: m.mfa_method.as_ref().map(|s| MfaMethod::from_str(s)),
             mfa_secret: None,
             status: PrincipalStatus::from_str(&m.status),
-            role: PrincipalRole::OperatorAdmin,
+            role: PrincipalRole::from_str(&m.role),
             failed_login_attempts: m.failed_login_attempts,
             locked_until: m.locked_until.map(|dt| dt.into()),
             created_at: m.created_at.into(),

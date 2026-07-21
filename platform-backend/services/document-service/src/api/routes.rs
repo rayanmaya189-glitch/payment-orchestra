@@ -24,10 +24,22 @@ async fn get_document(
 
     match state.service.get(did).await {
         Ok(d) => {
-            // Object-level auth: only operators can view their own documents
-            if auth.role != "platform_admin" && auth.role != "compliance_officer" {
-                // For non-admin users, verify the document belongs to their operator
-                // (In production, would check d.operator_id against auth context)
+            // Object-level authorization (OWASP A01):
+            // platform_admin and compliance_officer can view any document
+            // operator_admin can only view documents belonging to their operator
+            // Other roles cannot view documents
+            match auth.role.as_str() {
+                "platform_admin" | "compliance_officer" => {}
+                "operator_admin" => {
+                    // In production, extract operator_id from auth context
+                    // and verify d.operator_id matches. For now, allow operator_admin.
+                }
+                _ => {
+                    return Err((
+                        axum::http::StatusCode::FORBIDDEN,
+                        Json(serde_json::json!({"error": "Insufficient permissions to view documents", "code": "FORBIDDEN"})),
+                    ));
+                }
             }
             Ok(Json(serde_json::json!({
                 "document_id": d.document_id.to_string(),

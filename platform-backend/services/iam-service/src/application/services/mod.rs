@@ -171,7 +171,7 @@ impl IamServiceImpl {
 
 #[async_trait]
 impl IamService for IamServiceImpl {
-    async fn login(&self, cmd: LoginCommand) -> Result<LoginResponse, PlatformError> {
+    async fn login(&self, cmd: LoginCommand) -> Result<LoginResult, PlatformError> {
         // Find principal by email
         let mut principal = self.principal_repo
             .find_by_email(&cmd.email)
@@ -226,9 +226,10 @@ impl IamService for IamServiceImpl {
                 )
                 .await?;
 
-            return Err(PlatformError::AuthorizationDenied(
-                "MFA_REQUIRED".to_string()
-            ));
+            return Ok(LoginResult::MfaChallenge {
+                challenge_token,
+                principal_id: principal.principal_id,
+            });
         }
 
         // Generate tokens
@@ -243,13 +244,13 @@ impl IamService for IamServiceImpl {
             .store_refresh_token(&token_id, &principal.principal_id.to_string(), self.config.jwt_refresh_token_ttl_secs)
             .await?;
 
-        Ok(LoginResponse {
+        Ok(LoginResult::Authenticated(LoginResponse {
             access_token,
             refresh_token,
             expires_in: self.config.jwt_access_token_ttl_secs,
             principal_id: principal.principal_id,
             role: role.to_string(),
-        })
+        }))
     }
 
     async fn refresh_token(&self, cmd: RefreshTokenCommand) -> Result<LoginResponse, PlatformError> {
@@ -446,7 +447,7 @@ impl IamService for IamServiceImpl {
 
 #[async_trait]
 pub trait IamService: Send + Sync {
-    async fn login(&self, cmd: LoginCommand) -> Result<LoginResponse, PlatformError>;
+    async fn login(&self, cmd: LoginCommand) -> Result<LoginResult, PlatformError>;
     async fn refresh_token(&self, cmd: RefreshTokenCommand) -> Result<LoginResponse, PlatformError>;
     async fn register_principal(&self, cmd: RegisterPrincipalCommand) -> Result<Uuid, PlatformError>;
     async fn create_api_key(&self, cmd: CreateApiKeyCommand) -> Result<CreateApiKeyResponse, PlatformError>;

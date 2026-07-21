@@ -55,7 +55,7 @@ async fn login(
     };
 
     match state.service.login(cmd).await {
-        Ok(resp) => {
+        Ok(LoginResult::Authenticated(resp)) => {
             platform_logging::log_security_event(
                 "iam-service",
                 platform_logging::SecurityEventType::LoginSuccess,
@@ -72,7 +72,26 @@ async fn login(
                 expires_in: resp.expires_in,
             }))
         }
+        Ok(LoginResult::MfaChallenge { challenge_token, principal_id }) => {
+            platform_logging::log_security_event(
+                "iam-service",
+                platform_logging::SecurityEventType::LoginSuccess,
+                platform_logging::SecurityOutcome::Success,
+                Some(principal_id),
+                Some(&ip_address),
+                Some(&user_agent),
+                None,
+                Some(serde_json::json!({"mfa_required": true})),
+            );
+            // Return 200 with MFA challenge — client must verify TOTP
+            Ok(Json(LoginResponseJson {
+                access_token: challenge_token, // Reuse field for challenge token
+                refresh_token: String::new(),
+                expires_in: 300, // 5 minutes
+            }))
+        }
         Err(e) => {
+            // Generic error message — do not reveal account existence or lock status
             platform_logging::log_security_event(
                 "iam-service",
                 platform_logging::SecurityEventType::LoginFailed,
@@ -85,7 +104,7 @@ async fn login(
             );
             Err((
                 axum::http::StatusCode::UNAUTHORIZED,
-                Json(serde_json::json!({"error": e.to_string(), "code": "UNAUTHORIZED"})),
+                Json(serde_json::json!({"error": "Invalid credentials", "code": "UNAUTHORIZED"})),
             ))
         }
     }
@@ -110,8 +129,8 @@ async fn refresh_token(
 
     let cmd = RefreshTokenCommand {
         refresh_token: req.refresh_token,
-        ip_address,
-        user_agent,
+        ip_address: ip_address.clone(),
+        user_agent: user_agent.clone(),
     };
 
     match state.service.refresh_token(cmd).await {
@@ -120,10 +139,22 @@ async fn refresh_token(
             refresh_token: resp.refresh_token,
             expires_in: resp.expires_in,
         })),
-        Err(e) => Err((
-            axum::http::StatusCode::UNAUTHORIZED,
-            Json(serde_json::json!({"error": e.to_string(), "code": "UNAUTHORIZED"})),
-        )),
+        Err(e) => {
+            platform_logging::log_security_event(
+                "iam-service",
+                platform_logging::SecurityEventType::SessionRevoked,
+                platform_logging::SecurityOutcome::Blocked,
+                None,
+                Some(&ip_address),
+                Some(&user_agent),
+                None,
+                Some(serde_json::json!({"error": "refresh_token_failed", "detail": e.to_string()})),
+            );
+            Err((
+                axum::http::StatusCode::UNAUTHORIZED,
+                Json(serde_json::json!({"error": "Invalid refresh token", "code": "UNAUTHORIZED"})),
+            ))
+        }
     }
 }
 

@@ -56,12 +56,18 @@ async fn main() {
         run_data_retention_cleanup(&db_clone5).await;
     });
 
+    let db_clone6 = db.clone();
+    let kyb_aging_handle = tokio::spawn(async move {
+        run_kyb_aging_alerts(&db_clone6).await;
+    });
+
     tokio::select! {
         _ = outbox_handle => {},
         _ = auth_expiry_handle => {},
         _ = dunning_handle => {},
         _ = stuck_handle => {},
         _ = data_retention_handle => {},
+        _ = kyb_aging_handle => {},
         _ = tokio::signal::ctrl_c() => {
             tracing::info!("Scheduler shutting down");
         }
@@ -274,5 +280,43 @@ async fn run_data_retention_cleanup(db: &sea_orm::DatabaseConnection) {
         );
 
         tokio::time::sleep(cleanup_interval).await;
+    }
+}
+
+/// JOB-007: KYB case aging alerts — notify when cases are pending review for too long.
+async fn run_kyb_aging_alerts(db: &sea_orm::DatabaseConnection) {
+    use sea_orm::{ConnectionTrait, Statement};
+
+    let check_interval = std::time::Duration::from_secs(43200); // Every 12 hours
+    let aging_days: i64 = 7; // Alert after 7 days pending
+
+    loop {
+        tracing::info!("Running KYB aging alerts check");
+
+        // Find KYB cases pending for too long
+        match db.query_all(Statement::from_sql_and_values(
+            sea_orm::DatabaseBackend::Postgres,
+            "SELECT kyb_case_id, operator_id, status, created_at
+             FROM kyb_case
+             WHERE status = 'submitted'
+             AND created_at < NOW() - INTERVAL '1 day' * $1",
+            vec![aging_days.into()],
+        )).await {
+            Ok(rows) => {
+                let count = rows.len();
+                if count > 0 {
+                    tracing::warn!(
+                        count,
+                        "KYB cases pending review for over {} days — requires attention",
+                        aging_days
+                    );
+                    // In production: send notification to compliance officers
+                    // via notification-service or external alerting system
+                }
+            }
+            Err(e) => tracing::error!("KYB aging check failed: {e}"),
+        }
+
+        tokio::time::sleep(check_interval).await;
     }
 }
