@@ -86,6 +86,15 @@ async fn retry_notification(
 
     match state.service.retry(RetryNotificationCommand { notification_id: nid }).await {
         Ok(()) => Ok(Json(serde_json::json!({"status": "retried"}))),
-        Err(e) => Err((axum::http::StatusCode::BAD_REQUEST, Json(serde_json::json!({"error": e.to_string()})))),
+        Err(e) => {
+            let msg = match &e {
+                platform_error::PlatformError::Internal(m) => {
+                    tracing::error!(error = %platform_logging::sanitize_error_message(m), "Internal error in notification-service retry");
+                    "Internal error".to_string()
+                }
+                _ => e.to_string(),
+            };
+            Err((axum::http::StatusCode::BAD_REQUEST, Json(serde_json::json!({"error": msg}))))
+        }
     }
 }

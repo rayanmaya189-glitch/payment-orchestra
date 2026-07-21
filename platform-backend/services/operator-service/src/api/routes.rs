@@ -172,11 +172,11 @@ fn error_to_response(e: platform_error::PlatformError) -> (StatusCode, Json<Erro
             msg.clone(),
         ),
         platform_error::PlatformError::Internal(msg) => {
-            tracing::error!(error = %msg, "Internal error in operator-service");
+            tracing::error!(error = %platform_logging::sanitize_error_message(msg), "Internal error in operator-service");
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "INTERNAL_ERROR",
-                "An internal error occurred".to_string(),
+                "Internal error".to_string(),
             )
         }
     };

@@ -8,6 +8,10 @@
 //! - JOB-005: Data retention cleanup
 //! - JOB-006: Stuck capturing/refunding sweep
 //! - JOB-007: KYB case aging alerts
+//! - JOB-008: Invoice overdue transition
+//! - JOB-009: Settlement polling
+//! - JOB-010: Exception aging alerts
+//! - JOB-011: API key expiry cleanup
 
 use platform_config::AppConfig;
 use platform_logging::ServiceLogger;
@@ -35,6 +39,11 @@ async fn main() {
     let db_clone3 = db.clone();
     let db_clone4 = db.clone();
     let db_clone5 = db.clone();
+    let db_clone6 = db.clone();
+    let db_clone7 = db.clone();
+    let db_clone8 = db.clone();
+    let db_clone9 = db.clone();
+    let db_clone10 = db.clone();
     let publisher_clone = publisher.clone();
 
     let outbox_handle = tokio::spawn(async move {
@@ -57,9 +66,24 @@ async fn main() {
         run_data_retention_cleanup(&db_clone5).await;
     });
 
-    let db_clone6 = db.clone();
     let kyb_aging_handle = tokio::spawn(async move {
         run_kyb_aging_alerts(&db_clone6).await;
+    });
+
+    let invoice_overdue_handle = tokio::spawn(async move {
+        run_invoice_overdue_transition(&db_clone7).await;
+    });
+
+    let settlement_polling_handle = tokio::spawn(async move {
+        run_settlement_polling(&db_clone8).await;
+    });
+
+    let exception_aging_handle = tokio::spawn(async move {
+        run_exception_aging_alerts(&db_clone9).await;
+    });
+
+    let api_key_expiry_handle = tokio::spawn(async move {
+        run_api_key_expiry_cleanup(&db_clone10).await;
     });
 
     tokio::select! {
@@ -69,6 +93,10 @@ async fn main() {
         _ = stuck_handle => {},
         _ = data_retention_handle => {},
         _ = kyb_aging_handle => {},
+        _ = invoice_overdue_handle => {},
+        _ = settlement_polling_handle => {},
+        _ = exception_aging_handle => {},
+        _ = api_key_expiry_handle => {},
         _ = tokio::signal::ctrl_c() => {
             tracing::info!("Scheduler shutting down");
         }
@@ -319,5 +347,186 @@ async fn run_kyb_aging_alerts(db: &sea_orm::DatabaseConnection) {
         }
 
         tokio::time::sleep(check_interval).await;
+    }
+}
+
+/// JOB-008: Invoice overdue transition — mark sent invoices as overdue past due date.
+async fn run_invoice_overdue_transition(db: &sea_orm::DatabaseConnection) {
+    use sea_orm::{ConnectionTrait, Statement};
+
+    let interval = std::time::Duration::from_secs(3600); // Every hour
+
+    loop {
+        tracing::info!("Running invoice overdue transition");
+
+        match db.execute(Statement::from_sql_and_values(
+            sea_orm::DatabaseBackend::Postgres,
+            "UPDATE invoice SET status = 'overdue', updated_at = NOW()
+             WHERE status = 'sent'
+             AND due_date < NOW()
+             RETURNING invoice_id",
+            vec![],
+        )).await {
+            Ok(result) => {
+                let count = result.rows_affected();
+                if count > 0 {
+                    tracing::info!(count, "Transitioned invoices to overdue status");
+                }
+            }
+            Err(e) => tracing::error!("Invoice overdue transition failed: {e}"),
+        }
+
+        tokio::time::sleep(interval).await;
+    }
+}
+
+/// JOB-009: Settlement polling — poll connector settlement files and reconcile.
+async fn run_settlement_polling(db: &sea_orm::DatabaseConnection) {
+    use sea_orm::{ConnectionTrait, Statement};
+
+    let poll_interval = std::time::Duration::from_secs(14400); // Every 4 hours
+
+    loop {
+        tracing::info!("Running settlement polling");
+
+        // Find settlement batches that are pending and haven't been polled recently
+        match db.query_all(Statement::from_sql_and_values(
+            sea_orm::DatabaseBackend::Postgres,
+            "SELECT sb.settlement_batch_id, sb.connector_id, sb.status
+             FROM settlement_batch sb
+             WHERE sb.status = 'pending'
+             AND (sb.last_polled_at IS NULL OR sb.last_polled_at < NOW() - INTERVAL '1 hour' * 4)
+             ORDER BY sb.created_at ASC
+             LIMIT 50",
+            vec![],
+        )).await {
+            Ok(rows) => {
+                let count = rows.len();
+                if count > 0 {
+                    tracing::info!(count, "Found settlement batches to poll");
+                    // In production: for each batch, call connector-gateway
+                    // to fetch settlement file, parse, and reconcile against
+                    // payment intents. Emit SettlementReconciled event.
+                    for row in &rows {
+                        if let Some(batch_id) = row.try_get::<uuid::Uuid>("", "settlement_batch_id").ok().flatten() {
+                            tracing::debug!(batch_id = %batch_id, "Processing settlement batch");
+                        }
+                    }
+                }
+            }
+            Err(e) => tracing::error!("Settlement polling query failed: {e}"),
+        }
+
+        // Update last_polled_at for all pending batches we just checked
+        if let Err(e) = db.execute(Statement::from_sql_and_values(
+            sea_orm::DatabaseBackend::Postgres,
+            "UPDATE settlement_batch SET last_polled_at = NOW()
+             WHERE status = 'pending'
+             AND (last_polled_at IS NULL OR last_polled_at < NOW() - INTERVAL '1 hour' * 4)",
+            vec![],
+        )).await {
+            tracing::error!("Failed to update settlement poll timestamps: {e}");
+        }
+
+        tokio::time::sleep(poll_interval).await;
+    }
+}
+
+/// JOB-010: Exception aging alerts — notify when payment exceptions are unresolved for too long.
+async fn run_exception_aging_alerts(db: &sea_orm::DatabaseConnection) {
+    use sea_orm::{ConnectionTrait, Statement};
+
+    let check_interval = std::time::Duration::from_secs(14400); // Every 4 hours
+    let aging_hours: i64 = 24; // Alert after 24 hours unresolved
+
+    loop {
+        tracing::info!("Running exception aging alerts check");
+
+        match db.query_all(Statement::from_sql_and_values(
+            sea_orm::DatabaseBackend::Postgres,
+            "SELECT pe.payment_exception_id, pe.payment_intent_id, pe.exception_type,
+                    pe.severity, pe.created_at, pe.resolved_at
+             FROM payment_exception pe
+             WHERE pe.resolved_at IS NULL
+             AND pe.created_at < NOW() - INTERVAL '1 hour' * $1",
+            vec![aging_hours.into()],
+        )).await {
+            Ok(rows) => {
+                let critical: Vec<_> = rows.iter().filter(|r| {
+                    r.try_get::<String>("", "severity").ok().flatten().as_deref() == Some("critical")
+                }).collect();
+                let total = rows.len();
+
+                if !critical.is_empty() {
+                    tracing::warn!(
+                        count = critical.len(),
+                        total_unresolved = total,
+                        "Critical payment exceptions unresolved for over {} hours — immediate attention required",
+                        aging_hours
+                    );
+                } else if total > 0 {
+                    tracing::warn!(
+                        count = total,
+                        "Payment exceptions unresolved for over {} hours",
+                        aging_hours
+                    );
+                }
+
+                // In production: send notifications to operations team
+                // via notification-service based on severity level
+            }
+            Err(e) => tracing::error!("Exception aging check failed: {e}"),
+        }
+
+        tokio::time::sleep(check_interval).await;
+    }
+}
+
+/// JOB-011: API key expiry cleanup — revoke expired API keys.
+async fn run_api_key_expiry_cleanup(db: &sea_orm::DatabaseConnection) {
+    use sea_orm::{ConnectionTrait, Statement};
+
+    let cleanup_interval = std::time::Duration::from_secs(3600); // Every hour
+
+    loop {
+        tracing::info!("Running API key expiry cleanup");
+
+        // Soft-delete expired API keys that are still active
+        match db.execute(Statement::from_sql_and_values(
+            sea_orm::DatabaseBackend::Postgres,
+            "UPDATE api_key SET status = 'expired', updated_at = NOW()
+             WHERE status = 'active'
+             AND expires_at IS NOT NULL
+             AND expires_at < NOW()
+             RETURNING api_key_id",
+            vec![],
+        )).await {
+            Ok(result) => {
+                let count = result.rows_affected();
+                if count > 0 {
+                    tracing::info!(count, "Expired API keys revoked");
+                }
+            }
+            Err(e) => tracing::error!("API key expiry cleanup failed: {e}"),
+        }
+
+        // Hard-delete expired API keys older than 90 days (already soft-deleted)
+        match db.execute(Statement::from_sql_and_values(
+            sea_orm::DatabaseBackend::Postgres,
+            "DELETE FROM api_key
+             WHERE status = 'expired'
+             AND updated_at < NOW() - INTERVAL '1 day' * 90",
+            vec![],
+        )).await {
+            Ok(result) => {
+                let count = result.rows_affected();
+                if count > 0 {
+                    tracing::info!(count, "Hard-deleted old expired API keys");
+                }
+            }
+            Err(e) => tracing::error!("API key hard-delete cleanup failed: {e}"),
+        }
+
+        tokio::time::sleep(cleanup_interval).await;
     }
 }

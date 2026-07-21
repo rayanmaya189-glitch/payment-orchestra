@@ -27,6 +27,7 @@ async fn main() {
     let rate_limit = platform_middleware::RateLimitLayer::new(redis, platform_middleware::RateLimitLayerConfig::default());
     let app = Router::new()
         .route("/healthz", get(healthz))
+        .route("/startupz", get(startupz))
         .nest("/v1", api::routes::router(app_state).layer(platform_middleware::JwtAuthLayer::new(config.auth.clone())))
         .layer(platform_middleware::SecurityHeadersLayer).layer(platform_middleware::RequestIdLayer)
         .layer(rate_limit).layer(cors).layer(TraceLayer::new_for_http());
@@ -37,3 +38,6 @@ async fn main() {
     axum::serve(listener, app).with_graceful_shutdown(shutdown).await.unwrap();
 }
 async fn healthz() -> &'static str { "ok" }
+async fn startupz() -> axum::Json<serde_json::Value> {
+    axum::Json(platform_db::health::startup_response_with_uptime("compliance-service", *STARTED_AT))
+}

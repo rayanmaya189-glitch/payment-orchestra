@@ -243,26 +243,35 @@ async fn validate_webhook_url(
 
 fn error_to_response(e: platform_error::PlatformError) -> (StatusCode, Json<ErrorResponse>) {
     let (status, code, message) = match &e {
-        platform_error::PlatformError::NotFound { resource, id } => (
+        platform_error::PlatformError::NotFound { .. } => (
             StatusCode::NOT_FOUND,
             "NOT_FOUND",
-            format!("{resource} {id} not found"),
+            "Resource not found".to_string(),
         ),
-        platform_error::PlatformError::Conflict(c) => (
-            StatusCode::CONFLICT,
-            "NO_ELIGIBLE_GATEWAY",
-            c.to_string(),
-        ),
-        platform_error::PlatformError::Validation(v) => (
-            StatusCode::BAD_REQUEST,
-            "VALIDATION_ERROR",
-            v.to_string(),
-        ),
-        _ => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "INTERNAL_ERROR",
-            "Internal error".to_string(),
-        ),
+        platform_error::PlatformError::Conflict(c) => {
+            tracing::error!(error = %platform_logging::mask_pii(&c.to_string()), "conflict error");
+            (
+                StatusCode::CONFLICT,
+                "NO_ELIGIBLE_GATEWAY",
+                "Request conflict".to_string(),
+            )
+        }
+        platform_error::PlatformError::Validation(v) => {
+            tracing::error!(error = %platform_logging::mask_pii(&v.to_string()), "validation error");
+            (
+                StatusCode::BAD_REQUEST,
+                "VALIDATION_ERROR",
+                "Invalid request".to_string(),
+            )
+        }
+        _ => {
+            tracing::error!(error = %platform_logging::mask_pii(&e.to_string()), "unhandled error");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "INTERNAL_ERROR",
+                "Internal error".to_string(),
+            )
+        }
     };
 
     (status, Json(ErrorResponse { error: message, code: code.to_string() }))

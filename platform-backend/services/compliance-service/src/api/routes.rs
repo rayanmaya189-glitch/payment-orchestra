@@ -23,7 +23,16 @@ async fn submit_kyb(State(state): State<AppState>, auth: AuthPrincipal, Json(req
     let operator_id = shared_types::derive_operator_id(&auth.principal_id, &auth.role, requested_operator_id);
     match state.service.submit_kyb(SubmitKybCommand { operator_id, principal_id: auth.principal_id, role: auth.role.clone() }).await {
         Ok(id) => Ok((axum::http::StatusCode::CREATED, Json(serde_json::json!({"kyb_case_id": id.to_string(), "status": "submitted"})))),
-        Err(e) => Err((axum::http::StatusCode::BAD_REQUEST, Json(serde_json::json!({"error": e.to_string()})))),
+        Err(e) => {
+            let msg = match &e {
+                platform_error::PlatformError::Internal(m) => {
+                    tracing::error!(error = %platform_logging::sanitize_error_message(m), "Internal error in compliance-service submit_kyb");
+                    "Internal error".to_string()
+                }
+                _ => e.to_string(),
+            };
+            Err((axum::http::StatusCode::BAD_REQUEST, Json(serde_json::json!({"error": msg}))))
+        }
     }
 }
 
@@ -31,7 +40,16 @@ async fn get_case(State(state): State<AppState>, auth: AuthPrincipal, Path(id): 
     let case_id = Uuid::parse_str(&id).unwrap_or(Uuid::nil());
     match state.service.get_case(GetKybCaseCommand { case_id, principal_id: auth.principal_id, role: auth.role.clone() }).await {
         Ok(c) => Ok(Json(KybCaseResponse { kyb_case_id: c.case_id.to_string(), status: c.status.as_str().to_string(), assigned_officer: c.assigned_officer.map(|u| u.to_string()), risk_score: c.risk_score })),
-        Err(e) => Err((axum::http::StatusCode::NOT_FOUND, Json(serde_json::json!({"error": e.to_string()})))),
+        Err(e) => {
+            let msg = match &e {
+                platform_error::PlatformError::Internal(m) => {
+                    tracing::error!(error = %platform_logging::sanitize_error_message(m), "Internal error in compliance-service get_case");
+                    "Internal error".to_string()
+                }
+                _ => e.to_string(),
+            };
+            Err((axum::http::StatusCode::NOT_FOUND, Json(serde_json::json!({"error": msg}))))
+        }
     }
 }
 
@@ -40,7 +58,16 @@ async fn assign_officer(State(state): State<AppState>, auth: AuthPrincipal, Path
     let officer_id = req["officer_id"].as_str().and_then(|s| Uuid::parse_str(s).ok()).unwrap_or(Uuid::nil());
     match state.service.assign_officer(AssignOfficerCommand { case_id, officer_id, principal_id: auth.principal_id, role: auth.role.clone() }).await {
         Ok(()) => Ok(Json(serde_json::json!({"status": "assigned"}))),
-        Err(e) => Err((axum::http::StatusCode::BAD_REQUEST, Json(serde_json::json!({"error": e.to_string()})))),
+        Err(e) => {
+            let msg = match &e {
+                platform_error::PlatformError::Internal(m) => {
+                    tracing::error!(error = %platform_logging::sanitize_error_message(m), "Internal error in compliance-service assign_officer");
+                    "Internal error".to_string()
+                }
+                _ => e.to_string(),
+            };
+            Err((axum::http::StatusCode::BAD_REQUEST, Json(serde_json::json!({"error": msg}))))
+        }
     }
 }
 
@@ -50,7 +77,16 @@ async fn decide_kyb(State(state): State<AppState>, auth: AuthPrincipal, Path(id)
     let reason = req["reason"].as_str().unwrap_or("").to_string();
     match state.service.decide(DecideKybCommand { case_id, decision, reason, principal_id: auth.principal_id, role: auth.role.clone() }).await {
         Ok(()) => Ok(Json(serde_json::json!({"status": "decided"}))),
-        Err(e) => Err((axum::http::StatusCode::BAD_REQUEST, Json(serde_json::json!({"error": e.to_string()})))),
+        Err(e) => {
+            let msg = match &e {
+                platform_error::PlatformError::Internal(m) => {
+                    tracing::error!(error = %platform_logging::sanitize_error_message(m), "Internal error in compliance-service decide_kyb");
+                    "Internal error".to_string()
+                }
+                _ => e.to_string(),
+            };
+            Err((axum::http::StatusCode::BAD_REQUEST, Json(serde_json::json!({"error": msg}))))
+        }
     }
 }
 

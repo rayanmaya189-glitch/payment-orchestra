@@ -3,8 +3,10 @@ use axum::{routing::get, Router};
 use platform_config::AppConfig;
 use platform_logging::ServiceLogger;
 use std::net::SocketAddr;
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 use tower_http::trace::TraceLayer;
+
+static STARTED_AT: LazyLock<std::time::Instant> = LazyLock::new(std::time::Instant::now);
 
 mod api;
 mod application;
@@ -43,6 +45,7 @@ async fn main() {
     let app = Router::new()
         .route("/healthz", get(healthz))
         .route("/readyz", get(readyz))
+        .route("/startupz", get(startupz))
         .nest("/v1", api::routes::router(app_state)
             .layer(platform_middleware::JwtAuthLayer::new(config.auth.clone())))
         .layer(platform_middleware::SecurityHeadersLayer)
@@ -67,4 +70,7 @@ async fn readyz() -> axum::Json<serde_json::Value> {
         "status": "ok",
         "checks": { "postgres": "not_checked", "redis": "not_checked" }
     }))
+}
+async fn startupz() -> axum::Json<serde_json::Value> {
+    axum::Json(platform_db::health::startup_response_with_uptime("connector-gateway", *STARTED_AT))
 }

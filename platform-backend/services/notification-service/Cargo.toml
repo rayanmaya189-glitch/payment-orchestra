@@ -25,3 +25,5 @@ tracing.workspace = true
 async-trait.workspace = true
 redis.workspace = true
 async-nats.workspace = true
+lettre = { version = "0.11", features = ["tokio1", "tokio1-native-tls"] }
+reqwest.workspace = true

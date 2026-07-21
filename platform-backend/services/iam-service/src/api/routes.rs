@@ -100,7 +100,7 @@ async fn login(
                 Some(&ip_address),
                 Some(&user_agent),
                 None,
-                Some(serde_json::json!({"error": e.to_string()})),
+                Some(serde_json::json!({"error": platform_logging::sanitize_error_message(&e.to_string())})),
             );
             Err((
                 axum::http::StatusCode::UNAUTHORIZED,

@@ -208,6 +208,8 @@ impl CurrencyAmount {
 mod tests {
     use super::*;
 
+    // --- TimeRange::new ---
+
     #[test]
     fn test_time_range_creation() {
         let now = Utc::now();
@@ -226,10 +228,117 @@ mod tests {
     }
 
     #[test]
+    fn test_time_range_equal_start_end_fails() {
+        let now = Utc::now();
+        let range = TimeRange::new(now, now);
+        assert!(range.is_err());
+        assert!(range.unwrap_err().contains("Start time must be before end time"));
+    }
+
+    #[test]
+    fn test_time_range_exceeds_365_days_fails() {
+        let now = Utc::now();
+        let start = now - chrono::Duration::days(366);
+        let range = TimeRange::new(start, now);
+        assert!(range.is_err());
+        assert!(range.unwrap_err().contains("365 days"));
+    }
+
+    #[test]
+    fn test_time_range_exactly_365_days_succeeds() {
+        let now = Utc::now();
+        let start = now - chrono::Duration::days(365);
+        let range = TimeRange::new(start, now);
+        assert!(range.is_ok());
+    }
+
+    // --- TimeRange defaults ---
+
+    #[test]
     fn test_time_range_defaults() {
         let range = TimeRange::last_24h();
         assert!(range.duration_hours() >= 23.9 && range.duration_hours() <= 24.1);
     }
+
+    #[test]
+    fn test_time_range_last_7d() {
+        let range = TimeRange::last_7d();
+        assert!(range.duration_hours() >= 167.9 && range.duration_hours() <= 168.1);
+    }
+
+    #[test]
+    fn test_time_range_last_30d() {
+        let range = TimeRange::last_30d();
+        assert!(range.duration_hours() >= 719.9 && range.duration_hours() <= 720.1);
+    }
+
+    // --- TimeRange::parse ---
+
+    #[test]
+    fn test_time_range_parse_valid() {
+        let range = TimeRange::parse("2025-01-01T00:00:00Z", "2025-01-02T00:00:00Z");
+        assert!(range.is_ok());
+        let r = range.unwrap();
+        assert!((r.duration_hours() - 24.0).abs() < 0.1);
+    }
+
+    #[test]
+    fn test_time_range_parse_invalid_start() {
+        let range = TimeRange::parse("not-a-date", "2025-01-02T00:00:00Z");
+        assert!(range.is_err());
+        assert!(range.unwrap_err().contains("Invalid start time"));
+    }
+
+    #[test]
+    fn test_time_range_parse_invalid_end() {
+        let range = TimeRange::parse("2025-01-01T00:00:00Z", "not-a-date");
+        assert!(range.is_err());
+        assert!(range.unwrap_err().contains("Invalid end time"));
+    }
+
+    #[test]
+    fn test_time_range_parse_with_timezone_offset() {
+        let range = TimeRange::parse("2025-06-01T10:00:00+05:00", "2025-06-02T10:00:00+05:00");
+        assert!(range.is_ok());
+        let r = range.unwrap();
+        assert!((r.duration_hours() - 24.0).abs() < 0.1);
+    }
+
+    #[test]
+    fn test_time_range_parse_start_after_end_fails() {
+        let range = TimeRange::parse("2025-01-02T00:00:00Z", "2025-01-01T00:00:00Z");
+        assert!(range.is_err());
+    }
+
+    // --- TimeRange::duration ---
+
+    #[test]
+    fn test_time_range_duration_hours() {
+        let now = Utc::now();
+        let start = now - chrono::Duration::hours(48);
+        let range = TimeRange::new(start, now).unwrap();
+        assert!((range.duration_hours() - 48.0).abs() < 0.1);
+    }
+
+    #[test]
+    fn test_time_range_duration_days() {
+        let now = Utc::now();
+        let start = now - chrono::Duration::days(7);
+        let range = TimeRange::new(start, now).unwrap();
+        assert!((range.duration_days() - 7.0).abs() < 0.01);
+    }
+
+    // --- TimeRange::Display ---
+
+    #[test]
+    fn test_time_range_display() {
+        let range = TimeRange::parse("2025-01-01T00:00:00Z", "2025-01-02T00:00:00Z").unwrap();
+        let display = format!("{range}");
+        assert!(display.contains("2025-01-01"));
+        assert!(display.contains("2025-01-02"));
+    }
+
+    // --- AggregationType ---
 
     #[test]
     fn test_aggregation_type() {
@@ -237,6 +346,34 @@ mod tests {
         assert_eq!(AggregationType::from_hours(72.0), AggregationType::Daily);
         assert_eq!(AggregationType::from_hours(60.0 * 24.0), AggregationType::Weekly);
     }
+
+    #[test]
+    fn test_aggregation_type_hourly_boundary() {
+        assert_eq!(AggregationType::from_hours(48.0), AggregationType::Hourly);
+        assert_eq!(AggregationType::from_hours(49.0), AggregationType::Daily);
+    }
+
+    #[test]
+    fn test_aggregation_type_daily_boundary() {
+        assert_eq!(AggregationType::from_hours(720.0), AggregationType::Daily);
+        assert_eq!(AggregationType::from_hours(721.0), AggregationType::Weekly);
+    }
+
+    #[test]
+    fn test_aggregation_type_weekly_boundary() {
+        assert_eq!(AggregationType::from_hours(2160.0), AggregationType::Weekly);
+        assert_eq!(AggregationType::from_hours(2161.0), AggregationType::Monthly);
+    }
+
+    #[test]
+    fn test_aggregation_type_labels() {
+        assert_eq!(AggregationType::Hourly.label(), "hourly");
+        assert_eq!(AggregationType::Daily.label(), "daily");
+        assert_eq!(AggregationType::Weekly.label(), "weekly");
+        assert_eq!(AggregationType::Monthly.label(), "monthly");
+    }
+
+    // --- DeclineCategory ---
 
     #[test]
     fn test_decline_category() {
@@ -247,10 +384,91 @@ mod tests {
     }
 
     #[test]
+    fn test_decline_category_all_codes() {
+        assert_eq!(DeclineCategory::from_code("05"), DeclineCategory::DoNotHonor);
+        assert_eq!(DeclineCategory::from_code("58"), DeclineCategory::DoNotHonor);
+        assert_eq!(DeclineCategory::from_code("51"), DeclineCategory::InsufficientFunds);
+        assert_eq!(DeclineCategory::from_code("54"), DeclineCategory::ExpiredCard);
+        assert_eq!(DeclineCategory::from_code("36"), DeclineCategory::RestrictedCard);
+        assert_eq!(DeclineCategory::from_code("43"), DeclineCategory::RestrictedCard);
+        assert_eq!(DeclineCategory::from_code("59"), DeclineCategory::SuspectedFraud);
+        assert_eq!(DeclineCategory::from_code("63"), DeclineCategory::SuspectedFraud);
+        assert_eq!(DeclineCategory::from_code("65"), DeclineCategory::IncorrectCvc);
+        assert_eq!(DeclineCategory::from_code("61"), DeclineCategory::ExceedsLimit);
+        assert_eq!(DeclineCategory::from_code("57"), DeclineCategory::MerchantRequest);
+        assert_eq!(DeclineCategory::from_code("41"), DeclineCategory::DoNotTryAgain);
+        assert_eq!(DeclineCategory::from_code("12"), DeclineCategory::InvalidTransaction);
+        assert_eq!(DeclineCategory::from_code("91"), DeclineCategory::ServiceUnavailable);
+        assert_eq!(DeclineCategory::from_code("96"), DeclineCategory::ServiceUnavailable);
+    }
+
+    #[test]
+    fn test_decline_category_unknown_codes() {
+        assert_eq!(DeclineCategory::from_code("00"), DeclineCategory::Other);
+        assert_eq!(DeclineCategory::from_code("XX"), DeclineCategory::Other);
+        assert_eq!(DeclineCategory::from_code(""), DeclineCategory::Other);
+    }
+
+    #[test]
+    fn test_decline_category_labels() {
+        assert_eq!(DeclineCategory::DoNotHonor.label(), "do_not_honor");
+        assert_eq!(DeclineCategory::InsufficientFunds.label(), "insufficient_funds");
+        assert_eq!(DeclineCategory::ExpiredCard.label(), "expired_card");
+        assert_eq!(DeclineCategory::RestrictedCard.label(), "restricted_card");
+        assert_eq!(DeclineCategory::SuspectedFraud.label(), "suspected_fraud");
+        assert_eq!(DeclineCategory::IncorrectCvc.label(), "incorrect_cvc");
+        assert_eq!(DeclineCategory::ExceedsLimit.label(), "exceeds_limit");
+        assert_eq!(DeclineCategory::MerchantRequest.label(), "merchant_request");
+        assert_eq!(DeclineCategory::DoNotTryAgain.label(), "do_not_try_again");
+        assert_eq!(DeclineCategory::InvalidTransaction.label(), "invalid_transaction");
+        assert_eq!(DeclineCategory::LimitExceeded.label(), "limit_exceeded");
+        assert_eq!(DeclineCategory::ServiceUnavailable.label(), "service_unavailable");
+        assert_eq!(DeclineCategory::Other.label(), "other");
+    }
+
+    // --- CurrencyAmount ---
+
+    #[test]
     fn test_currency_amount() {
         let amt = CurrencyAmount::new(1500, "usd").unwrap();
         assert_eq!(amt.as_major_units(), 15.0);
         assert!(CurrencyAmount::new(-1, "usd").is_err());
         assert!(CurrencyAmount::new(100, "us").is_err());
+    }
+
+    #[test]
+    fn test_currency_amount_uppercases() {
+        let amt = CurrencyAmount::new(100, "eur").unwrap();
+        assert_eq!(amt.currency, "EUR");
+    }
+
+    #[test]
+    fn test_currency_amount_zero() {
+        let amt = CurrencyAmount::new(0, "USD").unwrap();
+        assert_eq!(amt.as_major_units(), 0.0);
+    }
+
+    #[test]
+    fn test_currency_amount_negative_fails() {
+        assert!(CurrencyAmount::new(-500, "USD").is_err());
+    }
+
+    #[test]
+    fn test_currency_amount_wrong_length_currency() {
+        assert!(CurrencyAmount::new(100, "US").is_err());
+        assert!(CurrencyAmount::new(100, "EURO").is_err());
+    }
+
+    // --- AnalyticsMetric ---
+
+    #[test]
+    fn test_analytics_metric_labels() {
+        assert_eq!(AnalyticsMetric::Volume.label(), "volume");
+        assert_eq!(AnalyticsMetric::SuccessRate.label(), "success_rate");
+        assert_eq!(AnalyticsMetric::Latency.label(), "latency");
+        assert_eq!(AnalyticsMetric::Revenue.label(), "revenue");
+        assert_eq!(AnalyticsMetric::DeclineRate.label(), "decline_rate");
+        assert_eq!(AnalyticsMetric::AverageTransactionValue.label(), "avg_transaction_value");
+        assert_eq!(AnalyticsMetric::RefundRate.label(), "refund_rate");
     }
 }
