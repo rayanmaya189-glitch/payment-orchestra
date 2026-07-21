@@ -341,7 +341,193 @@ pub enum ConflictError {
 }
 ```
 
-## 10. TDD Test Cases for Shared Types
+## 10. Source Context (Gap: Payment Origin Tracking)
+
+Every `PaymentIntent` records who initiated the payment, enabling analytics segmentation by channel.
+
+```rust
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SourceContext {
+    pub source_type: SourceType,
+    pub source_id: Option<Uuid>,     // invoice_id, subscription_id, payment_link_id, etc.
+    pub source_metadata: Option<String>, // JSON: additional context
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum SourceType {
+    MerchantApi,        // direct API call from merchant server
+    Invoice,            // invoice-service initiated
+    Subscription,       // subscription renewal initiated
+    PaymentLink,        // hosted checkout page
+    AiAssistant,        // AI-suggested action (human-confirmed)
+    System,             // internal system action (e.g., retry)
+}
+```
+
+## 11. Payment Method Token Types (Gap: Token Lifecycle)
+
+Acquirer-issued tokens for recurring payments. The platform stores tokens but never raw card data.
+
+```rust
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum PaymentMethodType {
+    Card,
+    BankAccount,
+    Wallet,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum TokenStatus {
+    Active,
+    Expired,
+    Revoked,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PaymentMethodTokenInfo {
+    pub token_id: Uuid,
+    pub payment_method_type: PaymentMethodType,
+    pub last_four: String,
+    pub card_brand: Option<String>,    // visa, mastercard, amex, mada
+    pub expiry_month: Option<i32>,
+    pub expiry_year: Option<i32>,
+    pub token_status: TokenStatus,
+    pub acquirer_link_id: Uuid,        // tokens are per-acquirer
+    pub created_at: DateTimeWithTimeZone,
+    pub expires_at: Option<DateTimeWithTimeZone>,
+}
+```
+
+## 12. Outbound Webhook Types (Gap: Webhook Delivery)
+
+```rust
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum WebhookEventType {
+    PaymentCreated,
+    PaymentAuthorized,
+    PaymentCaptured,
+    PaymentFailed,
+    PaymentRefunded,
+    PaymentVoided,
+    SettlementMatched,
+    SettlementUnmatched,
+    ChargebackReceived,
+    ChargebackResolved,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WebhookSubscription {
+    pub subscription_id: Uuid,
+    pub operator_id: Uuid,
+    pub url: String,                    // HTTPS only, validated
+    pub event_types: Vec<WebhookEventType>,
+    pub secret: String,                 // for HMAC-SHA256 signing (stored hashed)
+    pub status: SubscriptionStatus,
+    pub created_at: DateTimeWithTimeZone,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum SubscriptionStatus {
+    Active,
+    Disabled,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WebhookDelivery {
+    pub delivery_id: Uuid,
+    pub subscription_id: Uuid,
+    pub event_type: WebhookEventType,
+    pub payload: String,                // JSON payload sent
+    pub status: DeliveryStatus,
+    pub attempt_count: u32,
+    pub last_attempt_at: Option<DateTimeWithTimeZone>,
+    pub next_retry_at: Option<DateTimeWithTimeZone>,
+    pub response_status_code: Option<u16>,
+    pub response_body: Option<String>,
+    pub created_at: DateTimeWithTimeZone,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum DeliveryStatus {
+    Pending,
+    Delivered,
+    Failed,
+    PermanentlyFailed,
+}
+```
+
+## 13. FX Rate Types (Gap: Multi-Currency)
+
+```rust
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FXRate {
+    pub source_currency: CurrencyCode,
+    pub target_currency: CurrencyCode,
+    pub rate: String,              // string to avoid float precision issues
+    pub rate_minor_units: i64,     // rate * 10^6 for integer math
+    pub source: String,            // "acquirer" | "ecb" | "cbr"
+    pub fetched_at: DateTimeWithTimeZone,
+    pub expires_at: DateTimeWithTimeZone,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FXQuote {
+    pub quote_id: Uuid,
+    pub source_amount: Money,
+    pub target_amount: Money,
+    pub rate: FXRate,
+    pub fee: Option<Money>,
+}
+```
+
+## 14. Settlement Cycle Types (Gap: T+N Handling)
+
+```rust
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum SettlementCycle {
+    SameDay,            // T+0
+    NextDay,            // T+1
+    TwoDays,            // T+2
+    ThreeDays,          // T+3
+    Weekly,             // T+7
+    Custom(u32),        // T+N
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SettlementExpectation {
+    pub payment_intent_id: Uuid,
+    pub acquirer_link_id: Uuid,
+    pub expected_settlement_date: Date,
+    pub settlement_cycle: SettlementCycle,
+    pub status: SettlementExpectationStatus,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum SettlementExpectationStatus {
+    Pending,
+    Settled,
+    Overdue,
+    Adjusted,
+}
+```
+
+## 15. Fee Variance Types (Gap: Fee Reconciliation)
+
+```rust
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FeeVariance {
+    pub payment_intent_id: Uuid,
+    pub acquirer_link_id: Uuid,
+    pub estimated_fee: Money,           // calculated at auth time
+    pub actual_fee: Money,              // from settlement record
+    pub variance_amount: Money,         // actual - estimated
+    pub variance_percent: f64,          // (actual - estimated) / estimated * 100
+    pub is_within_tolerance: bool,      // compared to per-acquirer tolerance threshold
+    pub detected_at: DateTimeWithTimeZone,
+}
+```
+
+## 16. TDD Test Cases for Shared Types
 
 ### Money Tests
 

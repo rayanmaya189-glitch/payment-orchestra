@@ -564,9 +564,16 @@ This Part is the authoritative home for the *security/compliance framing* of con
 
 ### 16.1 Payment Token Lifecycle Management (PCI-DSS)
 
-**TOK-001**: A `PaymentMethodToken` aggregate (new entity within BC-05 or a dedicated BC-18) manages the lifecycle of acquirer-issued payment method tokens, separated from connector credentials.
+**TOK-001**: A `PaymentMethodToken` aggregate (within BC-05, managed by `orchestration-service`) manages the lifecycle of acquirer-issued payment method tokens, separated from connector credentials.
 
-**TOK-002**: Token Entity (SeaORM — Rust):
+**TOK-002**: **PCI-DSS Token Classification (OQ-089 — Requires QSA Determination)**:
+- Acquirer-issued tokens may be classified as cardholder data under PCI-DSS depending on the token format and whether it can be used to reconstruct PAN
+- If tokens = cardholder data: CDE scope expands, TDE required on `payment_method_token` table, access controls tightened
+- If tokens ≠ cardholder data: lighter scope
+- **Platform assumes worst-case (tokens = cardholder data) for MVP** — TDE enabled, RLS enforced, access logged
+- Final classification requires QSA review before PCI-DSS assessment
+
+**TOK-003**: Token Entity (SeaORM — Rust):
 
 ```rust
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
@@ -590,11 +597,11 @@ pub struct Model {
 }
 ```
 
-**TOK-003**: Token lifecycle commands: `StorePaymentMethodToken`, `ExpirePaymentMethodToken`, `RevokePaymentMethodToken`, `RefreshPaymentMethodToken` (for account-updater scenarios per Part 2 EX-031a).
+**TOK-004**: Token lifecycle commands: `StorePaymentMethodToken`, `ExpirePaymentMethodToken`, `RevokePaymentMethodToken`, `RefreshPaymentMethodToken` (for account-updater scenarios per Part 2 EX-031a).
 
-**TOK-004**: All token access is logged to Tier 2 audit (BIZ-040). Token storage is separated from connector credentials to ensure QSA can clearly identify the cardholder data boundary.
+**TOK-005**: All token access is logged to Tier 2 audit (BIZ-040). Token storage is separated from connector credentials to ensure QSA can clearly identify the cardholder data boundary.
 
-**TOK-005**: Tokens are never returned in full via any read API. The dashboard shows last-four, brand, and expiry only.
+**TOK-006**: Tokens are never returned in full via any read API. The dashboard shows last-four, brand, and expiry only.
 
 ### 16.2 Phishing-Resistant MFA Mandate
 

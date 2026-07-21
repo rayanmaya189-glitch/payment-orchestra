@@ -242,6 +242,41 @@ Per Part 1 OQ-003, the final MVP acquirer/PSP shortlist requires business confir
 
 **WEBHOOK-MIN-003**: Webhook delivery to merchant endpoints outside the UAE region requires explicit merchant opt-in and data transfer disclosure (ties to Part 16.12 Data Residency).
 
+### 9.4 Gap: 3DS Passthrough (Orchestrator — Not Gateway)
+
+**3DS-PASSTHROUGH-001**: As an orchestrator/router, the platform does NOT implement 3DS challenge flow. The acquirer/PSP handles 3DS entirely.
+
+**3DS-PASSTHROUGH-002**: When the acquirer returns `Requires3DS` status with `three_ds_data`, the connector adapter normalizes this into the platform's `ThreeDsData` value object and passes it through to `orchestration-service`. The platform does not parse or validate 3DS-specific fields.
+
+**3DS-PASSTHROUGH-003**: The merchant SDK receives `three_ds_data` from the platform and redirects the cardholder to the acquirer's 3DS page. After 3DS completion, the acquirer returns the final authorization result.
+
+**3DS-PASSTHROUGH-004**: The platform's `PaymentIntent` state machine does NOT have a `Requires3DS` state — the `AuthorizePaymentIntent` command returns `Requires3DS` status in the response, and the merchant SDK handles the 3DS flow externally. The next call from the merchant is `CapturePaymentIntent` after 3DS completion.
+
+### 9.5 Gap: FX Rate and Cross-Border Handling
+
+**FX-001**: Each connector adapter exposes a `get_fx_rate` method that queries the acquirer for current conversion rates. This is used by `orchestration-service` for cost-based routing (comparing total cost across acquirers for cross-border transactions).
+
+**FX-002**: Cross-border detection logic: a transaction is cross-border if the card issuing country (from BIN lookup or acquirer response) differs from the acquirer's country. This determines whether `cross_border_fee_bps` applies.
+
+**FX-003**: FX rate responses include a `expires_at` timestamp — rates are valid for a configurable window (default: 5 minutes). Expired rates trigger a fresh query.
+
+### 9.6 Gap: Settlement Cycle Configuration
+
+**SETTLE-CYC-001**: Each connector adapter declares its settlement cycle via `ConnectorCapabilities.settlement_cycle`. This is used by `orchestration-service` to calculate `expected_settlement_date` on `PaymentIntent`.
+
+**SETTLE-CYC-002**: Settlement cycle is per-connector, not per-transaction. Multiple acquirers may have different settlement timings.
+
+**SETTLE-CYC-003**: The settlement cycle affects:
+- `SettlementExpectation` creation in `reconciliation-service`
+- Overdue settlement alerting (JOB-SETTLE-AGE-001)
+- Merchant-facing "expected settlement" display on dashboard
+
+### 9.7 Gap: Fee Cap and Tiered Pricing
+
+**FEE-CAP-001**: `FeeStructure` includes `max_fee_cap` and `min_fee_floor` to handle acquirers that cap fees at a maximum or enforce minimum fees.
+
+**FEE-CAP-002**: `FeeStructure` includes optional `tiered_pricing: Vec<FeeTier>` for acquirers that offer volume-based pricing tiers. The routing algorithm can use total cost (including tiered pricing) for cost-based routing decisions.
+
 ---
 
 ## 10. Open Items Carried Forward

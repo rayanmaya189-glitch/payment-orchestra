@@ -66,6 +66,71 @@ pub struct Model {
 }
 ```
 
+### AGG-SettlementExpectation (Gap: T+N Settlement Tracking)
+
+**Purpose**: Track expected settlement dates for each transaction. Enables aging reports and overdue settlement alerting.
+
+**State Entity (SeaORM)**:
+
+```rust
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
+#[sea_orm(table_name = "settlement_expectation")]
+pub struct Model {
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub expectation_id: Uuid,
+    pub payment_intent_id: Uuid,
+    pub acquirer_link_id: Uuid,
+    pub expected_settlement_date: Date,
+    pub settlement_cycle: String,       // 'same_day' | 'next_day' | 'two_days' | 'three_days' | 'weekly'
+    pub status: String,                 // 'pending' | 'settled' | 'overdue' | 'adjusted'
+    pub settled_amount_minor_units: Option<i64>,
+    pub settled_at: Option<DateTimeWithTimeZone>,
+    pub created_at: DateTimeWithTimeZone,
+}
+```
+
+**Domain Events**: `SettlementExpected`, `SettlementOverdue`, `SettlementCompleted`
+
+### AGG-FeeVariance (Gap: Fee Reconciliation)
+
+**Purpose**: Track estimated vs. actual fee differences per transaction. Enables merchant fee dispute and acquirer billing error detection.
+
+**State Entity (SeaORM)**:
+
+```rust
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
+#[sea_orm(table_name = "fee_variance")]
+pub struct Model {
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub variance_id: Uuid,
+    pub payment_intent_id: Uuid,
+    pub acquirer_link_id: Uuid,
+    pub estimated_fee_minor_units: i64,     // calculated at auth time from GatewayProfile.FeeStructure
+    pub actual_fee_minor_units: i64,        // from settlement record FeeBreakdown
+    pub variance_amount_minor_units: i64,   // actual - estimated
+    pub variance_percent: f64,              // (actual - estimated) / estimated * 100
+    pub is_within_tolerance: bool,          // compared to per-acquirer tolerance threshold
+    pub tolerance_threshold_percent: f64,   // configurable per acquirer (default: 5.0%)
+    pub status: String,                     // 'within_tolerance' | 'variance_detected' | 'disputed' | 'resolved'
+    pub detected_at: DateTimeWithTimeZone,
+    pub resolved_at: Option<DateTimeWithTimeZone>,
+    pub resolution_note: Option<String>,
+}
+```
+
+**Domain Events**: `FeeVarianceDetected`, `FeeVarianceResolved`
+
+**Commands**:
+- `TrackFeeVariance` — called after settlement matching to compare estimated vs. actual fee
+- `ResolveFeeVariance` — mark variance as resolved (acquirer confirmed billing correct, or credit issued)
+
+**Fee Variance Tracking Flow**:
+1. On `PaymentCaptured`: record `estimated_fee` from `GatewayProfile.FeeStructure.calculate_fee()`
+2. On `SettlementRecordMatched`: extract `actual_fee` from `FeeBreakdown` in settlement record
+3. Calculate `variance = actual - estimated`
+4. If `|variance| / estimated > tolerance_threshold` → create `FeeVariance` record, emit `FeeVarianceDetected`
+5. Alert merchant via notification-service if variance exceeds tolerance
+
 ---
 
 ## 2. Reconciliation Matching Algorithm
@@ -210,6 +275,11 @@ pub trait LedgerEntryRepository: Send + Sync {
 | `ReconciliationExceptionResolved` | analytics-service |
 | `LedgerEntryCreated` | (internal) |
 | `LedgerEntryReconciled` | analytics-service |
+| `SettlementExpected` | analytics-service |  // Gap: track expected settlement dates
+| `SettlementOverdue` | notification-service, analytics-service |  // Gap: overdue settlement alerting
+| `SettlementCompleted` | analytics-service, invoice-service |  // Gap: settlement completion
+| `FeeVarianceDetected` | notification-service, analytics-service |  // Gap: fee discrepancy alert
+| `FeeVarianceResolved` | analytics-service |  // Gap: fee dispute resolution |
 
 ---
 
@@ -219,3 +289,53 @@ pub trait LedgerEntryRepository: Send + Sync {
 - **JOB-006**: Reconciliation exception aging alerts
 - **LEDGER-VERIFY-001**: Daily ledger balance verification
 - **CONSIST-001**: Daily cross-service consistency check (invoice ↔ payment)
+- **SETTLE-AGE-001**: Gap — Daily sweep of `settlement_expectation` records. Transactions past `expected_settlement_date` with status `pending` → transition to `overdue`, emit `SettlementOverdue`, alert via notification-service
+- **FEE-VAR-001**: Gap — Daily fee variance report. Aggregate all `fee_variance` records with status `variance_detected` in last 24h, generate summary report for merchant dashboard
+- **SETTLE-ADJUST-001**: Gap — Handle settlement adjustments. When an acquirer issues a post-settlement correction (common with chargebacks, reserves), create adjustment `LedgerEntry` and update `SettlementExpectation` status to `adjusted`
+
+## 6. Settlement Timing Flow (Gap: T+N Handling)
+
+```
+1. PaymentAuthorized → create SettlementExpectation
+   a. Load GatewayProfile.settlement_cycle for the acquirer
+   b. Calculate expected_settlement_date = authorized_date + settlement_cycle
+   c. Store SettlementExpectation with status = 'pending'
+
+2. SettlementRecordMatched → update SettlementExpectation
+   a. Find matching SettlementExpectation by payment_intent_id
+   b. Update status = 'settled', settled_amount, settled_at
+   c. Emit SettlementCompleted
+
+3. Daily JOB-SETTLE-AGE-001 → check for overdue
+   a. Query SettlementExpectation WHERE status = 'pending' AND expected_settlement_date < today
+   b. Transition to 'overdue'
+   c. Emit SettlementOverdue
+   d. Alert merchant via notification-service
+
+4. SettlementAdjustment → handle post-settlement corrections
+   a. If settlement amount differs from original SettlementRecord
+   b. Create adjustment LedgerEntry (debit/credit pair)
+   c. Update SettlementExpectation status = 'adjusted'
+   d. Emit SettlementCompleted with adjusted amount
+```
+
+## 7. Fee Variance Flow (Gap: Fee Reconciliation)
+
+```
+1. PaymentCaptured → record estimated fee
+   a. Load GatewayProfile.FeeStructure for the acquirer
+   b. Calculate estimated_fee = FeeStructure.calculate_fee(amount, is_cross_border, requires_fx, daily_volume)
+   c. Store on PaymentIntent or as separate record
+
+2. SettlementRecordMatched → compare with actual fee
+   a. Extract actual_fee from settlement record FeeBreakdown
+   b. Calculate variance = actual_fee - estimated_fee
+   c. If |variance| / estimated_fee > tolerance_threshold → create FeeVariance record
+   d. Emit FeeVarianceDetected
+
+3. Merchant reviews fee variance on dashboard
+   a. Can dispute via ResolveFeeVariance command
+   b. Platform notifies acquirer of dispute
+   c. Acquirer confirms or issues credit
+   d. Mark FeeVariance as resolved
+```

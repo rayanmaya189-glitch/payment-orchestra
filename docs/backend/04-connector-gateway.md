@@ -18,6 +18,12 @@ pub trait AcquirerConnector: Send + Sync {
     async fn refund(&self, req: RefundRequest) -> Result<RefundResponse, ConnectorError>;
     async fn status_check(&self, req: StatusCheckRequest) -> Result<StatusCheckResponse, ConnectorError>;
 
+    // Gap: FX rate query — acquirer provides conversion rates for cross-border transactions
+    async fn get_fx_rate(&self, req: FxRateRequest) -> Result<FxRateResponse, ConnectorError>;
+
+    // Gap: Settlement cycle query — acquirer reports expected settlement timing
+    fn settlement_cycle(&self) -> SettlementCycle;
+
     async fn poll_settlement(&self, req: PollSettlementRequest) -> Result<Vec<RawSettlementRecord>, ConnectorError>;
     fn verify_webhook_signature(&self, headers: &HeaderMap, body: &[u8]) -> Result<(), ConnectorError>;
     fn parse_webhook(&self, body: &[u8]) -> Result<ConnectorEvent, ConnectorError>;
@@ -93,11 +99,22 @@ pub struct FeeStructure {
     pub percentage_fee_bps: i32,       // basis points
     pub cross_border_fee_bps: i32,
     pub currency_conversion_fee_bps: i32,
+    // Gap: fee caps and minimums for accurate cost calculation
+    pub max_fee_cap: Option<Money>,    // maximum total fee (cap)
+    pub min_fee_floor: Option<Money>,  // minimum total fee (floor)
+    pub tiered_pricing: Option<Vec<FeeTier>>, // tiered pricing by volume
+}
+
+// Gap: tiered fee pricing
+pub struct FeeTier {
+    pub min_volume_minor: i64,         // tier lower bound (daily volume)
+    pub max_volume_minor: Option<i64>, // tier upper bound (None = unlimited)
+    pub percentage_fee_bps: i32,       // fee for this tier
 }
 
 impl FeeStructure {
-    /// Calculate total fee for a transaction
-    pub fn calculate_fee(&self, amount: &Money, is_cross_border: bool, requires_fx: bool) -> Money {
+    /// Calculate total fee for a transaction (Gap: with caps and tiers)
+    pub fn calculate_fee(&self, amount: &Money, is_cross_border: bool, requires_fx: bool, daily_volume: i64) -> Money {
         let percentage_fee = (amount.amount_minor_units * self.percentage_fee_bps as i64) / 10000;
         let cross_border = if is_cross_border {
             (amount.amount_minor_units * self.cross_border_fee_bps as i64) / 10000
@@ -106,10 +123,40 @@ impl FeeStructure {
             (amount.amount_minor_units * self.currency_conversion_fee_bps as i64) / 10000
         } else { 0 };
 
+        let mut total = self.fixed_fee.amount_minor_units + percentage_fee + cross_border + fx_fee;
+
+        // Gap: apply tiered pricing if configured
+        if let Some(tiers) = &self.tiered_pricing {
+            if let Some(tier) = tiers.iter().find(|t| {
+                daily_volume >= t.min_volume_minor
+                    && t.max_volume_minor.map_or(true, |max| daily_volume < max)
+            }) {
+                total = self.fixed_fee.amount_minor_units
+                    + (amount.amount_minor_units * tier.percentage_fee_bps as i64) / 10000
+                    + cross_border + fx_fee;
+            }
+        }
+
+        // Gap: apply fee cap
+        if let Some(cap) = &self.max_fee_cap {
+            total = total.min(cap.amount_minor_units);
+        }
+
+        // Gap: apply fee floor
+        if let Some(floor) = &self.min_fee_floor {
+            total = total.max(floor.amount_minor_units);
+        }
+
         Money {
-            amount_minor_units: self.fixed_fee.amount_minor_units + percentage_fee + cross_border + fx_fee,
+            amount_minor_units: total,
             currency: amount.currency.clone(),
         }
+    }
+
+    /// Gap: determine if a transaction is cross-border
+    /// Cross-border = card issuing country ≠ acquirer country
+    pub fn is_cross_border(&self, card_issuer_country: &str, acquirer_country: &str) -> bool {
+        card_issuer_country != acquirer_country
     }
 }
 
@@ -404,9 +451,12 @@ pub struct ConnectorCapabilities {
     pub supports_native_idempotency_key: bool,
     pub supports_webhook_settlement: bool,
     pub supports_realtime_status_check: bool,
+    pub supports_fx_conversion: bool,               // Gap: acquirer can convert currency
     pub supported_card_schemes: Vec<CardScheme>,
     pub supported_currencies: Vec<CurrencyCode>,
     pub settlement_format: SettlementFormat,
+    pub settlement_cycle: SettlementCycle,           // Gap: T+N settlement timing per acquirer
+    pub cross_border_fee_bps: i32,                  // Gap: cross-border fee for routing cost calculation
 }
 ```
 
@@ -426,8 +476,49 @@ pub struct AuthorizeResponse {
     pub acquirer_reference: Option<String>,
     pub decline_reason: Option<DeclineReason>,
     pub approved_amount: Option<Money>, // for partial auth
-    pub three_ds_data: Option<ThreeDsData>, // for 3DS step-up
+    pub three_ds_data: Option<ThreeDsData>, // Gap: 3DS passthrough — acquirer handles 3DS, we just pass through
     pub latency_ms: u32,
+}
+
+// Gap: 3DS passthrough — as an orchestrator, we do NOT implement 3DS.
+// The acquirer/PSP handles 3DS challenge flow. We pass through three_ds_data
+// so the merchant SDK can redirect the cardholder to the acquirer's 3DS page.
+// After 3DS completion, the acquirer returns the final auth result.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ThreeDsData {
+    pub three_ds_version: String,       // "1.0" or "2.x"
+    pub acs_url: Option<String>,        // acquirer's ACS URL for redirect
+    pub pareq: Option<String>,          // PaReq token
+    pub md: Option<String>,             // Merchant Data
+    pub session_data: Option<String>,   // 3DS2 session data
+}
+
+// Gap: FX rate query types
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FxRateRequest {
+    pub source_currency: CurrencyCode,
+    pub target_currency: CurrencyCode,
+    pub amount: Money,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FxRateResponse {
+    pub rate: String,
+    pub rate_minor_units: i64,     // rate * 10^6 for integer math
+    pub converted_amount: Money,
+    pub fee: Option<Money>,
+    pub expires_at: DateTimeWithTimeZone,
+}
+
+// Gap: Settlement cycle per acquirer
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum SettlementCycle {
+    SameDay,            // T+0
+    NextDay,            // T+1
+    TwoDays,            // T+2
+    ThreeDays,          // T+3
+    Weekly,             // T+7
+    Custom(u32),        // T+N
 }
 
 pub enum AuthorizeStatus {

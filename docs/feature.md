@@ -77,6 +77,9 @@ A single-tenant, API-first payment orchestration platform that enables merchants
 | F-043 | Partial authorization handling | Must | BC-05 |
 | F-044 | Zero-amount authorization (card verification) | Must | BC-05 |
 | F-045 | Scheme compliance monitoring | Should | BC-04 |
+| F-046 | Gap: Pre-authorization risk check integration | Must | BC-05, BC-11 |
+| F-047 | Gap: Risk-based routing rules | Should | BC-05 |
+| F-048 | Gap: Source context on PaymentIntent (payment origin tracking) | Must | BC-05 |
 
 ### M4 — Reconciliation
 
@@ -90,6 +93,11 @@ A single-tenant, API-first payment orchestration platform that enables merchants
 | F-055 | Reconciliation exception queue | Must | BC-09 |
 | F-056 | Settlement file security (SFTP, checksum) | Must | BC-09 |
 | F-057 | Ledger balance verification (daily job) | Must | BC-09 |
+| F-058 | Gap: Settlement timing (T+N) tracking and overdue alerting | Must | BC-09 |
+| F-059 | Gap: Fee variance tracking (estimated vs. actual fee) | Must | BC-09 |
+| F-060a | Gap: Partial settlement handling | Must | BC-09 |
+| F-060b | Gap: Refund settlement reconciliation | Must | BC-09 |
+| F-060c | Gap: Settlement adjustment handling (post-settlement corrections) | Must | BC-09 |
 
 ### M5 — Products Layer
 
@@ -109,6 +117,14 @@ A single-tenant, API-first payment orchestration platform that enables merchants
 | F-071 | Webhook payload versioning | Must | Cross-cutting |
 | F-072 | Webhook delivery backpressure & dedup | Must | Cross-cutting |
 | F-073 | Notification service (email/SMS) | Must | BC-14 |
+| F-074 | Gap: Outbound webhook subscription management | Must | Cross-cutting |
+| F-075 | Gap: Outbound webhook delivery retry with exponential backoff | Must | Cross-cutting |
+| F-076 | Gap: Outbound webhook delivery audit trail | Must | Cross-cutting |
+| F-077 | Gap: Payment method token lifecycle (store, expire, revoke) | Must | BC-05 |
+| F-078 | Gap: Chargeback representment evidence management | Must | BC-10 |
+| F-079 | Gap: Chargeback representment deadline tracking | Must | BC-10 |
+| F-080a | Gap: FX rate query integration for cross-border transactions | Should | BC-04 |
+| F-080b | Gap: Cross-border detection for fee calculation | Should | BC-04 |
 
 ### M6 — AI Assistant
 

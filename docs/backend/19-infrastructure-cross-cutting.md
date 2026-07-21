@@ -407,6 +407,14 @@ impl DataRetentionEnforcer {
 | LEDGER-VERIFY-001: Ledger balance | reconciliation-service | Daily | Yes |
 | CONSIST-001: Cross-service consistency | reconciliation-service | Daily | Yes |
 | AUD-005: Audit hash chain verify | iam-service | Daily | Yes |
+| SETTLE-AGE-001: Settlement age check | reconciliation-service | Daily | Yes |
+| FEE-VAR-001: Fee variance report | reconciliation-service | Daily | Yes |
+| SETTLE-ADJUST-001: Settlement adjustment | reconciliation-service | Per event | Yes |
+| WEBHOOK-RETRY-001: Webhook retry | webhook-delivery-service | Every 30s | Yes |
+| WEBHOOK-CLEANUP-001: Webhook cleanup | webhook-delivery-service | Daily | Yes |
+| TOKEN-EXPIRY-001: Token expiry check | orchestration-service | Daily | Yes |
+| RISK-STATS-001: Risk stats aggregation | risk-service | Hourly | Yes |
+| CHARGEBACK-DEADLINE-001: Representment deadline | dispute-service | Daily | Yes |
 
 ---
 
@@ -756,6 +764,136 @@ impl WebhookThrottler {
     }
 }
 ```
+
+---
+
+## 35. Gap: Outbound Webhook Delivery Service (Critical)
+
+Merchants integrate with the platform via outbound webhooks. This is the primary programmatic integration path.
+
+### Architecture
+
+```
+Domain Event (NATS) → Webhook Delivery Service → Merchant Endpoint
+                      (async, retry, signing)
+```
+
+### Webhook Subscription Management
+
+```rust
+// WebhookSubscription aggregate (owned by api-gateway or dedicated service)
+pub struct WebhookSubscription {
+    pub subscription_id: Uuid,
+    pub operator_id: Uuid,
+    pub url: String,                    // HTTPS only, SSRF-validated
+    pub event_types: Vec<WebhookEventType>,
+    pub secret_hash: Vec<u8>,           // argon2id hash of signing secret
+    pub status: SubscriptionStatus,
+    pub created_at: DateTimeWithTimeZone,
+}
+
+pub enum WebhookEventType {
+    PaymentCreated,
+    PaymentAuthorized,
+    PaymentCaptured,
+    PaymentFailed,
+    PaymentRefunded,
+    PaymentVoided,
+    SettlementMatched,
+    SettlementUnmatched,
+    ChargebackReceived,
+    ChargebackResolved,
+}
+```
+
+### Webhook Delivery Entity
+
+```rust
+pub struct WebhookDelivery {
+    pub delivery_id: Uuid,
+    pub subscription_id: Uuid,
+    pub event_type: WebhookEventType,
+    pub payload: String,                // JSON payload
+    pub signature: String,              // HMAC-SHA256(secret, payload)
+    pub status: DeliveryStatus,
+    pub attempt_count: u32,
+    pub last_attempt_at: Option<DateTimeWithTimeZone>,
+    pub next_retry_at: Option<DateTimeWithTimeZone>,
+    pub response_status_code: Option<u16>,
+    pub response_body: Option<String>,
+    pub created_at: DateTimeWithTimeZone,
+}
+
+pub enum DeliveryStatus {
+    Pending,
+    Delivered,
+    Failed,
+    PermanentlyFailed,  // after max retries exhausted
+}
+```
+
+### Delivery Flow
+
+```
+1. Domain event published to NATS (e.g., PaymentAuthorized)
+2. Webhook Delivery Service subscribes to all payment events
+3. For each event:
+   a. Find all active WebhookSubscriptions for the operator that include this event_type
+   b. For each subscription:
+      i.   Create WebhookDelivery record (status=Pending)
+      ii.  Build JSON payload (event_type, data, timestamp, subscription_id)
+      iii. Sign payload: HMAC-SHA256(subscription.secret, payload)
+      iv.  POST to merchant URL with signature in X-Webhook-Signature header
+      v.   If HTTP 2xx: status=Delivered
+      vi.  If non-2xx or timeout: increment attempt_count, schedule retry
+```
+
+### Retry Policy
+
+```
+Attempt 1: immediate
+Attempt 2: 1 second delay
+Attempt 3: 5 seconds delay
+Attempt 4: 30 seconds delay
+Attempt 5: 5 minutes delay
+Attempt 6: 30 minutes delay
+Attempt 7: 2 hours delay
+Attempt 8: 8 hours delay (final attempt)
+After 8 failures: status=PermanentlyFailed, alert merchant
+```
+
+### Payload Signing (Merchant Verification)
+
+```rust
+pub fn sign_webhook_payload(secret: &[u8], payload: &[u8]) -> String {
+    let mut hmac = Hmac::<Sha256>::new_from_slice(secret).unwrap();
+    hmac.update(payload);
+    format!("sha256={}", hex::encode(hmac.finalize().into_bytes()))
+}
+
+pub fn verify_webhook_signature(secret: &[u8], payload: &[u8], signature: &str) -> bool {
+    let expected = sign_webhook_payload(secret, payload);
+    // Constant-time comparison to prevent timing attacks
+    expected.len() == signature.len()
+        && expected.bytes().zip(signature.bytes()).fold(0, |acc, (a, b)| acc | (a ^ b)) == 0
+}
+```
+
+### Webhook Security
+
+- **WEBHOOK-SEC-001**: URLs must be HTTPS (SSRF-validated)
+- **WEBHOOK-SEC-002**: Payload signed with merchant-specific HMAC-SHA256
+- **WEBHOOK-SEC-003**: Signature in `X-Webhook-Signature` header
+- **WEBHOOK-SEC-004**: Delivery log retained for 30 days (audit trail)
+- **WEBHOOK-SEC-005**: Merchant can view delivery history on dashboard
+- **WEBHOOK-SEC-006**: Rate limit: max 1000 deliveries per minute per subscription
+
+### Background Job
+
+| Job | Service | Schedule | Description |
+|---|---|---|---|
+| WEBHOOK-RETRY-001 | webhook-delivery-service | Every 30s | Process pending retries, deliver webhooks |
+| WEBHOOK-CLEANUP-001 | webhook-delivery-service | Daily | Archive deliveries older than 30 days |
 
 ---
 

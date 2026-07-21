@@ -91,6 +91,18 @@ pub struct Model {
     pub purpose: String, // 'payment' | 'card_verification'
     pub metadata: Option<String>, // JSON
 
+    // Source Context — who initiated this payment (Gap: analytics segmentation)
+    pub source_type: Option<String>,        // 'merchant_api' | 'invoice' | 'subscription' | 'payment_link' | 'ai_assistant' | 'system'
+    pub source_id: Option<Uuid>,            // invoice_id, subscription_id, payment_link_id, etc.
+
+    // Risk Score — pre-authorization risk assessment (Gap: risk integration)
+    pub risk_score: Option<f64>,            // 0.0 - 1.0, set before authorization
+    pub risk_level: Option<String>,         // 'low' | 'medium' | 'high' | 'critical'
+
+    // Settlement Timing — expected settlement date (Gap: T+N handling)
+    pub expected_settlement_date: Option<Date>,
+    pub settlement_cycle: Option<String>,   // 'same_day' | 'next_day' | 'two_days' | 'three_days' | 'weekly'
+
     // Gateway Profile Link — tracks which gateway handled this order
     pub gateway_profile_id: Option<Uuid>,           // which gateway profile was selected
     pub gateway_profile_version: Option<i32>,        // snapshot of profile at selection time
@@ -155,6 +167,62 @@ pub struct Model {
 }
 ```
 
+#### AGG-03: PaymentMethodToken (Aggregate Root) — Gap: Token Lifecycle
+
+**Identity**: `token_id: Uuid` (UUIDv7)
+
+**Purpose**: Manage acquirer-issued payment method tokens for recurring payments. The platform never stores raw card data — tokens are opaque references issued by acquirers.
+
+**Invariant (INV-06)**: A token is scoped to a specific `MerchantAcquirerLink` and cannot be used with a different acquirer.
+
+**Invariant (INV-07)**: A token in `Revoked` or `Expired` state cannot be used to create new `PaymentIntent`s.
+
+**State Entity (SeaORM)**:
+
+```rust
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
+#[sea_orm(table_name = "payment_method_token")]
+pub struct Model {
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub token_id: Uuid,
+    pub operator_id: Uuid,
+    pub payment_method_type: String,    // 'card' | 'bank_account' | 'wallet'
+    pub last_four: String,
+    pub card_brand: Option<String>,     // 'visa' | 'mastercard' | 'amex' | 'mada'
+    pub expiry_month: Option<i32>,
+    pub expiry_year: Option<i32>,
+    pub token_status: String,           // 'active' | 'expired' | 'revoked'
+    pub acquirer_link_id: Uuid,         // FK to MerchantAcquirerLink
+    pub acquirer_token_reference: String, // opaque token from acquirer
+    pub encrypted_token: Vec<u8>,       // envelope-encrypted (PCI-DSS: token = cardholder data per OQ-089)
+    pub created_at: DateTimeWithTimeZone,
+    pub expires_at: Option<DateTimeWithTimeZone>,
+    pub revoked_at: Option<DateTimeWithTimeZone>,
+    pub revocation_reason: Option<String>,
+}
+```
+
+**Commands**:
+- `StorePaymentMethodToken` — store acquirer-issued token after successful tokenization
+- `ExpirePaymentMethodToken` — mark token as expired (card expiry or account updater)
+- `RevokePaymentMethodToken` — revoke token (merchant request or security concern)
+- `RefreshPaymentMethodToken` — account-updater: acquirer notifies of card refresh
+
+**Domain Events**: `PaymentMethodTokenStored`, `PaymentMethodTokenExpired`, `PaymentMethodTokenRevoked`
+
+**Repository Interface**:
+
+```rust
+#[async_trait]
+pub trait PaymentMethodTokenRepository: Send + Sync {
+    async fn load(&self, id: Uuid) -> Result<Option<PaymentMethodToken>, PlatformError>;
+    async fn save(&self, token: &PaymentMethodToken) -> Result<(), PlatformError>;
+    async fn find_active_for_operator(&self, operator_id: Uuid) -> Result<Vec<PaymentMethodToken>, PlatformError>;
+    async fn find_by_acquirer_link(&self, acquirer_link_id: Uuid) -> Result<Vec<PaymentMethodToken>, PlatformError>;
+    async fn find_by_acquirer_reference(&self, acquirer_token_ref: &str) -> Result<Option<PaymentMethodToken>, PlatformError>;
+}
+```
+
 ---
 
 ## 2. Commands
@@ -168,6 +236,11 @@ pub struct CreatePaymentIntentCommand {
     pub purpose: PaymentPurpose, // Payment | CardVerification
     pub metadata: Option<serde_json::Value>,
     pub preferred_gateway_profile_id: Option<Uuid>, // optional: force specific gateway
+    // Gap: source context for analytics segmentation
+    pub source_type: SourceType,                     // who initiated this payment
+    pub source_id: Option<Uuid>,                     // invoice_id, subscription_id, etc.
+    // Gap: payment method token for recurring payments
+    pub payment_method_token_id: Option<Uuid>,       // acquirer-issued token for recurring
 }
 
 pub enum PaymentPurpose {
@@ -261,18 +334,23 @@ pub struct AuthorizePaymentIntentCommand {
 
 **Produces**: `PaymentAuthorizationAttempted` (EVT-02), then `PaymentAuthorized` (EVT-03) or `PaymentFailed` (EVT-06)
 
-**Routing Algorithm (with Gateway Profile Selection)**:
+**Routing Algorithm (with Gateway Profile Selection and Risk Integration)**:
 1. Load active `RoutingPolicy`
 2. Filter rules by card scheme, currency, amount
 3. Map to active `MerchantAcquirerLink` IDs
 4. Load `GatewayProfile` for each candidate link
 5. Filter by gateway profile limits (min/max amount, daily/monthly volume, card scheme, currency)
 6. Filter by gateway profile status (active only)
-7. Apply gateway rotation strategy (priority, round-robin, cost-based, etc.)
-8. Exclude already-attempted links
-9. Select first eligible candidate
-10. Calculate fee for selected gateway profile
-11. Record `gateway_profile_id` on `PaymentIntent` and `RoutingAttempt`
+7. **[Gap: Risk Check]** If `risk-service` enabled for tenant (OQ-009), call `AssessRisk` synchronously. If risk_score > operator-configured threshold, apply risk-based routing rule:
+   - Route to acquirer with best fraud screening (configured per `GatewayProfile`)
+   - Or reject with `HIGH_RISK_DECLINED` if no suitable acquirer
+8. Apply gateway rotation strategy (priority, round-robin, cost-based, etc.)
+9. **[Gap: Risk-Weighted Routing]** For `SuccessRateBased` and `CostBased` strategies, weight by (authorization_rate × (1 - risk_penalty)) where risk_penalty is derived from historical fraud rates per acquirer
+10. Exclude already-attempted links
+11. Select first eligible candidate
+12. Calculate fee for selected gateway profile
+13. **[Gap: Settlement Timing]** Calculate `expected_settlement_date` from acquirer's `settlement_cycle` on `GatewayProfile`
+14. Record `gateway_profile_id`, `source_type`, `source_id`, `risk_score`, `expected_settlement_date` on `PaymentIntent` and `RoutingAttempt`
 
 ### Order-Gateway Profile Linking Flow
 
@@ -718,9 +796,13 @@ async fn test_inv_07_settlement_match_refs_exactly_one_payment_intent() {
 | `PaymentPartiallyRefunded` | reconciliation-service | notification-service | — | — |
 | `RoutingPolicyActivated` | analytics-service | ai-assistant-service | — | — |
 | `RoutingPolicyDeactivated` | analytics-service | — | — | — |
+| `PaymentMethodTokenStored` | subscription-service | analytics-service | — | — |
+| `PaymentMethodTokenExpired` | subscription-service | notification-service | — | — |
+| `PaymentMethodTokenRevoked` | subscription-service | notification-service | — | — |
+| `RiskScoreAssigned` | analytics-service | ai-assistant-service | — | — |
 
 | Event | Fields | Published To |
-|---|---|---|
+|---|---|---|---|
 | `PaymentIntentCreated` | payment_intent_id, amount, currency, purpose | NATS |
 | `PaymentAuthorizationAttempted` | payment_intent_id, acquirer_link_id, routing_policy_version, decline_reason, latency_ms | NATS |
 | `PaymentAuthorized` | payment_intent_id, acquirer_reference, acquirer_link_id | NATS |
@@ -733,6 +815,10 @@ async fn test_inv_07_settlement_match_refs_exactly_one_payment_intent() {
 | `PaymentPartiallyRefunded` | payment_intent_id, refund_amount, remaining_refundable | NATS |
 | `RoutingPolicyActivated` | routing_policy_id, version, rules_hash | NATS |
 | `RoutingPolicyDeactivated` | routing_policy_id, version | NATS |
+| `PaymentMethodTokenStored` | token_id, payment_method_type, last_four, card_brand, acquirer_link_id | NATS |
+| `PaymentMethodTokenExpired` | token_id, last_four, acquirer_link_id | NATS |
+| `PaymentMethodTokenRevoked` | token_id, last_four, acquirer_link_id, revocation_reason | NATS |
+| `RiskScoreAssigned` | payment_intent_id, risk_score, risk_level, rule_version | NATS |
 
 ---
 

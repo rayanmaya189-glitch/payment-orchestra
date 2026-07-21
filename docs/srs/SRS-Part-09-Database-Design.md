@@ -684,6 +684,120 @@ GRANT SELECT ON payment_events TO ai_assistant_service;
 
 **RETAIN-002**: The `retention_audit_log` is append-only and retained for 7 years (compliance).
 
+### 12.8 Gap: New Table Schemas (Settlement Timing, Fee Variance, Tokens, Webhooks)
+
+#### Settlement Expectation Table (Gap: T+N Tracking)
+
+```sql
+CREATE TABLE settlement_expectation (
+    expectation_id UUID PRIMARY KEY,
+    payment_intent_id UUID NOT NULL,
+    acquirer_link_id UUID NOT NULL,
+    expected_settlement_date DATE NOT NULL,
+    settlement_cycle VARCHAR(20) NOT NULL,  -- 'same_day' | 'next_day' | 'two_days' | 'three_days' | 'weekly'
+    status VARCHAR(20) NOT NULL,            -- 'pending' | 'settled' | 'overdue' | 'adjusted'
+    settled_amount_minor_units BIGINT,
+    settled_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_settlement_expectation_status ON settlement_expectation(status);
+CREATE INDEX idx_settlement_expectation_expected_date ON settlement_expectation(expected_settlement_date);
+CREATE INDEX idx_settlement_expectation_payment_intent ON settlement_expectation(payment_intent_id);
+```
+
+#### Fee Variance Table (Gap: Fee Reconciliation)
+
+```sql
+CREATE TABLE fee_variance (
+    variance_id UUID PRIMARY KEY,
+    payment_intent_id UUID NOT NULL,
+    acquirer_link_id UUID NOT NULL,
+    estimated_fee_minor_units BIGINT NOT NULL,
+    actual_fee_minor_units BIGINT NOT NULL,
+    variance_amount_minor_units BIGINT NOT NULL,
+    variance_percent DOUBLE PRECISION NOT NULL,
+    is_within_tolerance BOOLEAN NOT NULL,
+    tolerance_threshold_percent DOUBLE PRECISION NOT NULL DEFAULT 5.0,
+    status VARCHAR(20) NOT NULL,            -- 'within_tolerance' | 'variance_detected' | 'disputed' | 'resolved'
+    detected_at TIMESTAMPTZ NOT NULL,
+    resolved_at TIMESTAMPTZ,
+    resolution_note TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_fee_variance_status ON fee_variance(status);
+CREATE INDEX idx_fee_variance_payment_intent ON fee_variance(payment_intent_id);
+```
+
+#### Payment Method Token Table (Gap: Token Lifecycle)
+
+```sql
+CREATE TABLE payment_method_token (
+    token_id UUID PRIMARY KEY,
+    operator_id UUID NOT NULL,
+    payment_method_type VARCHAR(20) NOT NULL,
+    last_four VARCHAR(4) NOT NULL,
+    card_brand VARCHAR(20),
+    expiry_month INTEGER,
+    expiry_year INTEGER,
+    token_status VARCHAR(20) NOT NULL,      -- 'active' | 'expired' | 'revoked'
+    acquirer_link_id UUID NOT NULL,
+    acquirer_token_reference VARCHAR(255) NOT NULL,
+    encrypted_token BYTEA NOT NULL,         -- envelope-encrypted
+    created_at TIMESTAMPTZ NOT NULL,
+    expires_at TIMESTAMPTZ,
+    revoked_at TIMESTAMPTZ,
+    revocation_reason TEXT
+);
+
+CREATE INDEX idx_payment_method_token_operator ON payment_method_token(operator_id);
+CREATE INDEX idx_payment_method_token_acquirer_link ON payment_method_token(acquirer_link_id);
+CREATE INDEX idx_payment_method_token_status ON payment_method_token(token_status);
+CREATE UNIQUE INDEX idx_payment_method_token_acquirer_ref ON payment_method_token(acquirer_token_reference);
+```
+
+#### Webhook Subscription Table (Gap: Outbound Webhooks)
+
+```sql
+CREATE TABLE webhook_subscription (
+    subscription_id UUID PRIMARY KEY,
+    operator_id UUID NOT NULL,
+    url TEXT NOT NULL,                      -- HTTPS only
+    event_types JSONB NOT NULL,             -- array of event type strings
+    secret_hash BYTEA NOT NULL,             -- argon2id hash
+    status VARCHAR(20) NOT NULL,            -- 'active' | 'disabled'
+    created_at TIMESTAMPTZ NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL
+);
+
+CREATE INDEX idx_webhook_subscription_operator ON webhook_subscription(operator_id);
+CREATE INDEX idx_webhook_subscription_status ON webhook_subscription(status);
+```
+
+#### Webhook Delivery Table (Gap: Outbound Webhooks)
+
+```sql
+CREATE TABLE webhook_delivery (
+    delivery_id UUID PRIMARY KEY,
+    subscription_id UUID NOT NULL,
+    event_type VARCHAR(50) NOT NULL,
+    payload TEXT NOT NULL,
+    signature VARCHAR(100) NOT NULL,        -- HMAC-SHA256
+    status VARCHAR(20) NOT NULL,            -- 'pending' | 'delivered' | 'failed' | 'permanently_failed'
+    attempt_count INTEGER NOT NULL DEFAULT 0,
+    last_attempt_at TIMESTAMPTZ,
+    next_retry_at TIMESTAMPTZ,
+    response_status_code INTEGER,
+    response_body TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_webhook_delivery_subscription ON webhook_delivery(subscription_id);
+CREATE INDEX idx_webhook_delivery_status ON webhook_delivery(status);
+CREATE INDEX idx_webhook_delivery_next_retry ON webhook_delivery(next_retry_at) WHERE status = 'pending';
+```
+
 ---
 
 ## 13. Open Items Carried Forward

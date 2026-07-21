@@ -219,6 +219,17 @@ EventEnvelope {
 | EVT-17 | ChargebackReceived | BC-10 | BC-14, BC-15, BC-12 |
 | EVT-18 | RepresentmentSubmitted | BC-10 | BC-15 |
 | EVT-19 | ChargebackResolved | BC-10 | BC-06 (funds impact note), BC-15 |
+| EVT-20 | PaymentMethodTokenStored | BC-05 | BC-08 (subscription), BC-15 (analytics) |
+| EVT-21 | PaymentMethodTokenExpired | BC-05 | BC-08, BC-14 (notification) |
+| EVT-22 | PaymentMethodTokenRevoked | BC-05 | BC-08, BC-14 |
+| EVT-23 | RiskScoreAssigned | BC-11 | BC-15 (analytics), BC-12 |
+| EVT-24 | SettlementExpected | BC-09 | BC-15 (analytics) |
+| EVT-25 | SettlementOverdue | BC-09 | BC-14 (alert), BC-15 |
+| EVT-26 | SettlementCompleted | BC-09 | BC-06, BC-08, BC-15 |
+| EVT-27 | FeeVarianceDetected | BC-09 | BC-14 (alert), BC-15 |
+| EVT-28 | FeeVarianceResolved | BC-09 | BC-15 |
+| EVT-29 | WebhookDelivered | Cross-cutting | BC-15 (audit) |
+| EVT-30 | WebhookDeliveryFailed | Cross-cutting | BC-14 (alert), BC-15 |
 
 *(Supporting-context events — Operator lifecycle, IAM role changes, KYB status changes, notification delivery, document upload/OCR completion — are cataloged in §5 alongside their owning contexts, to keep this table focused on money-movement-relevant events per BIZ-040's audit priority.)*
 

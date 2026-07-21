@@ -334,6 +334,60 @@ pub struct FeeBreakdown {
 
 **EVT-REPLAY-002**: The outbox relay includes a monotonic sequence number per aggregate in the event, and consumers track the last processed sequence per aggregate — an event with a sequence number ≤ the last processed sequence is rejected as a replay.
 
+### 12.8 Gap: Source Context for Payment Origin Tracking (Orchestrator-Specific)
+
+**SOURCE-001**: Every `PaymentIntent` records a `SourceContext` value object indicating who initiated the payment:
+- `MerchantApi` — direct API call from merchant server
+- `Invoice` — invoice-service initiated
+- `Subscription` — subscription renewal initiated
+- `PaymentLink` — hosted checkout page
+- `AiAssistant` — AI-suggested action (human-confirmed per BR-041-1)
+- `System` — internal system action (retry, scheduled job)
+
+**SOURCE-002**: Source context enables analytics segmentation: "Which channel drives the most successful authorizations?" and "What's the failover rate for subscription payments vs. one-time?"
+
+**SOURCE-003**: Source context is recorded on `PaymentIntentCreated` event and immutable thereafter.
+
+### 12.9 Gap: Pre-Authorization Risk Check Integration
+
+**RISK-INT-001**: When `risk-service` is enabled for the tenant (OQ-009), `AuthorizePaymentIntent` calls `AssessRisk` synchronously before the routing algorithm runs. The risk score is stored on `PaymentIntent` and influences routing:
+- score < 0.3 (low): normal routing
+- score 0.3-0.7 (medium): normal routing, log risk factor
+- score 0.7-0.9 (high): route to acquirer with best fraud screening (per `GatewayProfile`)
+- score > 0.9 (critical): reject with `HIGH_RISK_DECLINED` (configurable per operator)
+
+**RISK-INT-002**: Risk-based routing rules can be added to `RoutingPolicy` to override normal priority when risk_score exceeds a threshold.
+
+**RISK-INT-003**: Risk assessment latency must be bounded (default: 200ms p99) to avoid degrading checkout path performance. If risk-service is slow, degrade to no-risk-check mode with a metric.
+
+### 12.10 Gap: Settlement Timing (T+N) Configuration
+
+**SETTLE-T-001**: Each `GatewayProfile` includes a `settlement_cycle` field (SameDay, NextDay, TwoDays, ThreeDays, Weekly, Custom) indicating the acquirer's settlement timing.
+
+**SETTLE-T-002**: On `PaymentAuthorized`, the orchestration service calculates `expected_settlement_date = authorized_date + settlement_cycle` and stores it on `PaymentIntent`.
+
+**SETTLE-T-003**: `reconciliation-service` creates a `SettlementExpectation` record and monitors for overdue settlements (JOB-SETTLE-AGE-001).
+
+### 12.11 Gap: Payment Method Token Lifecycle
+
+**TOKEN-001**: `PaymentMethodToken` aggregate manages acquirer-issued tokens for recurring payments. The platform never stores raw card data.
+
+**TOKEN-002**: Tokens are scoped to a specific `MerchantAcquirerLink` — a token from Acquirer A cannot be used with Acquirer B.
+
+**TOKEN-003**: Token lifecycle: `Active → Expired | Revoked`. Tokens in terminal state cannot create new `PaymentIntent`s.
+
+**TOKEN-004**: Account-updater integration: acquirer notifies of card refresh, platform updates token reference.
+
+### 12.12 Gap: 3DS Passthrough (Orchestrator — Not Gateway)
+
+**3DS-001**: As an orchestrator/router, the platform does NOT implement 3DS challenge flow. The acquirer/PSP handles 3DS entirely.
+
+**3DS-002**: When the acquirer returns `Requires3DS` status with `three_ds_data`, the platform passes this through to the merchant SDK. The merchant SDK redirects the cardholder to the acquirer's 3DS page.
+
+**3DS-003**: After 3DS completion, the acquirer returns the final authorization result. The platform does not participate in the 3DS callback — this is between the cardholder, merchant SDK, and acquirer.
+
+**3DS-004**: The `three_ds_data` field on `AuthorizeResponse` is an opaque passthrough — the platform never parses or validates 3DS-specific fields.
+
 ---
 
 ## 13. Open Items Carried Forward

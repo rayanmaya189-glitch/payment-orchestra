@@ -42,6 +42,7 @@
 | SVC-15 | `analytics-service` | BC-15 Analytics & Reporting | Rust | ClickHouse driver | ClickHouse |
 | SVC-17 | `api-gateway` | Cross-cutting (not a bounded context) | Rust (Axum) | SeaORM | Redis (rate-limit counters only) |
 | SVC-18 | `ai-gateway` | Cross-cutting routing/guardrail layer in front of SVC-12 | Rust (Axum) | SeaORM | Redis (rate limits), Postgres (guardrail audit log) |
+| SVC-19 | `webhook-delivery-service` | Cross-cutting outbound webhook delivery | Rust (SeaORM) | SeaORM | PostgreSQL (subscriptions, delivery logs) |
 
 ### 1.2 Deliberate Deviations from Strict 1:1 Mapping
 
@@ -189,6 +190,14 @@ Each domain service publishes its own `.proto` service definition (full contract
 
 ### 5.12 SVC-15 `analytics-service`
 - Pure event consumer across effectively all streams; writes append-only into ClickHouse; exposes read-only query endpoints for dashboards (UC-070) and report export (UC-071). Never receives direct write commands from users — all its data is derived.
+
+### 5.13 Gap: SVC-19 `webhook-delivery-service` (Outbound Webhooks)
+- Subscribes to payment lifecycle events (PaymentAuthorized, PaymentCaptured, PaymentFailed, PaymentRefunded, etc.) from orchestration-service via NATS JetStream.
+- For each event: finds matching WebhookSubscriptions for the operator, builds JSON payload, signs with HMAC-SHA256, POSTs to merchant endpoint.
+- Manages delivery retry queue with exponential backoff (1s → 2s → 5s → ... → 8h, 8 attempts max).
+- Exposes webhook subscription CRUD API for merchant dashboard.
+- Retains delivery logs for 30 days (audit trail).
+- Critical for merchant integration — without outbound webhooks, no programmatic integration is possible.
 
 ---
 
