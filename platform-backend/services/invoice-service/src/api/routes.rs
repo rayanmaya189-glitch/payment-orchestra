@@ -35,8 +35,9 @@ async fn create_invoice(
         .map(|dt| dt.with_timezone(&chrono::Utc))
         .unwrap_or_else(|_| chrono::Utc::now() + chrono::Duration::days(30));
 
+    let operator_id = shared_types::derive_operator_id(&auth.principal_id, &auth.role, None);
     let cmd = crate::application::services::CreateInvoiceCommand {
-        operator_id: Uuid::nil(),
+        operator_id,
         order_reference: req.order_reference,
         line_items,
         due_date,

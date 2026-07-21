@@ -60,7 +60,10 @@ async fn create_subscription(
 
     match state.service.create_subscription(cmd).await {
         Ok(id) => {
-            let sub = state.service.get_subscription(id).await.unwrap();
+            let sub = state.service.get_subscription(id).await.map_err(|e| (
+                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({"error": "Failed to retrieve created subscription", "code": "INTERNAL_ERROR"})),
+            ))?;
             Ok((
                 axum::http::StatusCode::CREATED,
                 Json(SubscriptionResponse {

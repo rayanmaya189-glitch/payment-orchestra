@@ -17,3 +17,5 @@ chrono.workspace = true
 hex.workspace = true
 tracing.workspace = true
 async-trait.workspace = true
+hmac = "0.12"
+sha2 = "0.10"

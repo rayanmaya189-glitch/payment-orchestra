@@ -28,9 +28,8 @@ async fn create_profile(
     auth: AuthPrincipal,
     Json(req): Json<CreateGatewayProfileRequest>,
 ) -> Result<(StatusCode, Json<GatewayProfileResponse>), (StatusCode, Json<ErrorResponse>)> {
-    // ABAC: principal_id from JWT; operator_id derivation requires principal→operator mapping
-    // TODO: Replace with proper operator_id lookup from auth context
-    let operator_id = Uuid::nil();
+    // Derive operator_id from auth context
+    let operator_id = shared_types::derive_operator_id(&auth.principal_id, &auth.role, None);
 
     platform_logging::log_security_event(
         "connector-gateway",

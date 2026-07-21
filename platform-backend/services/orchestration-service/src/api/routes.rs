@@ -28,8 +28,10 @@ async fn create_payment_intent(
     auth: AuthPrincipal,
     Json(req): Json<CreatePaymentIntentRequest>,
 ) -> Result<(StatusCode, Json<PaymentIntentResponse>), (StatusCode, Json<ErrorResponse>)> {
+    let operator_id = shared_types::derive_operator_id(&auth.principal_id, &auth.role, req.operator_id);
+
     let cmd = CreatePaymentIntentCommand {
-        operator_id: req.operator_id.unwrap_or(Uuid::nil()),
+        operator_id,
         principal_id: auth.principal_id,
         role: auth.role.clone(),
         amount: req.amount,
@@ -84,12 +86,13 @@ async fn authorize(
     Path(payment_intent_id): Path<Uuid>,
     Json(req): Json<AuthorizePaymentIntentRequest>,
 ) -> Result<Json<PaymentIntentResponse>, (StatusCode, Json<ErrorResponse>)> {
+    let operator_id = shared_types::derive_operator_id(&auth.principal_id, &auth.role, None);
     let cmd = AuthorizePaymentIntentCommand {
         payment_intent_id,
         payment_method_token_id: req.payment_method_token_id,
         principal_id: auth.principal_id,
         role: auth.role.clone(),
-        operator_id: Uuid::nil(),
+        operator_id,
     };
 
     match state.service.authorize(cmd).await {
@@ -104,12 +107,13 @@ async fn capture(
     Path(payment_intent_id): Path<Uuid>,
     Json(req): Json<CapturePaymentIntentRequest>,
 ) -> Result<Json<PaymentIntentResponse>, (StatusCode, Json<ErrorResponse>)> {
+    let operator_id = shared_types::derive_operator_id(&auth.principal_id, &auth.role, None);
     let cmd = CapturePaymentIntentCommand {
         payment_intent_id,
         amount: req.amount,
         principal_id: auth.principal_id,
         role: auth.role.clone(),
-        operator_id: Uuid::nil(),
+        operator_id,
     };
 
     match state.service.capture(cmd).await {
@@ -123,11 +127,12 @@ async fn void(
     auth: AuthPrincipal,
     Path(payment_intent_id): Path<Uuid>,
 ) -> Result<Json<PaymentIntentResponse>, (StatusCode, Json<ErrorResponse>)> {
+    let operator_id = shared_types::derive_operator_id(&auth.principal_id, &auth.role, None);
     let cmd = VoidPaymentIntentCommand {
         payment_intent_id,
         principal_id: auth.principal_id,
         role: auth.role.clone(),
-        operator_id: Uuid::nil(),
+        operator_id,
     };
 
     match state.service.void(cmd).await {
@@ -142,12 +147,13 @@ async fn refund(
     Path(payment_intent_id): Path<Uuid>,
     Json(req): Json<RefundPaymentIntentRequest>,
 ) -> Result<Json<PaymentIntentResponse>, (StatusCode, Json<ErrorResponse>)> {
+    let operator_id = shared_types::derive_operator_id(&auth.principal_id, &auth.role, None);
     let cmd = RefundPaymentIntentCommand {
         payment_intent_id,
         amount: req.amount,
         principal_id: auth.principal_id,
         role: auth.role.clone(),
-        operator_id: Uuid::nil(),
+        operator_id,
     };
 
     match state.service.refund(cmd).await {

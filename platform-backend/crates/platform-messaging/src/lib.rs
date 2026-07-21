@@ -18,11 +18,23 @@ use platform_error::PlatformError;
 pub struct EventPublisher {
     client: async_nats::Client,
     stream_name: String,
+    /// HMAC-SHA256 signing key for event integrity (SRS AUD-004, EVT-SIG-001).
+    /// If None, events are published without signatures.
+    signing_key: Option<Vec<u8>>,
 }
 
 impl EventPublisher {
     /// Connect to NATS and create/ensure the JetStream stream exists.
     pub async fn new(nats_url: &str, stream_name: &str) -> Result<Self, PlatformError> {
+        Self::new_with_signing(nats_url, stream_name, None).await
+    }
+
+    /// Connect with event signing key for HMAC-SHA256 event integrity.
+    pub async fn new_with_signing(
+        nats_url: &str,
+        stream_name: &str,
+        signing_key: Option<Vec<u8>>,
+    ) -> Result<Self, PlatformError> {
         let client = async_nats::connect(nats_url)
             .await
             .map_err(|e| PlatformError::Unavailable(format!("Failed to connect to NATS: {e}")))?;
@@ -43,17 +55,78 @@ impl EventPublisher {
         Ok(Self {
             client,
             stream_name: stream_name.to_string(),
+            signing_key,
         })
     }
 
+    /// Sign an event envelope with HMAC-SHA256 (SRS EVT-SIG-001).
+    ///
+    /// The signature covers: event_id + aggregate_type + aggregate_id + event_type + payload.
+    /// This prevents tampering with events in transit or at rest.
+    fn sign_event(&self, event: &EventEnvelope) -> Option<Vec<u8>> {
+        use hmac::{Hmac, Mac};
+        use sha2::Sha256;
+
+        let key = self.signing_key.as_ref()?;
+
+        type HmacSha256 = Hmac<Sha256>;
+        let mut mac = HmacSha256::new_from_slice(key).ok()?;
+
+        // Sign the event envelope fields
+        mac.update(event.event_id.as_bytes());
+        mac.update(event.aggregate_type.as_bytes());
+        mac.update(event.aggregate_id.as_bytes());
+        mac.update(event.event_type.as_bytes());
+        if let Some(payload_str) = event.payload.as_str() {
+            mac.update(payload_str.as_bytes());
+        }
+
+        Some(mac.finalize().into_bytes().to_vec())
+    }
+
+    /// Verify an event signature with HMAC-SHA256.
+    pub fn verify_signature(event: &EventEnvelope, signing_key: &[u8]) -> bool {
+        use hmac::{Hmac, Mac};
+        use sha2::Sha256;
+
+        let expected_signature = match &event.signature {
+            Some(sig) => sig,
+            None => return false, // No signature = verification fails
+        };
+
+        type HmacSha256 = Hmac<Sha256>;
+        let mut mac = match HmacSha256::new_from_slice(signing_key) {
+            Ok(m) => m,
+            Err(_) => return false,
+        };
+
+        mac.update(event.event_id.as_bytes());
+        mac.update(event.aggregate_type.as_bytes());
+        mac.update(event.aggregate_id.as_bytes());
+        mac.update(event.event_type.as_bytes());
+        if let Some(payload_str) = event.payload.as_str() {
+            mac.update(payload_str.as_bytes());
+        }
+
+        let computed = mac.finalize().into_bytes();
+        computed.as_slice() == expected_signature.as_slice()
+    }
+
     /// Publish event directly to NATS JetStream (low-latency path).
+    /// Signs the event with HMAC-SHA256 if a signing key is configured.
     pub async fn publish(&self, event: &EventEnvelope) -> Result<(), PlatformError> {
         let subject = format!(
             "{}.{}.{}",
             self.stream_name, event.aggregate_type, event.event_type
         );
 
-        let payload = serde_json::to_vec(event)
+        // Sign the event if signing key is configured (SRS EVT-SIG-001)
+        let mut event_to_publish = event.clone();
+        if let Some(signature) = self.sign_event(event) {
+            event_to_publish.signature = Some(signature);
+        }
+
+        let payload = serde_json::to_vec(&event_to_publish)
             .map_err(|e| PlatformError::Internal(format!("Failed to serialize event: {e}")))?;
 
         self.client
