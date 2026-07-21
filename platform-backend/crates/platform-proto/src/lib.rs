@@ -1,3 +1,4 @@
+#![allow(dead_code, unused_imports)]
 //! Generated gRPC protobuf types and service stubs.
 //!
 //! This crate contains auto-generated Rust code from the `.proto` definitions

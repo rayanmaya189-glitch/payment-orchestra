@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use axum::{routing::get, Router};
 use platform_config::AppConfig;
 use platform_logging::ServiceLogger;

@@ -1,3 +1,4 @@
+#![allow(dead_code, unused_imports)]
 //! Shared OpenAPI/Swagger definitions for all services.
 //!
 //! Provides `ApiDoc` struct that aggregates all service APIs into a single

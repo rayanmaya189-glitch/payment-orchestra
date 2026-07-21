@@ -2,7 +2,6 @@
 //!
 //! Implements the tonic service trait generated from the proto definitions.
 
-use tonic;
 use uuid::Uuid;
 
 use crate::application::services::PaymentService;

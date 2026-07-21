@@ -26,7 +26,7 @@ impl SagaService for SagaServiceImpl {
                 compensation_action: s.compensation_action, status: SagaStepStatus::Pending,
                 error: None, started_at: None, completed_at: None }
         }).collect();
-        let mut saga = SagaInstance::new(cmd.saga_type, steps, cmd.payload);
+        let saga = SagaInstance::new(cmd.saga_type, steps, cmd.payload);
         self.repo.save(&saga).await?;
         Ok(saga.saga_id)
     }

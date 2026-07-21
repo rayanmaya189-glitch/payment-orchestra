@@ -9,6 +9,7 @@ use uuid::Uuid;
 use crate::api::AppState;
 use crate::application::commands::*;
 use crate::application::services::IamService;
+use platform_middleware::AuthPrincipal;
 
 pub fn router(state: AppState) -> Router {
     Router::new()
@@ -36,25 +37,57 @@ struct LoginResponseJson {
 
 async fn login(
     State(state): State<AppState>,
+    axum::http::request::Parts { headers, .. }: axum::http::request::Parts,
     Json(req): Json<LoginRequest>,
 ) -> Result<Json<LoginResponseJson>, (axum::http::StatusCode, Json<serde_json::Value>)> {
+    let ip_address = extract_client_ip(&headers);
+    let user_agent = headers
+        .get("user-agent")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("unknown")
+        .to_string();
+
     let cmd = LoginCommand {
         email: req.email,
         password: req.password,
-        ip_address: "127.0.0.1".to_string(), // TODO: extract from request
-        user_agent: "unknown".to_string(),
+        ip_address: ip_address.clone(),
+        user_agent: user_agent.clone(),
     };
 
     match state.service.login(cmd).await {
-        Ok(resp) => Ok(Json(LoginResponseJson {
-            access_token: resp.access_token,
-            refresh_token: resp.refresh_token,
-            expires_in: resp.expires_in,
-        })),
-        Err(e) => Err((
-            axum::http::StatusCode::UNAUTHORIZED,
-            Json(serde_json::json!({"error": e.to_string(), "code": "UNAUTHORIZED"})),
-        )),
+        Ok(resp) => {
+            platform_logging::log_security_event(
+                "iam-service",
+                platform_logging::SecurityEventType::LoginSuccess,
+                platform_logging::SecurityOutcome::Success,
+                Some(resp.principal_id),
+                Some(&ip_address),
+                Some(&user_agent),
+                None,
+                None,
+            );
+            Ok(Json(LoginResponseJson {
+                access_token: resp.access_token,
+                refresh_token: resp.refresh_token,
+                expires_in: resp.expires_in,
+            }))
+        }
+        Err(e) => {
+            platform_logging::log_security_event(
+                "iam-service",
+                platform_logging::SecurityEventType::LoginFailed,
+                platform_logging::SecurityOutcome::Blocked,
+                None,
+                Some(&ip_address),
+                Some(&user_agent),
+                None,
+                Some(serde_json::json!({"error": e.to_string()})),
+            );
+            Err((
+                axum::http::StatusCode::UNAUTHORIZED,
+                Json(serde_json::json!({"error": e.to_string(), "code": "UNAUTHORIZED"})),
+            ))
+        }
     }
 }
 
@@ -65,12 +98,20 @@ struct RefreshTokenRequest {
 
 async fn refresh_token(
     State(state): State<AppState>,
+    axum::http::request::Parts { headers, .. }: axum::http::request::Parts,
     Json(req): Json<RefreshTokenRequest>,
 ) -> Result<Json<LoginResponseJson>, (axum::http::StatusCode, Json<serde_json::Value>)> {
+    let ip_address = extract_client_ip(&headers);
+    let user_agent = headers
+        .get("user-agent")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("unknown")
+        .to_string();
+
     let cmd = RefreshTokenCommand {
         refresh_token: req.refresh_token,
-        ip_address: "127.0.0.1".to_string(),
-        user_agent: "unknown".to_string(),
+        ip_address,
+        user_agent,
     };
 
     match state.service.refresh_token(cmd).await {
@@ -140,6 +181,7 @@ struct CreateApiKeyResponseJson {
 
 async fn create_api_key(
     State(state): State<AppState>,
+    auth: AuthPrincipal,
     Path(principal_id): Path<String>,
     Json(req): Json<CreateApiKeyRequest>,
 ) -> Result<(axum::http::StatusCode, Json<CreateApiKeyResponseJson>), (axum::http::StatusCode, Json<serde_json::Value>)> {
@@ -148,6 +190,14 @@ async fn create_api_key(
             axum::http::StatusCode::BAD_REQUEST,
             Json(serde_json::json!({"error": "Invalid principal ID", "code": "INVALID_ID"})),
         ))?;
+
+    // Object-level authorization: only allow creating API keys for your own principal
+    if auth.principal_id != pid && auth.role != "platform_admin" {
+        return Err((
+            axum::http::StatusCode::FORBIDDEN,
+            Json(serde_json::json!({"error": "Not authorized to create API keys for this principal", "code": "FORBIDDEN"})),
+        ));
+    }
 
     let cmd = CreateApiKeyCommand {
         principal_id: pid,
@@ -174,6 +224,7 @@ async fn create_api_key(
 
 async fn revoke_api_key(
     State(state): State<AppState>,
+    auth: AuthPrincipal,
     Path(api_key_id): Path<String>,
 ) -> Result<Json<serde_json::Value>, (axum::http::StatusCode, Json<serde_json::Value>)> {
     let key_id = Uuid::parse_str(&api_key_id)
@@ -184,7 +235,7 @@ async fn revoke_api_key(
 
     let cmd = RevokeApiKeyCommand {
         api_key_id: key_id,
-        principal_id: Uuid::nil(), // TODO: extract from auth context
+        principal_id: auth.principal_id,
     };
 
     match state.service.revoke_api_key(cmd).await {
@@ -201,4 +252,20 @@ async fn health_check() -> Json<serde_json::Value> {
         "status": "ok",
         "service": "iam-service"
     }))
+}
+
+/// Extract client IP from X-Real-IP or X-Forwarded-For headers.
+/// Falls back to "127.0.0.1" for local connections.
+fn extract_client_ip(headers: &axum::http::HeaderMap) -> String {
+    // Prefer X-Real-IP (set by reverse proxy)
+    if let Some(ip) = headers.get("x-real-ip").and_then(|v| v.to_str().ok()) {
+        return ip.to_string();
+    }
+    // Fall back to X-Forwarded-For (first IP in chain is the client)
+    if let Some(forwarded) = headers.get("x-forwarded-for").and_then(|v| v.to_str().ok()) {
+        if let Some(first) = forwarded.split(',').next() {
+            return first.trim().to_string();
+        }
+    }
+    "127.0.0.1".to_string()
 }

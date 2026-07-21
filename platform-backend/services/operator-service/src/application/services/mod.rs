@@ -9,6 +9,7 @@ use crate::domain::value_objects::TradeLicenseNo;
 use crate::infrastructure::messaging::EventPublisher;
 use crate::infrastructure::repository::OperatorRepository;
 use platform_error::{PlatformError, ConflictError};
+use platform_middleware::{evaluate_policy, AbacContext};
 use shared_types::events::EventEnvelope;
 use shared_types::ActorType;
 
@@ -35,11 +36,35 @@ impl OperatorServiceImpl {
     ) -> Self {
         Self { repo, event_publisher, db }
     }
+
+    /// Check ABAC permission (SRS ABAC-001 through ABAC-008).
+    fn check_abac(
+        &self,
+        principal_id: Uuid,
+        role: &str,
+        action: &str,
+        resource: &str,
+    ) -> Result<(), PlatformError> {
+        let ctx = AbacContext {
+            principal_id,
+            role: role.to_string(),
+            action: action.to_string(),
+            resource: resource.to_string(),
+            resource_id: None,
+            amount: None,
+            ip_address: None,
+            operator_id: None,
+        };
+        evaluate_policy(&ctx)
+    }
 }
 
 #[async_trait]
 impl OperatorService for OperatorServiceImpl {
     async fn register_operator(&self, cmd: RegisterOperatorCommand) -> Result<OperatorResponse, PlatformError> {
+        // ABAC: only platform_admin can register operators
+        self.check_abac(cmd.principal_id, &cmd.role, "create", "operator")?;
+
         // Validate trade license format
         let trade_license = TradeLicenseNo::new(&cmd.trade_license_no)?;
 
@@ -99,6 +124,9 @@ impl OperatorService for OperatorServiceImpl {
     }
 
     async fn verify_email(&self, cmd: VerifyEmailCommand) -> Result<(), PlatformError> {
+        // ABAC: only platform_admin or compliance_officer can verify emails
+        self.check_abac(cmd.principal_id, &cmd.role, "verify", "operator")?;
+
         let mut operator = self.repo
             .load(cmd.operator_id)
             .await?
@@ -135,6 +163,9 @@ impl OperatorService for OperatorServiceImpl {
     }
 
     async fn update_status(&self, cmd: UpdateOperatorStatusCommand) -> Result<(), PlatformError> {
+        // ABAC: only platform_admin can change operator status
+        self.check_abac(cmd.principal_id, &cmd.role, "update_status", "operator")?;
+
         let mut operator = self.repo
             .load(cmd.operator_id)
             .await?

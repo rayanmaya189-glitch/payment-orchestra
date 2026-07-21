@@ -32,7 +32,7 @@ pub trait ComplianceService: Send + Sync {
 impl ComplianceService for ComplianceServiceImpl {
     async fn submit_kyb(&self, cmd: SubmitKybCommand) -> Result<Uuid, PlatformError> {
         Self::check_abac(cmd.principal_id, &cmd.role, "create", "kyb_case")?;
-        let mut case = KybCase::new(cmd.operator_id);
+        let case = KybCase::new(cmd.operator_id);
         self.repo.save(&case).await?;
         Ok(case.case_id)
     }

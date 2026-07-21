@@ -2562,6 +2562,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "outbox-relay"
+version = "0.1.0"
+dependencies = [
+ "platform-config",
+ "platform-db",
+ "platform-error",
+ "platform-logging",
+ "platform-messaging",
+ "sea-orm",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "parking"
 version = "2.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2871,6 +2885,7 @@ dependencies = [
 name = "platform-middleware"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "axum 0.8.9",
  "chrono",
  "hex",
@@ -3671,6 +3686,23 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "91c1b7e4904c873ef0710c1f407dde2e6287de2bebc1bbbf7d430bb7cbffd939"
 dependencies = [
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "scheduler"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "platform-config",
+ "platform-db",
+ "platform-error",
+ "platform-logging",
+ "platform-messaging",
+ "sea-orm",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "uuid",
 ]
 
 [[package]]

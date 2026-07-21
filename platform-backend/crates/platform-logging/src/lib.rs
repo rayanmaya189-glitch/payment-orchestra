@@ -1,3 +1,4 @@
+#![allow(dead_code, unused_imports)]
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use tracing::info;

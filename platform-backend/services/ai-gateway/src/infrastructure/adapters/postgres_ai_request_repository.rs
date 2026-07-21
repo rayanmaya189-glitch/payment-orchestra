@@ -1,6 +1,5 @@
 use async_trait::async_trait;
-use sea_orm::{ActiveModelBehavior, ActiveModelTrait, DatabaseConnection, EntityTrait, Set};
-use uuid::Uuid;
+use sea_orm::{ActiveModelTrait, DatabaseConnection, EntityTrait, Set};
 use crate::domain::aggregates::AiRequest;
 use crate::domain::rules::AiRequestRepository;
 use crate::infrastructure::entities::ai_request_entity;

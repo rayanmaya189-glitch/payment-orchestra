@@ -13,6 +13,7 @@ use jsonwebtoken::{decode, DecodingKey, Validation, Algorithm};
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
+use std::sync::Arc;
 use std::task::{Context, Poll};
 use tower::{Layer, Service};
 
@@ -207,19 +208,23 @@ where
 
 // ==================== API Key Middleware ====================
 
-/// Layer that validates API keys from X-Api-Key header.
-#[derive(Clone)]
-pub struct ApiKeyAuthLayer;
-
-impl ApiKeyAuthLayer {
-    pub fn new() -> Self {
-        Self
-    }
+/// Trait for API key lookup — implemented by the IAM service's repository.
+/// The middleware calls this to validate API keys against the database.
+#[async_trait::async_trait]
+pub trait ApiKeyLookup: Send + Sync {
+    /// Look up a principal by API key hash. Returns (principal_id, role) if valid.
+    async fn find_principal_by_key_hash(&self, key_hash: &[u8]) -> Result<Option<(Uuid, String)>, String>;
 }
 
-impl Default for ApiKeyAuthLayer {
-    fn default() -> Self {
-        Self::new()
+/// Layer that validates API keys from X-Api-Key header.
+#[derive(Clone)]
+pub struct ApiKeyAuthLayer {
+    lookup: Arc<dyn ApiKeyLookup>,
+}
+
+impl ApiKeyAuthLayer {
+    pub fn new(lookup: Arc<dyn ApiKeyLookup>) -> Self {
+        Self { lookup }
     }
 }
 
@@ -227,13 +232,17 @@ impl<S> Layer<S> for ApiKeyAuthLayer {
     type Service = ApiKeyAuthService<S>;
 
     fn layer(&self, inner: S) -> Self::Service {
-        ApiKeyAuthService { inner }
+        ApiKeyAuthService {
+            inner,
+            lookup: self.lookup.clone(),
+        }
     }
 }
 
 #[derive(Clone)]
 pub struct ApiKeyAuthService<S> {
     inner: S,
+    lookup: Arc<dyn ApiKeyLookup>,
 }
 
 impl<S> Service<http::Request<Body>> for ApiKeyAuthService<S>
@@ -251,6 +260,7 @@ where
 
     fn call(&mut self, mut req: http::Request<Body>) -> Self::Future {
         let mut inner = self.inner.clone();
+        let lookup = self.lookup.clone();
 
         Box::pin(async move {
             // Check if JWT already authenticated
@@ -265,23 +275,30 @@ where
                     return Ok(forbidden_response("Invalid API key format"));
                 }
 
-                // TODO: In production, hash with Argon2id and lookup in DB.
-                // Currently derives a deterministic principal_id for framework correctness.
+                // Hash the API key with SHA-256 (matching the storage format)
                 use sha2::{Sha256, Digest};
                 let mut hasher = Sha256::new();
                 hasher.update(api_key.as_bytes());
-                let hash = hasher.finalize();
-                let mut uuid_bytes = [0u8; 16];
-                uuid_bytes.copy_from_slice(&hash[..16]);
-                let principal_id = Uuid::from_bytes(uuid_bytes);
+                let key_hash = hasher.finalize().to_vec();
 
-                let principal = AuthPrincipal {
-                    principal_id,
-                    role: "api_client".to_string(),
-                    auth_method: AuthMethod::ApiKey,
-                };
-
-                req.extensions_mut().insert(principal);
+                // Look up the key in the database
+                match lookup.find_principal_by_key_hash(&key_hash).await {
+                    Ok(Some((principal_id, role))) => {
+                        let principal = AuthPrincipal {
+                            principal_id,
+                            role,
+                            auth_method: AuthMethod::ApiKey,
+                        };
+                        req.extensions_mut().insert(principal);
+                    }
+                    Ok(None) => {
+                        return Ok(forbidden_response("Invalid API key"));
+                    }
+                    Err(e) => {
+                        tracing::error!("API key lookup failed: {e}");
+                        return Ok(forbidden_response("Authentication error"));
+                    }
+                }
             }
 
             inner.call(req).await

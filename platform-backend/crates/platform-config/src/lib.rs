@@ -1,3 +1,4 @@
+#![allow(dead_code, unused_imports)]
 use config::{Config, ConfigError, Environment};
 use serde::Deserialize;
 
@@ -39,6 +40,12 @@ pub struct RedisConfig {
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
 pub struct NatsConfig {
     pub url: String,
+    #[serde(default = "default_stream_name")]
+    pub stream_name: String,
+}
+
+fn default_stream_name() -> String {
+    "payment-events".to_string()
 }
 
 /// Authentication configuration — JWT, API keys, MFA, lockout policy.
@@ -151,6 +158,7 @@ impl Default for AppConfig {
             },
             nats: NatsConfig {
                 url: "nats://localhost:4222".to_string(),
+                stream_name: "payment-events".to_string(),
             },
             auth: AuthConfig {
                 // Test-only default — production MUST use from_env_or_panic()

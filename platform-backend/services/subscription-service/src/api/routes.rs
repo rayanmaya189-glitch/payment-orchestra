@@ -102,7 +102,7 @@ async fn get_subscription(
 }
 
 async fn list_subscriptions(
-    State(state): State<AppState>,
+    State(_state): State<AppState>,
 ) -> Result<Json<serde_json::Value>, (axum::http::StatusCode, Json<serde_json::Value>)> {
     Ok(Json(serde_json::json!({"data": [], "has_more": false})))
 }

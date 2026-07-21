@@ -1,6 +1,5 @@
 use async_trait::async_trait;
 use sea_orm::DatabaseConnection;
-use uuid::Uuid;
 
 use crate::application::commands::*;
 use crate::domain::aggregates::{AiQuery, Citation};

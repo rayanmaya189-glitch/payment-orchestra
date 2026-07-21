@@ -1,5 +1,4 @@
 use chrono::{DateTime, Utc};
-use uuid::Uuid;
 
 #[derive(Debug, Clone)]
 pub struct PaymentAnalytics {

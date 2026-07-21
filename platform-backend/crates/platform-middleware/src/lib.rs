@@ -1,3 +1,4 @@
+#![allow(dead_code, unused_imports)]
 //! Shared Axum middleware for all services.
 //!
 //! Provides: auth extraction, CORS, security headers, request ID, rate limiting, SSRF protection, graceful shutdown, API versioning.

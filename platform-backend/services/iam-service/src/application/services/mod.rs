@@ -3,7 +3,7 @@ use sea_orm::DatabaseConnection;
 use uuid::Uuid;
 
 use crate::application::commands::*;
-use crate::domain::aggregates::{ApiKey, Principal, RefreshToken};
+use crate::domain::aggregates::{ApiKey, Principal};
 use crate::domain::rules::*;
 use platform_config::AuthConfig;
 use platform_error::PlatformError;
@@ -73,7 +73,7 @@ impl IamServiceImpl {
         let now = Utc::now();
         let exp = now + chrono::Duration::seconds(self.config.jwt_access_token_ttl_secs as i64);
 
-        let claims = crate::domain::aggregates::PrincipalEvent::Created {
+        let _claims = crate::domain::aggregates::PrincipalEvent::Created {
             email: None,
             principal_type: String::new(),
         };
@@ -212,16 +212,23 @@ impl IamService for IamServiceImpl {
         principal.record_successful_login(&cmd.ip_address, &cmd.user_agent);
         self.principal_repo.save(&principal).await?;
 
-        // MFA enforcement (SRS AUTH-001): Check if MFA is enrolled
-        // If MFA is enrolled, require TOTP verification before issuing tokens
+        // MFA enforcement (SRS AUTH-001): If MFA is enrolled, require TOTP verification
         if principal.mfa_enrolled {
-            // For now, log that MFA is required but don't block
-            // In production, this would return a challenge response
-            tracing::warn!(
-                principal_id = %principal.principal_id,
-                "MFA enrolled but TOTP verification not yet enforced in login flow"
-            );
-            // TODO: Return MFA challenge response when MFA UI is implemented
+            // Generate a short-lived MFA challenge token
+            let challenge_token = Uuid::now_v7().to_string();
+
+            // Store challenge in Redis with 5-minute TTL (requires TOTP to complete)
+            self.session_store
+                .store_mfa_challenge(
+                    &challenge_token,
+                    &principal.principal_id.to_string(),
+                    300, // 5 minutes
+                )
+                .await?;
+
+            return Err(PlatformError::AuthorizationDenied(
+                "MFA_REQUIRED".to_string()
+            ));
         }
 
         // Generate tokens
@@ -320,7 +327,7 @@ impl IamService for IamServiceImpl {
             .await?
             .ok_or_else(|| PlatformError::AuthorizationDenied("Principal not found".to_string()))?;
 
-        if !principal.is_locked() {
+        if principal.is_locked() {
             return Err(PlatformError::AuthorizationDenied("Account is locked".to_string()));
         }
 

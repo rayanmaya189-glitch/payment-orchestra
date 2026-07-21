@@ -4,16 +4,20 @@
 use platform_config::encryption::{encrypt_field, decrypt_field};
 use platform_error::PlatformError;
 
-/// Get the encryption key from environment or config.
+/// Get the encryption key from environment — panics if not set (fail-closed).
 fn get_encryption_key() -> Result<[u8; 32], PlatformError> {
     let key_hex = std::env::var("PLATFORM__AUTH__ENCRYPTION_KEY")
-        .unwrap_or_else(|_| "0000000000000000000000000000000000000000000000000000000000000000".to_string());
+        .map_err(|_| PlatformError::Internal(
+            "PLATFORM__AUTH__ENCRYPTION_KEY environment variable is required. \
+             PII encryption cannot proceed without a valid key. \
+             Generate one with: openssl rand -hex 32".to_string()
+        ))?;
 
     let key_bytes = hex::decode(&key_hex)
         .map_err(|e| PlatformError::Internal(format!("Invalid encryption key: {e}")))?;
 
     if key_bytes.len() != 32 {
-        return Err(PlatformError::Internal("Encryption key must be 32 bytes".to_string()));
+        return Err(PlatformError::Internal("Encryption key must be exactly 32 bytes (256 bits)".to_string()));
     }
 
     let mut key = [0u8; 32];

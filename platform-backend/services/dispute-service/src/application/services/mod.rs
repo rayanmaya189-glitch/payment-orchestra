@@ -35,7 +35,7 @@ impl DisputeService for DisputeServiceImpl {
     async fn open(&self, cmd: OpenDisputeCommand) -> Result<Uuid, PlatformError> {
         Self::check_abac(cmd.principal_id, &cmd.role, "create", "dispute")?;
         let amount = Money { amount_minor_units: cmd.amount_minor_units, currency: CurrencyCode::new(&cmd.currency).map_err(|_| PlatformError::Validation(platform_error::ValidationError::InvalidCurrencyCode))? };
-        let mut d = Dispute::new(cmd.payment_intent_id, cmd.operator_id, cmd.reason, amount, cmd.acquirer_reference, cmd.connector_id);
+        let d = Dispute::new(cmd.payment_intent_id, cmd.operator_id, cmd.reason, amount, cmd.acquirer_reference, cmd.connector_id);
         self.repo.save(&d).await?;
         Ok(d.dispute_id)
     }

@@ -1,3 +1,4 @@
+#![allow(dead_code, unused_imports)]
 pub mod money;
 pub mod payment_status;
 pub mod actor;

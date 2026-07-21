@@ -1,3 +1,4 @@
+#![allow(dead_code, unused_imports)]
 //! Shared NATS JetStream event publishing with transactional outbox pattern.
 //!
 //! Provides `EventPublisher` for all services to publish domain events via
@@ -13,6 +14,7 @@ use shared_types::events::EventEnvelope;
 use platform_error::PlatformError;
 
 /// NATS JetStream event publisher with transactional outbox support.
+#[derive(Clone)]
 pub struct EventPublisher {
     client: async_nats::Client,
     stream_name: String,

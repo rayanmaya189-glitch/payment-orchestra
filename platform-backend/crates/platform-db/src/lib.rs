@@ -1,3 +1,4 @@
+#![allow(dead_code, unused_imports)]
 //! Shared database and cache connection utilities with retry logic.
 //! Used by all services — eliminates code duplication.
 

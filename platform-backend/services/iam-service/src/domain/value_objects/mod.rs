@@ -91,7 +91,7 @@ impl PrincipalRole {
             },
             Self::ComplianceOfficer => matches!(
                 (action, resource),
-                ("read", _) | ("update", "kyb_case") | ("read", "audit_log")
+                ("read", _) | ("update", "kyb_case")
             ),
             Self::ApiClient => matches!(action, "read" | "create"),
             Self::ReadOnly => action == "read",

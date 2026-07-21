@@ -24,7 +24,7 @@ impl DocumentService for DocumentServiceImpl {
         hasher.update(&cmd.file_data);
         let hash = hex::encode(hasher.finalize());
         let storage_key = format!("{}/{}/{}", cmd.operator_id, cmd.document_type, uuid::Uuid::now_v7());
-        let mut doc = Document::new(cmd.operator_id, cmd.document_type, cmd.filename, cmd.content_type, cmd.file_size, storage_key, hash, cmd.uploaded_by);
+        let doc = Document::new(cmd.operator_id, cmd.document_type, cmd.filename, cmd.content_type, cmd.file_size, storage_key, hash, cmd.uploaded_by);
         self.repo.save(&doc).await?;
         Ok(doc.document_id)
     }

@@ -64,7 +64,7 @@ impl Notification {
     }
 
     pub fn render_template(&mut self) {
-        if let (Some(ref template), Some(ref data)) = (&self.template_id, &self.template_data) {
+        if let (Some(_template), Some(ref data)) = (&self.template_id, &self.template_data) {
             if let Some(obj) = data.as_object() {
                 let mut rendered = self.body.clone();
                 for (key, value) in obj {
@@ -116,7 +116,8 @@ mod tests {
 
     #[test]
     fn test_render_template() {
-        let mut n = Notification::new(Uuid::now_v7(), NotificationType::Email, "test@example.com".into(), None, "Hello {{name}}!".into());
+        let mut n = Notification::new(Uuid::now_v7(), NotificationType::Email, "test@example.com".into(), Some("welcome".into()), "Hello {{name}}!".into());
+        n.template_id = Some("welcome".into());
         n.template_data = Some(serde_json::json!({"name": "World"}));
         n.render_template();
         assert_eq!(n.body, "Hello World!");

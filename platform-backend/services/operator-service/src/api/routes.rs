@@ -10,6 +10,7 @@ use super::AppState;
 use crate::application::commands::*;
 use crate::application::queries::*;
 use crate::application::services::OperatorService;
+use platform_middleware::AuthPrincipal;
 
 pub fn router(state: AppState) -> Router {
     Router::new()
@@ -23,9 +24,12 @@ pub fn router(state: AppState) -> Router {
 
 async fn register_operator(
     State(state): State<AppState>,
+    auth: AuthPrincipal,
     Json(req): Json<RegisterOperatorRequest>,
 ) -> Result<(StatusCode, Json<crate::api::dto::OperatorResponse>), (StatusCode, Json<ErrorResponse>)> {
     let cmd = RegisterOperatorCommand {
+        principal_id: auth.principal_id,
+        role: auth.role,
         legal_name: req.legal_name,
         trade_license_no: req.trade_license_no,
         country: req.country,
@@ -67,9 +71,14 @@ async fn list_operators(
 
 async fn verify_email(
     State(state): State<AppState>,
+    auth: AuthPrincipal,
     Path(operator_id): Path<Uuid>,
 ) -> Result<StatusCode, (StatusCode, Json<ErrorResponse>)> {
-    let cmd = VerifyEmailCommand { operator_id };
+    let cmd = VerifyEmailCommand {
+        principal_id: auth.principal_id,
+        role: auth.role,
+        operator_id,
+    };
 
     match state.service.verify_email(cmd).await {
         Ok(()) => Ok(StatusCode::OK),
@@ -79,10 +88,13 @@ async fn verify_email(
 
 async fn update_status(
     State(state): State<AppState>,
+    auth: AuthPrincipal,
     Path(operator_id): Path<Uuid>,
     Json(req): Json<UpdateOperatorStatusRequest>,
 ) -> Result<StatusCode, (StatusCode, Json<ErrorResponse>)> {
     let cmd = UpdateOperatorStatusCommand {
+        principal_id: auth.principal_id,
+        role: auth.role,
         operator_id,
         new_status: req.new_status,
         reason: req.reason,

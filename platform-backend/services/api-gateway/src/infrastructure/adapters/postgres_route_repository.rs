@@ -1,6 +1,5 @@
 use async_trait::async_trait;
-use sea_orm::{ActiveModelBehavior, ActiveModelTrait, DatabaseConnection, EntityTrait, Set};
-use uuid::Uuid;
+use sea_orm::{DatabaseConnection, EntityTrait};
 use crate::domain::aggregates::RouteConfig;
 use crate::domain::rules::RouteRepository;
 use crate::infrastructure::entities::route_config_entity;

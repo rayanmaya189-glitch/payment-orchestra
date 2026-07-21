@@ -15,7 +15,7 @@ pub fn router(state: AppState) -> Router {
 
 async fn start_saga(State(state): State<AppState>, Json(req): Json<serde_json::Value>) -> Result<(axum::http::StatusCode, Json<serde_json::Value>), (axum::http::StatusCode, Json<serde_json::Value>)> {
     let steps: Vec<SagaStepDef> = req["steps"].as_array().map(|arr| {
-        arr.iter().enumerate().map(|(i, s)| SagaStepDef {
+        arr.iter().enumerate().map(|(_i, s)| SagaStepDef {
             name: s["name"].as_str().unwrap_or("").to_string(),
             service: s["service"].as_str().unwrap_or("").to_string(),
             action: s["action"].as_str().unwrap_or("").to_string(),

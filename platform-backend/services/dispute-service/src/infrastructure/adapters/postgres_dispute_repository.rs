@@ -1,8 +1,8 @@
 use async_trait::async_trait;
-use sea_orm::{ActiveModelBehavior, ActiveModelTrait, DatabaseConnection, EntityTrait, Set};
+use sea_orm::{ActiveModelTrait, DatabaseConnection, EntityTrait, Set};
 use uuid::Uuid;
 use crate::domain::aggregates::Dispute;
-use crate::domain::value_objects::{DisputeStatus, DisputeDecision};
+use crate::domain::value_objects::DisputeStatus;
 use crate::domain::rules::DisputeRepository;
 use crate::infrastructure::entities::dispute_entity;
 use platform_error::PlatformError;

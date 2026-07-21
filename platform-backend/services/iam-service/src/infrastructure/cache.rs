@@ -96,6 +96,40 @@ impl RedisSessionStore {
         }
         Ok(())
     }
+
+    /// Store an MFA challenge token with a TTL (SRS AUTH-001).
+    pub async fn store_mfa_challenge(
+        &self,
+        challenge_token: &str,
+        principal_id: &str,
+        ttl_secs: u64,
+    ) -> Result<(), platform_error::PlatformError> {
+        let mut redis = self.redis.clone();
+        redis::cmd("SET")
+            .arg(format!("mfa_challenge:{}", challenge_token))
+            .arg(principal_id)
+            .arg("EX")
+            .arg(ttl_secs)
+            .query_async::<()>(&mut redis)
+            .await
+            .map_err(|e| platform_error::PlatformError::Internal(format!("Redis SET failed: {e}")))?;
+        Ok(())
+    }
+
+    /// Verify and consume an MFA challenge token (one-time use).
+    pub async fn verify_mfa_challenge(
+        &self,
+        challenge_token: &str,
+    ) -> Result<Option<String>, platform_error::PlatformError> {
+        let mut redis = self.redis.clone();
+        let key = format!("mfa_challenge:{}", challenge_token);
+        let result: Option<String> = redis::cmd("GETDEL")
+            .arg(&key)
+            .query_async(&mut redis)
+            .await
+            .map_err(|e| platform_error::PlatformError::Internal(format!("Redis GETDEL failed: {e}")))?;
+        Ok(result)
+    }
 }
 
 /// Idempotency store for login attempts (per IP).

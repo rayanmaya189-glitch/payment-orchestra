@@ -35,7 +35,7 @@ impl PaymentLinkService for PaymentLinkServiceImpl {
         Self::check_abac(cmd.principal_id, &cmd.role, "create", "payment_link")?;
         let amount = Money { amount_minor_units: cmd.amount_minor_units, currency: CurrencyCode::new(&cmd.currency).map_err(|_| PlatformError::Validation(platform_error::ValidationError::InvalidCurrencyCode))? };
         let expires_at = cmd.expires_in_hours.map(|h| chrono::Utc::now() + chrono::Duration::hours(h));
-        let mut link = PaymentLink::new(cmd.operator_id, cmd.description, cmd.merchant_name, amount, cmd.max_uses, expires_at);
+        let link = PaymentLink::new(cmd.operator_id, cmd.description, cmd.merchant_name, amount, cmd.max_uses, expires_at);
         self.repo.save(&link).await?;
         Ok(link)
     }

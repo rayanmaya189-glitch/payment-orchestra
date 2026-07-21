@@ -1,10 +1,10 @@
 use async_trait::async_trait;
-use sea_orm::{ActiveModelBehavior, ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, Set};
+use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, Set};
 use uuid::Uuid;
 
 use crate::domain::aggregates::ApiKey;
 use crate::domain::rules::ApiKeyRepository;
-use crate::infrastructure::entities::api_key_entity;
+use crate::infrastructure::entities::{api_key_entity, principal_entity};
 use platform_error::PlatformError;
 
 pub struct PostgresApiKeyRepository {
@@ -14,6 +14,69 @@ pub struct PostgresApiKeyRepository {
 impl PostgresApiKeyRepository {
     pub fn new(db: DatabaseConnection) -> Self {
         Self { db }
+    }
+}
+
+/// Implementation of the middleware's ApiKeyLookup trait for database-backed validation.
+#[async_trait]
+impl platform_middleware::auth::ApiKeyLookup for PostgresApiKeyRepository {
+    async fn find_principal_by_key_hash(&self, key_hash: &[u8]) -> Result<Option<(Uuid, String)>, String> {
+        // Find the API key by hash
+        let api_key_model = api_key_entity::Entity::find()
+            .filter(api_key_entity::Column::KeyHash.eq(key_hash))
+            .one(&self.db)
+            .await
+            .map_err(|e| format!("DB query failed: {e}"))?;
+
+        let api_key = match api_key_model {
+            Some(m) => m,
+            None => return Ok(None),
+        };
+
+        // Check not revoked
+        if api_key.revoked_at.is_some() {
+            return Ok(None);
+        }
+
+        // Check not expired
+        let now = chrono::Utc::now();
+        if api_key.expires_at < now {
+            return Ok(None);
+        }
+
+        // Find the associated principal to get the role
+        let principal_model = principal_entity::Entity::find_by_id(api_key.principal_id)
+            .one(&self.db)
+            .await
+            .map_err(|e| format!("DB query failed: {e}"))?;
+
+        let principal = match principal_model {
+            Some(m) => m,
+            None => return Ok(None),
+        };
+
+        // Check principal is active
+        if principal.status != "active" {
+            return Ok(None);
+        }
+
+        // Derive role from principal_type (api_client principals get api_client role)
+        let role = match principal.principal_type.as_str() {
+            "api_client" => "api_client".to_string(),
+            "system" => "api_client".to_string(),
+            _ => {
+                // For user-type principals, use a default role based on scopes
+                let scopes: Vec<String> = serde_json::from_value(api_key.scopes.into())
+                    .unwrap_or_default();
+                if scopes.contains(&"admin".to_string()) {
+                    "operator_admin".to_string()
+                } else {
+                    "api_client".to_string()
+                }
+            }
+        };
+
+        Ok(Some((api_key.principal_id, role)))
     }
 }
 

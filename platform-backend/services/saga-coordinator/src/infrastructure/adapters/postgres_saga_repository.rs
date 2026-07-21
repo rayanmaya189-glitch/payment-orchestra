@@ -1,8 +1,8 @@
 use async_trait::async_trait;
-use sea_orm::{ActiveModelBehavior, ActiveModelTrait, DatabaseConnection, EntityTrait, Set};
+use sea_orm::{ActiveModelTrait, DatabaseConnection, EntityTrait, Set};
 use uuid::Uuid;
 use crate::domain::aggregates::{SagaInstance, SagaStep};
-use crate::domain::value_objects::{SagaStatus, SagaStepStatus};
+use crate::domain::value_objects::SagaStatus;
 use crate::domain::rules::SagaRepository;
 use crate::infrastructure::entities::saga_instance_entity;
 use platform_error::PlatformError;

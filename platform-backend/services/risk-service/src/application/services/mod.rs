@@ -4,7 +4,6 @@ use uuid::Uuid;
 use crate::application::commands::*;
 use crate::domain::aggregates::{RiskAssessment, default_rules};
 use crate::domain::rules::RiskAssessmentRepository;
-use crate::domain::value_objects::RiskDecision;
 use platform_error::PlatformError;
 
 pub struct RiskServiceImpl { repo: Box<dyn RiskAssessmentRepository>, db: DatabaseConnection }

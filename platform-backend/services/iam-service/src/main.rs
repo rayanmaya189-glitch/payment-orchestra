@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use axum::{routing::get, Router};
 use platform_config::AppConfig;
 use platform_logging::ServiceLogger;
@@ -39,6 +40,10 @@ async fn main() {
 
     let app_state = api::AppState::new(service, config.auth.clone());
 
+    // API key lookup for the middleware
+    let api_key_lookup: Arc<dyn platform_middleware::auth::ApiKeyLookup> =
+        Arc::new(PostgresApiKeyRepository::new(db.clone()));
+
     let cors = platform_middleware::cors_layer(&config.cors);
     let rate_limit = platform_middleware::RateLimitLayer::new(
         redis,
@@ -52,10 +57,14 @@ async fn main() {
         },
     );
 
+    // Single router: optional JWT + API key auth on all /v1 routes.
+    // Login/refresh don't extract AuthPrincipal so they pass through fine.
     let app = Router::new()
         .route("/healthz", get(healthz))
         .route("/readyz", get(readyz))
-        .nest("/v1", api::routes::router(app_state))
+        .nest("/v1", api::routes::router(app_state)
+            .layer(platform_middleware::auth::ApiKeyAuthLayer::new(api_key_lookup))
+            .layer(platform_middleware::JwtAuthLayer::optional(config.auth.clone())))
         .layer(platform_middleware::SecurityHeadersLayer)
         .layer(platform_middleware::RequestIdLayer)
         .layer(rate_limit)

@@ -75,10 +75,10 @@ impl RiskRule {
 
 pub fn default_rules() -> Vec<RiskRule> {
     vec![
-        RiskRule::new("high_amount", |a| {
+        RiskRule::new("high_amount", |_a| {
             None // Placeholder — real implementation checks amount > threshold
         }),
-        RiskRule::new("velocity", |a| {
+        RiskRule::new("velocity", |_a| {
             None // Placeholder — real implementation checks transaction velocity
         }),
     ]
