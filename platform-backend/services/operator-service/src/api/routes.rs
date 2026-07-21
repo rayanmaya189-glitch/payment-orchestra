@@ -44,8 +44,23 @@ async fn register_operator(
 
 async fn get_operator(
     State(state): State<AppState>,
+    auth: AuthPrincipal,
     Path(operator_id): Path<Uuid>,
 ) -> Result<Json<crate::api::dto::OperatorResponse>, (StatusCode, Json<ErrorResponse>)> {
+    // ABAC: read requires "read" permission on "operator"
+    if let Err(e) = platform_middleware::evaluate_policy(&platform_middleware::AbacContext {
+        principal_id: auth.principal_id,
+        role: auth.role.clone(),
+        action: "read".to_string(),
+        resource: "operator".to_string(),
+        resource_id: Some(operator_id),
+        amount: None,
+        ip_address: None,
+        operator_id: Some(operator_id),
+    }) {
+        return Err(error_to_response(e));
+    }
+
     let query = GetOperatorQuery { operator_id };
 
     match state.service.get_operator(query).await {
@@ -56,7 +71,22 @@ async fn get_operator(
 
 async fn list_operators(
     State(state): State<AppState>,
+    auth: AuthPrincipal,
 ) -> Result<Json<Vec<crate::api::dto::OperatorResponse>>, (StatusCode, Json<ErrorResponse>)> {
+    // ABAC: list requires "read" permission on "operator"
+    if let Err(e) = platform_middleware::evaluate_policy(&platform_middleware::AbacContext {
+        principal_id: auth.principal_id,
+        role: auth.role.clone(),
+        action: "read".to_string(),
+        resource: "operator".to_string(),
+        resource_id: None,
+        amount: None,
+        ip_address: None,
+        operator_id: None,
+    }) {
+        return Err(error_to_response(e));
+    }
+
     let query = ListOperatorsQuery {
         status: None,
         cursor: None,
@@ -141,11 +171,14 @@ fn error_to_response(e: platform_error::PlatformError) -> (StatusCode, Json<Erro
             "SERVICE_UNAVAILABLE",
             msg.clone(),
         ),
-        platform_error::PlatformError::Internal(msg) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "INTERNAL_ERROR",
-            msg.clone(),
-        ),
+        platform_error::PlatformError::Internal(msg) => {
+            tracing::error!(error = %msg, "Internal error in operator-service");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "INTERNAL_ERROR",
+                "An internal error occurred".to_string(),
+            )
+        }
     };
 
     (status, Json(ErrorResponse { error: message, code: code.to_string() }))

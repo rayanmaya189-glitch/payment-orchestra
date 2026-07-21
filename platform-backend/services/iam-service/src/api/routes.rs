@@ -132,7 +132,6 @@ struct RegisterPrincipalRequest {
     email: String,
     password: String,
     principal_type: Option<String>,
-    role: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -142,13 +141,22 @@ struct RegisterPrincipalResponse {
 
 async fn register_principal(
     State(state): State<AppState>,
+    auth: AuthPrincipal,
     Json(req): Json<RegisterPrincipalRequest>,
 ) -> Result<(axum::http::StatusCode, Json<RegisterPrincipalResponse>), (axum::http::StatusCode, Json<serde_json::Value>)> {
+    // Only platform_admin can register new principals (security fix: prevent self-role-assignment)
+    if auth.role != "platform_admin" {
+        return Err((
+            axum::http::StatusCode::FORBIDDEN,
+            Json(serde_json::json!({"error": "Only platform administrators can register principals", "code": "FORBIDDEN"})),
+        ));
+    }
+
     let cmd = RegisterPrincipalCommand {
         email: req.email,
         password: req.password,
         principal_type: req.principal_type.unwrap_or_else(|| "user".to_string()),
-        role: req.role,
+        role: None, // Role is always None — assigned by admin later
     };
 
     match state.service.register_principal(cmd).await {

@@ -60,21 +60,10 @@ impl platform_middleware::auth::ApiKeyLookup for PostgresApiKeyRepository {
             return Ok(None);
         }
 
-        // Derive role from principal_type (api_client principals get api_client role)
-        let role = match principal.principal_type.as_str() {
-            "api_client" => "api_client".to_string(),
-            "system" => "api_client".to_string(),
-            _ => {
-                // For user-type principals, use a default role based on scopes
-                let scopes: Vec<String> = serde_json::from_value(api_key.scopes.into())
-                    .unwrap_or_default();
-                if scopes.contains(&"admin".to_string()) {
-                    "operator_admin".to_string()
-                } else {
-                    "api_client".to_string()
-                }
-            }
-        };
+        // Derive role from principal_type — NEVER from user-supplied scopes (security fix)
+        // API keys always get api_client role regardless of the principal's own role.
+        // This prevents privilege escalation via scope self-assignment.
+        let role = "api_client".to_string();
 
         Ok(Some((api_key.principal_id, role)))
     }
