@@ -89,25 +89,27 @@ The AI Gateway exists because AI-Assistant traffic has distinct requirements tha
 
 | Interaction | Style | Protocol | Rationale |
 |---|---|---|---|
-| API Gateway → domain service (synchronous user-facing request) | **gRPC** | HTTP/2 + Protobuf | Low latency, strongly-typed contracts (Part 10), needed for checkout-path latency budgets (Part 11) |
-| `orchestration-service` → `connector-gateway` (authorize/capture/refund call to acquirer) | **gRPC** (synchronous, in the checkout hot path) | HTTP/2 + Protobuf | Must return a result within the latency budget (BR-020-2, Part 2) |
+| External API → API Gateway | **Protobuf-over-HTTP POST** | HTTP/1.1 or HTTP/2 + Protobuf binary | Type-safe, code-gen ready, no REST (PROTO-001) |
+| API Gateway → domain service (synchronous) | **gRPC** | HTTP/2 + Protobuf | Low latency, strongly-typed contracts (Part 10) |
+| `orchestration-service` → `connector-gateway` (authorize/capture/refund) | **gRPC** (synchronous, in the checkout hot path) | HTTP/2 + Protobuf | Must return a result within the latency budget (BR-020-2) |
 | `orchestration-service` → `risk-service` (pre-authorization risk score) | **gRPC** (synchronous, in the checkout hot path) | HTTP/2 + Protobuf | Risk score needed before routing decision; must be fast |
-| `orchestration-service` publishing domain events (EVT-01…EVT-19) | **NATS JetStream** (async, durable) | NATS protocol | Multiple downstream consumers; publisher must not block |
+| `orchestration-service` publishing domain events | **NATS JetStream** (async, durable) | NATS protocol | Multiple downstream consumers; publisher must not block |
 | `reconciliation-service` ingesting settlement files | **Mixed**: webhook via gRPC at connector-gateway → published to NATS; polling/SFTP via scheduled job → published to NATS | NATS protocol | Decouples ingestion cadence from downstream processing |
-| `ai-assistant-service` reading context from other contexts | **gRPC** (direct read-model queries) | HTTP/2 + Protobuf | BC-12 is a read-only Conformist; must never acquire write path |
-| `notification-service` triggering | **NATS JetStream** subscription to relevant events | NATS protocol | Naturally asynchronous, at-least-once with idempotent dedup |
-| `compliance-service` → `document-service` (OCR trigger) | **gRPC** (synchronous) | HTTP/2 + Protobuf | Request-response; caller needs OCR result |
-| `analytics-service` consuming events | **NATS JetStream** subscription to all event streams | NATS protocol | Pure event consumer, never called synchronously |
-| `invoice-service` / `subscription-service` state updates | **NATS JetStream** subscription to orchestration events | NATS protocol | Eventually consistent; invoice/subscription status updated async after payment events |
-| Cross-service queries (read-heavy, non-critical path) | **gRPC** (query endpoints) | HTTP/2 + Protobuf | Type-safe, observable, traceable |
+| `ai-assistant-service` reading context | **gRPC** (direct read-model queries) | HTTP/2 + Protobuf | BC-12 is a read-only Conformist; must never acquire write path |
+| `notification-service` triggering | **NATS JetStream** subscription | NATS protocol | Naturally asynchronous, at-least-once |
+| `compliance-service` → `document-service` | **gRPC** (synchronous) | HTTP/2 + Protobuf | Request-response; caller needs OCR result |
+| `analytics-service` consuming events | **NATS JetStream** subscription | NATS protocol | Pure event consumer, never called synchronously |
+| Cross-service queries | **gRPC** (query endpoints) | HTTP/2 + Protobuf | Type-safe, observable, traceable |
 
 ### 4.2 gRPC vs NATS Decision Rules
 
-- **RULE-001**: Use **gRPC** when the caller needs a synchronous response within the request's latency budget (checkout path, pre-authorization checks, document OCR requests).
-- **RULE-002**: Use **NATS JetStream** when the interaction is naturally asynchronous, fan-out to multiple consumers, or doesn't require the caller to wait for completion (domain event publishing, notification dispatch, analytics ingestion).
-- **RULE-003**: Never use NATS for the checkout hot path (Create/Authorize/Capture) — the latency of NATS publish-ack is unnecessary overhead when a direct gRPC call is more appropriate.
-- **RULE-004**: Never use gRPC for fan-out event distribution — the publisher would need to know and manage all consumers, defeating the decoupling benefit of event-driven architecture.
-- **RULE-005**: All service-to-service calls use gRPC with Protobuf — SeaORM services generate clients from `.proto` files for type-safe inter-service communication.
+- **RULE-001**: External API traffic uses **Protobuf-over-HTTP POST** — binary protobuf request/response bodies, no REST conventions (PROTO-001).
+- **RULE-002**: Use **gRPC** when the caller needs a synchronous response within the request's latency budget (checkout path, pre-authorization checks, document OCR requests).
+- **RULE-003**: Use **NATS JetStream** when the interaction is naturally asynchronous, fan-out to multiple consumers, or doesn't require the caller to wait for completion (domain event publishing, notification dispatch, analytics ingestion).
+- **RULE-004**: Never use NATS for the checkout hot path (Create/Authorize/Capture) — the latency of NATS publish-ack is unnecessary overhead when a direct gRPC call is more appropriate.
+- **RULE-005**: Never use gRPC for fan-out event distribution — the publisher would need to know and manage all consumers, defeating the decoupling benefit of event-driven architecture.
+- **RULE-006**: All service-to-service calls use gRPC with Protobuf — SeaORM services generate clients from `.proto` files for type-safe inter-service communication.
+- **RULE-007**: No REST anywhere in the stack — no JSON APIs, no GET endpoints, no path variables, no query strings. Everything is protobuf.
 
 ### 4.3 NATS JetStream Subject Taxonomy (Versioned)
 

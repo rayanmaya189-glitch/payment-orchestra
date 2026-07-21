@@ -454,12 +454,14 @@ impl ApiKeyLifecycleManager {
 pub fn cors_middleware(allowed_origins: &[String]) -> CorsLayer {
     CorsLayer::new()
         .allow_origin(AllowedOrigins::list(allowed_origins)) // exact match only
-        .allow_methods([GET, POST, PUT, PATCH, DELETE, OPTIONS])
+        .allow_methods([POST, OPTIONS])        // Only POST — no GET/PUT/PATCH/DELETE (strict protobuf)
         .allow_headers([CONTENT_TYPE, AUTHORIZATION, X_API_KEY, X_IDEMPOTENCY_KEY, X_REQUEST_ID, X_CSRF_TOKEN])
         .allow_credentials(true)
         .max_age(Duration::from_secs(3600)) // 1 hour (not 24h for auth endpoints)
 }
 ```
+
+**PROTO-CORS-001**: Only `POST` and `OPTIONS` methods are allowed. Any GET/PUT/PATCH/DELETE request returns `405 Method Not Allowed`.
 
 ---
 
@@ -479,20 +481,39 @@ pub struct RequestLimits {
 
 ---
 
-## 19. Input Validation (Part 10 §6.2)
+## 19. Input Validation (Part 10 §6.2) — Strict Protobuf
+
+All API inputs are protobuf messages. Validation happens at two levels:
+
+### Level 1: Protobuf Schema Validation (API Gateway)
 
 ```rust
-pub fn validate_api_input<T: DeserializeOwned>(body: &str) -> Result<T, ValidationError> {
-    let value: T = serde_json::from_str(body)?;
+pub fn validate_protobuf_request<T: prost::Message>(bytes: &[u8]) -> Result<T, ValidationError> {
+    // 1. Decode protobuf binary
+    let message = T::decode(bytes)
+        .map_err(|e| ValidationError::InvalidProtobuf { detail: e.to_string() })?;
 
-    // Type validation (implicit via serde)
-    // Length/range validation (via #[serde(deserialize_with)] or custom validators)
-    // Format validation (UUIDv7, ISO 4217, ISO 8601 with 3-digit ms)
-    // Required field validation (via #[serde(default)] + custom checks)
+    // 2. Required field validation (proto3 optional fields check)
+    // 3. Enum value validation (unknown enum values rejected)
+    // 4. Oneof field validation
 
-    Ok(value)
+    Ok(message)
 }
 ```
+
+### Level 2: Domain Validation (Command Handler)
+
+```rust
+// Semantic validation in command handler (not at gateway):
+// - UUIDv7 format validation
+// - ISO 4217 currency code validation
+// - Amount range validation (non-negative, within currency precision)
+// - Business rule validation (e.g., "amount must be positive")
+```
+
+**PROTO-VALIDATE-001**: Malformed protobuf requests are rejected at the API Gateway with HTTP 400 before reaching any backend service.
+
+**PROTO-VALIDATE-002**: Valid protobuf with invalid business data is rejected at the command handler with an `ErrorDetail` response.
 
 ---
 
@@ -899,24 +920,29 @@ pub fn verify_webhook_signature(secret: &[u8], payload: &[u8], signature: &str) 
 
 ## 30. Complete Rate Limiting Table (Part 10 §11)
 
-| Endpoint | Limit | Window | Per |
+All endpoints are protobuf-over-HTTP POST. No REST GET/PUT/PATCH/DELETE.
+
+| Service.Method | Limit | Window | Per |
 |---|---|---|---|
-| `POST /v1/payment-intents` | 1000 | 60s | ApiKey |
-| `POST /v1/payment-intents/{id}/authorize` | 1000 | 60s | ApiKey |
-| `POST /v1/payment-intents/{id}/capture` | 500 | 60s | ApiKey |
-| `POST /v1/payment-intents/{id}/void` | 500 | 60s | ApiKey |
-| `POST /v1/payment-intents/{id}/refund` | 200 | 60s | ApiKey |
-| `GET /v1/invoices` | 100 | 60s | ApiKey |
-| `POST /v1/invoices` | 50 | 60s | ApiKey |
-| `GET /v1/subscriptions` | 100 | 60s | ApiKey |
-| `POST /v1/subscriptions` | 50 | 60s | ApiKey |
-| `POST /v1/routing-policies` | 10 | 60s | ApiKey |
-| `POST /v1/auth/login` | 10 | 60s | IP |
-| `POST /v1/assistant/query` | 30 | 60s | ApiKey |
-| `POST /v1/documents` | 20 | 60s | ApiKey |
-| `GET /v1/analytics/*` | 100 | 60s | ApiKey |
-| `POST /v1/kyb-cases` | 10 | 60s | ApiKey |
-| `POST /v1/webhooks` | 10 | 60s | ApiKey |
+| `OrchestrationService/CreatePaymentIntent` | 1000 | 60s | ApiKey |
+| `OrchestrationService/AuthorizePaymentIntent` | 1000 | 60s | ApiKey |
+| `OrchestrationService/CapturePaymentIntent` | 500 | 60s | ApiKey |
+| `OrchestrationService/VoidPaymentIntent` | 500 | 60s | ApiKey |
+| `OrchestrationService/RefundPaymentIntent` | 200 | 60s | ApiKey |
+| `OrchestrationService/GetPaymentIntent` | 500 | 60s | ApiKey |
+| `OrchestrationService/ListPaymentIntents` | 100 | 60s | ApiKey |
+| `InvoiceService/CreateInvoice` | 50 | 60s | ApiKey |
+| `InvoiceService/ListInvoices` | 100 | 60s | ApiKey |
+| `SubscriptionService/CreateSubscription` | 50 | 60s | ApiKey |
+| `SubscriptionService/ListSubscriptions` | 100 | 60s | ApiKey |
+| `RoutingPolicyService/ActivateRoutingPolicy` | 10 | 60s | ApiKey |
+| `IAMService/Authenticate` | 10 | 60s | IP |
+| `AIAssistantService/AskQuestion` | 30 | 60s | ApiKey |
+| `DocumentService/UploadDocument` | 20 | 60s | ApiKey |
+| `AnalyticsService/GetDashboard` | 100 | 60s | ApiKey |
+| `ComplianceService/SubmitKybEvidence` | 10 | 60s | ApiKey |
+| `WebhookService/CreateWebhookSubscription` | 10 | 60s | ApiKey |
+| `WebhookService/ListWebhookDeliveries` | 50 | 60s | ApiKey |
 
 ---
 

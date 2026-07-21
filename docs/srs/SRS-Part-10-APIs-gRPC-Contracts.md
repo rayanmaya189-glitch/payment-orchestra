@@ -15,41 +15,84 @@
 | Part | 10 of 12 — APIs & gRPC Contracts |
 | Depends On | Part 3 (domain events/commands), Part 4 (service boundaries, gateway routing), Part 5–7 (orchestration/AI/connector internals whose public surface is formalized here), Part 9 (schemas the API surfaces reflect) |
 | Feeds Into | Part 11 (contract testing as part of CI/CD, SDK generation pipeline) |
-| Scope | External REST API conventions, internal gRPC contract conventions, webhook contract (outbound to merchants), event schema versioning rules, SDK strategy. |
+| Scope | External protobuf-over-HTTP API conventions, internal gRPC contract conventions, webhook contract (outbound to merchants), event schema versioning rules, SDK strategy. |
 
 ---
 
-## 1. API Design Conventions (REST — External Surface)
+## 1. API Design Conventions — Strict Protobuf (No REST)
 
-### 1.1 Versioning
+### 1.1 Core Principle
 
-- **API-001**: URL path versioning: `/v1/...`. A new major version is introduced only for breaking changes; additive fields/endpoints ship within the existing version.
-- **API-002**: Minimum deprecation window for any `/v1` breaking change requiring a `/v2`: a defined period (e.g., 12 months) during which both versions are supported, publicly announced in advance — the exact window is a commercial/support-policy decision to be finalized in Part 12, but the *existence* of a guaranteed minimum window is a firm requirement, not optional.
+**PROTO-001**: All external API requests and responses use Protocol Buffers (protobuf) as the serialization format. **No REST conventions** — no GET/PUT/PATCH/DELETE, no path variables, no query strings. Every operation is a `POST` with a protobuf request body.
 
-### 1.2 Resource Conventions
+**PROTO-002**: Endpoints follow the pattern: `POST /{package}.{ServiceName}/{MethodName}`
 
-- **API-003**: Resource-oriented REST (`/v1/payment-intents/{id}`, `/v1/invoices/{id}`), verbs only for genuine actions with no natural resource noun (`/v1/payment-intents/{id}/capture`, `/v1/payment-intents/{id}/void`).
-- **API-004**: All mutating requests (`POST`, `PATCH`) that represent a "try to do this financial thing" accept an `Idempotency-Key` header, mapped directly to Part 5 §4.1's caller-facing idempotency mechanism — this is not optional per endpoint; it's a platform-wide contract rule for any endpoint that creates or mutates a money-movement-relevant resource.
-- **API-005**: Standard error envelope:
+**PROTO-003**: The API Gateway translates external protobuf-over-HTTP to internal gRPC (same protobuf schema, native gRPC transport between services).
 
-```json
-{
-  "error": {
-    "code": "INSUFFICIENT_REFUNDABLE_BALANCE",
-    "message": "Requested refund amount exceeds the remaining refundable balance.",
-    "request_id": "01HZ...",
-    "details": { "remaining_refundable_minor_units": 50000, "currency": "AED" }
-  }
+### 1.2 Why Protobuf-Only
+
+- **Type safety**: Request/response schemas enforced at wire level, not by documentation
+- **Code generation**: SDK generation from `.proto` files for all client languages
+- **Consistency**: Same schema for external API, internal gRPC, and event payloads
+- **Performance**: Binary serialization is smaller and faster than JSON
+- **Evolution**: Additive field changes are backward-compatible by design
+
+### 1.3 Versioning
+
+- **API-001**: Package-based versioning: `orchestration.v1`, `orchestration.v2`. A new major version is introduced only for breaking changes; additive fields ship within the existing version.
+- **API-002**: Minimum deprecation window for any breaking change requiring a new version: 12 months during which both versions are supported.
+
+### 1.4 Request/Response Convention
+
+```protobuf
+// Every request includes idempotency key for mutating operations
+message CreatePaymentIntentRequest {
+  string idempotency_key = 1;
+  Money amount = 2;
+  string purpose = 3;          // 'payment' | 'card_verification'
+  string source_type = 4;      // 'merchant_api' | 'invoice' | 'subscription' | 'payment_link'
+  string source_id = 5;        // optional: invoice_id, subscription_id, etc.
+  string payment_method_token_id = 6; // optional: for recurring payments
+  map<string, string> metadata = 7;   // optional: merchant metadata
 }
 ```
-`code` is a stable, documented machine-readable enum (never a free-text string merchants are expected to parse); `message` is human-readable and may change wording without being a breaking change; `request_id` ties back to the correlation ID (Part 3 §4 envelope, Part 9 §1.1) for support/debugging.
 
-- **API-006**: Pagination via cursor (`?cursor=...&limit=...`), never raw offset-based pagination, since offset pagination degrades badly and produces inconsistent results under concurrent writes to the underlying eventually-consistent projections (Part 9 §6 XSTORE-001).
-- **API-007**: Every list/read endpoint that surfaces data derived from an eventually-consistent projection (Part 3 §7) includes an `as_of` timestamp in the response envelope, directly implementing Part 9 XSTORE-001's freshness-disclosure requirement.
+- **API-004**: All mutating requests accept an `idempotency_key` field in the protobuf body (not a header), mapped to Part 5 §4.1's caller-facing idempotency mechanism.
+- **API-005**: Standard error response:
 
-### 1.3 Authentication Headers
+```protobuf
+message ErrorDetail {
+  string code = 1;              // machine-readable enum
+  string message = 2;           // human-readable
+  string request_id = 3;        // correlation ID
+  map<string, string> details = 4;
+}
+```
 
-- **API-008**: `Authorization: Bearer <JWT>` for dashboard-session-derived calls; `Authorization: Basic` (API key : secret, base64) or a dedicated `X-Api-Key`/`X-Api-Secret` header pair for server-to-server calls (final header scheme choice to be confirmed against SDK ergonomics in Part 11, but the two distinct authentication paths — human-session vs. machine-key — are fixed).
+- **API-006**: Pagination via cursor in request body (not query string):
+
+```protobuf
+message ListPaymentIntentsRequest {
+  string cursor = 1;            // opaque cursor from previous response
+  uint32 limit = 2;             // max 100, default 20
+  string status_filter = 3;     // optional: filter by status
+  int64 created_after_unix_ms = 4;  // optional: time range filter
+  int64 created_before_unix_ms = 5; // optional: time range filter
+}
+
+message ListPaymentIntentsResponse {
+  repeated PaymentIntentView items = 1;
+  string next_cursor = 2;
+  bool has_more = 3;
+  int64 as_of_unix_ms = 4;      // freshness disclosure (XSTORE-001)
+}
+```
+
+- **API-007**: Every list/read response includes `as_of_unix_ms` timestamp for freshness disclosure.
+
+### 1.5 Authentication
+
+- **API-008**: `Authorization: Bearer <JWT>` for dashboard-session-derived calls; `X-Api-Key` / `X-Api-Secret` header pair for server-to-server calls. Both carried in HTTP headers, validated by API Gateway before protobuf decoding.
 
 ---
 
@@ -61,6 +104,7 @@
 |---|---|---|
 | Any service → Any service (sync) | gRPC (Protobuf) | Type-safe, observable, traceable (Part 4 RULE-001) |
 | Any service → Any service (async events) | NATS JetStream | Fan-out, decoupled, durable (Part 4 RULE-002) |
+| External API → API Gateway | Protobuf-over-HTTP POST | Binary, type-safe, code-gen ready |
 
 ### 2.2 Schema Registry
 
@@ -69,44 +113,122 @@
   - Breaking changes (field removal, type change) are detected automatically
   - Schema versions follow semantic versioning (GRPC-VER-001)
 
-- **SCHEMA-REG-002**: Services generate their gRPC clients and servers from the shared schema registry, ensuring type safety across the entire service mesh. The registry is the single source of truth for all inter-service contracts.
+- **SCHEMA-REG-002**: Services generate their gRPC clients and servers from the shared schema registry, ensuring type safety across the entire service mesh.
 
-### 2.2 Representative Proto — Payment Orchestration Service (Rust/SeaORM)
+### 2.3 Representative Proto — Payment Orchestration Service
 
 ```protobuf
 syntax = "proto3";
 package orchestration.v1;
 
-message Money {
-  int64 amount_minor_units = 1;
-  string currency_code = 2; // ISO 4217
-}
+import "common.v1/money.proto";
 
 message CreatePaymentIntentRequest {
-  Money amount = 1;
-  string idempotency_key = 2;
+  string idempotency_key = 1;
+  common.v1.Money amount = 2;
+  string purpose = 3;          // 'payment' | 'card_verification'
+  string source_type = 4;      // who initiated this payment
+  string source_id = 5;        // optional: invoice_id, subscription_id, etc.
+  string payment_method_token_id = 6; // optional: for recurring payments
+  map<string, string> metadata = 7;
 }
 
 message CreatePaymentIntentResponse {
   string payment_intent_id = 1;
-  string status = 2; // Created
+  string status = 2;
+  int64 created_at_unix_ms = 3;
 }
 
 message AuthorizePaymentIntentRequest {
   string payment_intent_id = 1;
-  string payment_method_token = 2;
+  string payment_method_token_id = 2;
 }
 
 message AuthorizePaymentIntentResponse {
-  string status = 1;              // Authorized | Failed | FailedAllRoutes
+  string status = 1;
   repeated RoutingAttemptResult attempts = 2;
+  string three_ds_data_json = 3; // 3DS passthrough (opaque to platform)
+  double risk_score = 4;
+  string risk_level = 5;
 }
 
 message RoutingAttemptResult {
   string acquirer_connector_id = 1;
   bool approved = 2;
-  string normalized_decline_reason = 3; // empty if approved
+  string normalized_decline_reason = 3;
   uint32 latency_ms = 4;
+  string gateway_profile_id = 5;
+  int64 fee_minor_units = 6;
+}
+
+message CapturePaymentIntentRequest {
+  string payment_intent_id = 1;
+  int64 amount_minor_units = 2;  // 0 = full capture
+  string currency_code = 3;
+}
+
+message CapturePaymentIntentResponse {
+  string status = 1;
+  int64 captured_amount_minor_units = 2;
+  int64 remaining_authorized_minor_units = 3;
+}
+
+message VoidPaymentIntentRequest {
+  string payment_intent_id = 1;
+}
+
+message VoidPaymentIntentResponse {
+  string status = 1;
+}
+
+message RefundPaymentIntentRequest {
+  string payment_intent_id = 1;
+  int64 amount_minor_units = 2;
+  string currency_code = 3;
+  string reason = 4;
+}
+
+message RefundPaymentIntentResponse {
+  string status = 1;
+  int64 refunded_amount_minor_units = 2;
+  int64 remaining_refundable_minor_units = 3;
+}
+
+message GetPaymentIntentRequest {
+  string payment_intent_id = 1;
+}
+
+message PaymentIntentView {
+  string payment_intent_id = 1;
+  string status = 2;
+  int64 requested_amount_minor_units = 3;
+  int64 authorized_amount_minor_units = 4;
+  int64 captured_amount_minor_units = 5;
+  int64 refunded_amount_minor_units = 6;
+  string currency_code = 7;
+  string source_type = 8;
+  string source_id = 9;
+  double risk_score = 10;
+  string risk_level = 11;
+  string gateway_profile_id = 12;
+  string expected_settlement_date = 13;
+  int64 created_at_unix_ms = 14;
+  int64 updated_at_unix_ms = 15;
+}
+
+message ListPaymentIntentsRequest {
+  string cursor = 1;
+  uint32 limit = 2;
+  string status_filter = 3;
+  int64 created_after_unix_ms = 4;
+  int64 created_before_unix_ms = 5;
+}
+
+message ListPaymentIntentsResponse {
+  repeated PaymentIntentView items = 1;
+  string next_cursor = 2;
+  bool has_more = 3;
+  int64 as_of_unix_ms = 4;
 }
 
 service OrchestrationService {
@@ -116,11 +238,12 @@ service OrchestrationService {
   rpc VoidPaymentIntent(VoidPaymentIntentRequest) returns (VoidPaymentIntentResponse);
   rpc RefundPaymentIntent(RefundPaymentIntentRequest) returns (RefundPaymentIntentResponse);
   rpc GetPaymentIntent(GetPaymentIntentRequest) returns (PaymentIntentView);
+  rpc ListPaymentIntents(ListPaymentIntentsRequest) returns (ListPaymentIntentsResponse);
 }
 ```
 
 - **GRPC-001**: Actor context is carried in call metadata by API Gateway — the service layer validates this context on every request.
-- **GRPC-002**: All money fields use the shared `Money` message (integer minor units, Part 3 PRIN-04) across every service's proto definitions — this is a genuinely shared library type (a small shared proto package, `common.v1`), one of the few deliberate exceptions to "services own their own contracts," since inconsistent money representation across service boundaries would be a correctness hazard.
+- **GRPC-002**: All money fields use the shared `Money` message (integer minor units, Part 3 PRIN-04) across every service's proto definitions.
 
 ### 2.2 Event Schema (Protobuf, Ties to Part 3 §4 / Part 9 §1.1)
 

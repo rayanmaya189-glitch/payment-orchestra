@@ -29,6 +29,7 @@ A single-tenant, API-first payment orchestration platform that enables merchants
 | F-009 | PostgreSQL TDE & connection security | Must | Infrastructure |
 | F-010 | Redis authentication & encryption | Must | Infrastructure |
 | F-011 | Local development environment (docker-compose) | Must | DX |
+| F-012 | Gap: Protobuf-only API convention (no REST, no GET, no path variables) | Must | Cross-cutting |
 
 ### M1.5 — Gateway Profiles (Core Configuration)
 
@@ -206,10 +207,12 @@ Recharts + TanStack Table v9 + Lucide React
 
 ### Frontend Pages
 
+All frontend pages communicate with the backend via protobuf-over-HTTP POST. The React dashboard uses a protobuf client library generated from `.proto` files.
+
 | Page | Route | Auth | Description |
 |------|-------|------|-------------|
 | Dashboard | `/dashboard` | Yes | Stats cards, charts, real-time updates |
-| Payments | `/payments` | Yes | Transaction list with filters |
+| Payments | `/payments` | Yes | Transaction list with filters (protobuf cursor pagination) |
 | Payment Detail | `/payments/:id` | Yes | Transaction detail, routing timeline |
 | Reconciliation | `/reconciliation` | Yes | Settlement matching dashboard |
 | Exceptions | `/reconciliation/exceptions` | Yes | Unmatched settlement queue |
@@ -219,6 +222,10 @@ Recharts + TanStack Table v9 + Lucide React
 | Settings | `/settings/*` | Yes | API keys, users, routing, compliance |
 | AI Assistant | `/assistant` | Yes | Natural-language Q&A |
 | Hosted Checkout | `/pay/:token` | No | PCI-DSS isolated payment page |
+
+**PROTO-FE-001**: Frontend uses protobuf-over-HTTP for all API calls. The `protobuf-es` or `@bufbuild/connect` library handles serialization/deserialization.
+
+**PROTO-FE-002**: The hosted checkout page (`/pay/:token`) is the only page that may use simpler request formats for third-party SDK integration (e.g., Stripe.js-style tokenization redirect). This page communicates with the acquirer directly for card tokenization, not through the platform's protobuf API.
 
 ## 4. Non-Functional Requirements Summary
 

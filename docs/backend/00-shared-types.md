@@ -244,17 +244,21 @@ message EventEnvelope {
 }
 ```
 
-## 8. gRPC Shared Types
+## 8. gRPC Shared Types — Strict Protobuf (No REST)
+
+All external and internal API contracts use protobuf. No REST JSON.
 
 ```protobuf
 syntax = "proto3";
 package common.v1;
 
+// Shared Money type — used across all services
 message Money {
   int64 amount_minor_units = 1;
-  string currency_code = 2; // ISO 4217
+  string currency_code = 2; // ISO 4217, e.g., "AED", "USD"
 }
 
+// Cursor-based pagination (no query strings — all in request body)
 message PaginationRequest {
   string cursor = 1;
   uint32 limit = 2; // max 100
@@ -263,12 +267,23 @@ message PaginationRequest {
 message PaginationResponse {
   string next_cursor = 1;
   bool has_more = 2;
+  int64 as_of_unix_ms = 3; // freshness disclosure
 }
 
+// Timestamp with millisecond precision
 message Timestamp {
   int64 unix_ms = 1; // milliseconds since epoch
 }
 
+// Error detail — returned in all error responses
+message ErrorDetail {
+  string code = 1;
+  string message = 2;
+  string request_id = 3;
+  map<string, string> details = 4;
+}
+
+// Internal error codes for service-to-service communication
 enum InternalErrorCode {
   INTERNAL_ERROR_CODE_UNSPECIFIED = 0;
   TRANSIENT_FAILURE = 1;
@@ -278,6 +293,38 @@ enum InternalErrorCode {
   AUTHORIZATION_DENIED = 5;
   VALIDATION_ERROR = 6;
   UNAVAILABLE = 7;
+}
+
+// Source context — who initiated this payment
+message SourceContext {
+  string source_type = 1;    // 'merchant_api' | 'invoice' | 'subscription' | 'payment_link' | 'ai_assistant' | 'system'
+  string source_id = 2;      // optional: invoice_id, subscription_id, etc.
+}
+
+// Risk assessment result
+message RiskAssessment {
+  double risk_score = 1;     // 0.0 - 1.0
+  string risk_level = 2;     // 'low' | 'medium' | 'high' | 'critical'
+  string rule_version = 3;
+  repeated string risk_factors = 4;
+}
+
+// Fee breakdown from settlement
+message FeeBreakdown {
+  int64 interchange_fee_minor_units = 1;
+  int64 scheme_fee_minor_units = 2;
+  int64 acquirer_markup_minor_units = 3;
+  int64 processing_fee_minor_units = 4;
+  int64 total_fee_minor_units = 5;
+  string fee_currency = 6;
+}
+
+// FX rate from acquirer
+message FxRate {
+  string source_currency = 1;
+  string target_currency = 2;
+  int64 rate_minor_units = 3;  // rate * 10^6 for integer math
+  int64 expires_at_unix_ms = 4;
 }
 ```
 
