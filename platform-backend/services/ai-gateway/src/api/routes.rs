@@ -14,11 +14,52 @@ async fn process_request(
     Json(req): Json<serde_json::Value>,
 ) -> Result<Json<serde_json::Value>, (axum::http::StatusCode, Json<serde_json::Value>)> {
     let prompt = req["prompt"].as_str().unwrap_or("").to_string();
+
+    // Input validation (OWASP A06, A11)
     if prompt.is_empty() {
         return Err((
             axum::http::StatusCode::BAD_REQUEST,
             Json(serde_json::json!({"error": "prompt is required", "code": "VALIDATION_ERROR"})),
         ));
+    }
+
+    // Enforce maximum prompt length (10,000 characters)
+    const MAX_PROMPT_LENGTH: usize = 10_000;
+    if prompt.len() > MAX_PROMPT_LENGTH {
+        return Err((
+            axum::http::StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({
+                "error": format!("Prompt exceeds maximum length of {} characters", MAX_PROMPT_LENGTH),
+                "code": "VALIDATION_ERROR"
+            })),
+        ));
+    }
+
+    // Basic prompt injection detection (OWASP LLM01)
+    let lower = prompt.to_lowercase();
+    let injection_patterns = [
+        "ignore previous instructions",
+        "ignore all instructions",
+        "disregard your system prompt",
+        "you are now",
+        "act as",
+        "pretend to be",
+        "override your instructions",
+        "forget everything",
+        "new instructions:",
+        "system:",
+        "<|im_start|>",
+    ];
+    for pattern in &injection_patterns {
+        if lower.contains(pattern) {
+            return Err((
+                axum::http::StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({
+                    "error": "Prompt contains potentially unsafe content",
+                    "code": "CONTENT_FILTERED"
+                })),
+            ));
+        }
     }
 
     let cmd = AiGatewayRequest {

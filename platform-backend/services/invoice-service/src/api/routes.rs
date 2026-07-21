@@ -62,8 +62,17 @@ async fn create_invoice(
 
 async fn get_invoice(
     State(state): State<AppState>,
+    auth: AuthPrincipal,
     Path(invoice_id): Path<Uuid>,
 ) -> Result<Json<InvoiceResponse>, (StatusCode, Json<ErrorResponse>)> {
+    // Only platform_admin and compliance_officer can view any invoice
+    if !matches!(auth.role.as_str(), "platform_admin" | "compliance_officer") {
+        return Err((
+            StatusCode::FORBIDDEN,
+            Json(ErrorResponse { error: "Insufficient permissions".into(), code: "FORBIDDEN".into() }),
+        ));
+    }
+
     match state.service.get_invoice(invoice_id).await {
         Ok(response) => Ok(Json(InvoiceResponse {
             invoice_id: response.invoice_id,
@@ -116,9 +125,18 @@ async fn cancel_invoice(
 
 async fn record_payment(
     State(state): State<AppState>,
+    auth: AuthPrincipal,
     Path(invoice_id): Path<Uuid>,
     Json(req): Json<RecordPaymentRequest>,
 ) -> Result<StatusCode, (StatusCode, Json<ErrorResponse>)> {
+    // Only platform_admin and operator_admin can record payments
+    if !matches!(auth.role.as_str(), "platform_admin" | "operator_admin") {
+        return Err((
+            StatusCode::FORBIDDEN,
+            Json(ErrorResponse { error: "Only administrators can record payments".into(), code: "FORBIDDEN".into() }),
+        ));
+    }
+
     let cmd = crate::application::services::RecordPaymentCommand {
         invoice_id,
         payment_intent_id: req.payment_intent_id,

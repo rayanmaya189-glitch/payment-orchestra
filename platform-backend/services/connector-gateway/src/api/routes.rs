@@ -78,8 +78,14 @@ async fn create_profile(
 
 async fn get_profile(
     State(state): State<AppState>,
+    auth: AuthPrincipal,
     Path(profile_id): Path<Uuid>,
 ) -> Result<Json<GatewayProfileResponse>, (StatusCode, Json<ErrorResponse>)> {
+    // Only platform_admin can view gateway profiles
+    if auth.role != "platform_admin" {
+        return Err((StatusCode::FORBIDDEN, Json(ErrorResponse { error: "Only administrators can view gateway profiles".into(), code: "FORBIDDEN".into() })));
+    }
+
     match state.service.get_profile(profile_id).await {
         Ok(response) => Ok(Json(GatewayProfileResponse {
             profile_id: response.profile_id,
@@ -99,9 +105,15 @@ async fn get_profile(
 
 async fn update_profile(
     State(state): State<AppState>,
+    auth: AuthPrincipal,
     Path(profile_id): Path<Uuid>,
     Json(req): Json<UpdateGatewayProfileRequest>,
 ) -> Result<StatusCode, (StatusCode, Json<ErrorResponse>)> {
+    // Only platform_admin can update gateway profiles
+    if auth.role != "platform_admin" {
+        return Err((StatusCode::FORBIDDEN, Json(ErrorResponse { error: "Only administrators can update gateway profiles".into(), code: "FORBIDDEN".into() })));
+    }
+
     let cmd = crate::application::services::UpdateGatewayProfileCommand {
         profile_id,
         status: req.status,
@@ -120,8 +132,14 @@ async fn update_profile(
 
 async fn list_profiles(
     State(state): State<AppState>,
+    auth: AuthPrincipal,
     Path(operator_id): Path<Uuid>,
 ) -> Result<Json<Vec<GatewayProfileResponse>>, (StatusCode, Json<ErrorResponse>)> {
+    // Only platform_admin can list all gateway profiles
+    if auth.role != "platform_admin" {
+        return Err((StatusCode::FORBIDDEN, Json(ErrorResponse { error: "Only administrators can list gateway profiles".into(), code: "FORBIDDEN".into() })));
+    }
+
     match state.service.list_profiles(operator_id).await {
         Ok(profiles) => Ok(Json(profiles.into_iter().map(|p| GatewayProfileResponse {
             profile_id: p.profile_id,

@@ -212,6 +212,13 @@ impl IamService for IamServiceImpl {
         principal.record_successful_login(&cmd.ip_address, &cmd.user_agent);
         self.principal_repo.save(&principal).await?;
 
+        // Mandatory MFA for admin roles (OWASP A07): platform_admin and compliance_officer MUST have MFA enrolled
+        if matches!(principal.role.as_str(), "platform_admin" | "compliance_officer") && !principal.mfa_enrolled {
+            return Err(PlatformError::AuthorizationDenied(
+                "Administrators must enroll in MFA before logging in".to_string()
+            ));
+        }
+
         // MFA enforcement (SRS AUTH-001): If MFA is enrolled, require TOTP verification
         if principal.mfa_enrolled {
             // Generate a short-lived MFA challenge token

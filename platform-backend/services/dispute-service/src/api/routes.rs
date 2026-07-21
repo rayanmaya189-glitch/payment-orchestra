@@ -32,8 +32,20 @@ async fn open_dispute(State(state): State<AppState>, auth: AuthPrincipal, Json(r
     }
 }
 
-async fn get_dispute(State(state): State<AppState>, Path(id): Path<String>) -> Result<Json<serde_json::Value>, (axum::http::StatusCode, Json<serde_json::Value>)> {
-    let did = Uuid::parse_str(&id).unwrap_or(Uuid::nil());
+async fn get_dispute(
+    State(state): State<AppState>,
+    auth: AuthPrincipal,
+    Path(id): Path<String>,
+) -> Result<Json<serde_json::Value>, (axum::http::StatusCode, Json<serde_json::Value>)> {
+    // Only platform_admin and compliance_officer can view disputes
+    if !matches!(auth.role.as_str(), "platform_admin" | "compliance_officer") {
+        return Err((axum::http::StatusCode::FORBIDDEN, Json(serde_json::json!({"error": "Insufficient permissions", "code": "FORBIDDEN"}))));
+    }
+
+    let did = Uuid::parse_str(&id).map_err(|_| (
+        axum::http::StatusCode::BAD_REQUEST,
+        Json(serde_json::json!({"error": "Invalid dispute ID", "code": "INVALID_ID"})),
+    ))?;
     match state.service.get(did).await {
         Ok(d) => Ok(Json(serde_json::json!({"dispute_id": d.dispute_id.to_string(), "status": d.status.as_str(), "reason": d.reason}))),
         Err(e) => Err((axum::http::StatusCode::NOT_FOUND, Json(serde_json::json!({"error": e.to_string()})))),

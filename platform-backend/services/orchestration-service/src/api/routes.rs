@@ -58,8 +58,18 @@ async fn create_payment_intent(
 
 async fn get_payment_intent(
     State(state): State<AppState>,
+    auth: AuthPrincipal,
     Path(payment_intent_id): Path<Uuid>,
 ) -> Result<Json<PaymentIntentResponse>, (StatusCode, Json<ErrorResponse>)> {
+    // Only platform_admin and compliance_officer can view any payment intent
+    // operator_admin would need operator-scoped check (not implemented yet)
+    if !matches!(auth.role.as_str(), "platform_admin" | "compliance_officer") {
+        return Err((
+            StatusCode::FORBIDDEN,
+            Json(ErrorResponse { error: "Insufficient permissions".into(), code: "FORBIDDEN".into() }),
+        ));
+    }
+
     let query = GetPaymentIntentQuery { payment_intent_id };
 
     match state.service.get_payment_intent(query).await {
