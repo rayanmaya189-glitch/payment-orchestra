@@ -55,13 +55,22 @@ pub fn decrypt_field(encrypted: &str, key: &[u8; 32]) -> Result<String, Platform
         .map_err(|e| PlatformError::Internal(format!("Invalid UTF-8: {e}")))
 }
 
-/// Derive a 256-bit key from a passphrase using Argon2id.
+/// Derive a 256-bit key from a passphrase using Argon2id with production parameters.
+///
+/// Production parameters (OWASP recommended for password hashing):
+/// - Memory: 64 MiB (65536 KiB)
+/// - Iterations: 3
+/// - Parallelism: 4 threads
+/// - Output: 32 bytes (256 bits)
 pub fn derive_key(passphrase: &str, salt: &[u8]) -> [u8; 32] {
     use argon2::password_hash::PasswordHasher;
-    use argon2::Argon2;
+    use argon2::{Argon2, Algorithm, Version, Params};
 
-    // Use the passphrase and salt directly with Argon2
-    let argon2 = Argon2::default();
+    // Production-tuned Argon2id parameters (OWASP 2024 recommendations)
+    let params = Params::new(65536, 3, 4, Some(32))
+        .expect("Valid Argon2 parameters");
+    let argon2 = Argon2::new(Algorithm::Argon2id, Version::V0x13, params);
+
     let mut output = [0u8; 32];
     argon2.hash_password_into(passphrase.as_bytes(), salt, &mut output)
         .expect("Key derivation failed");

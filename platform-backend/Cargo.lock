@@ -2841,6 +2841,8 @@ dependencies = [
  "platform-config",
  "redis",
  "sea-orm",
+ "serde",
+ "serde_json",
  "tokio",
  "tracing",
 ]
@@ -2858,6 +2860,7 @@ name = "platform-logging"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "regex",
  "serde",
  "serde_json",
  "tracing",

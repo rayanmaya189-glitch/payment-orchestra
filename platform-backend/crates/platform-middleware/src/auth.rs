@@ -323,3 +323,105 @@ fn forbidden_response(message: &str) -> http::Response<Body> {
         .body(Body::from(serde_json::json!({"error": message, "code": "UNAUTHORIZED"}).to_string()))
         .unwrap()
 }
+
+// ==================== Token Blocklist (Server-Side Revocation) ====================
+
+/// Trait for token blocklist — allows immediate revocation of JWT tokens.
+///
+/// JWT tokens are stateless by design, so revoked tokens remain valid until expiry.
+/// The blocklist stores revoked JTIs (JWT IDs) with TTL matching the token expiry.
+/// This provides immediate revocation for logout, password changes, and security events.
+#[async_trait::async_trait]
+pub trait TokenBlocklist: Send + Sync {
+    /// Add a JTI to the blocklist with TTL matching token expiry.
+    async fn block_token(&self, jti: &str, ttl_secs: u64) -> Result<(), String>;
+
+    /// Check if a JTI is in the blocklist (revoked).
+    async fn is_blocked(&self, jti: &str) -> Result<bool, String>;
+}
+
+/// In-memory token blocklist for testing (not for production).
+pub struct InMemoryTokenBlocklist {
+    blocked: std::sync::Mutex<std::collections::HashMap<String, std::time::Instant>>,
+}
+
+impl InMemoryTokenBlocklist {
+    pub fn new() -> Self {
+        Self {
+            blocked: std::sync::Mutex::new(std::collections::HashMap::new()),
+        }
+    }
+}
+
+#[async_trait::async_trait]
+impl TokenBlocklist for InMemoryTokenBlocklist {
+    async fn block_token(&self, jti: &str, ttl_secs: u64) -> Result<(), String> {
+        let mut blocked = self.blocked.lock().map_err(|e| e.to_string())?;
+        let expires_at = std::time::Instant::now() + std::time::Duration::from_secs(ttl_secs);
+        blocked.insert(jti.to_string(), expires_at);
+        Ok(())
+    }
+
+    async fn is_blocked(&self, jti: &str) -> Result<bool, String> {
+        let blocked = self.blocked.lock().map_err(|e| e.to_string())?;
+        match blocked.get(jti) {
+            Some(expires_at) => Ok(std::time::Instant::now() < *expires_at),
+            None => Ok(false),
+        }
+    }
+}
+
+/// Redis-backed token blocklist for production use.
+///
+/// Uses Redis SET with TTL for automatic expiry. Each blocked JTI is stored
+/// as `blocklist:{jti}` with the remaining TTL as the Redis key expiry.
+pub struct RedisTokenBlocklist {
+    redis: redis::aio::ConnectionManager,
+}
+
+impl RedisTokenBlocklist {
+    pub fn new(redis: redis::aio::ConnectionManager) -> Self {
+        Self { redis }
+    }
+}
+
+#[async_trait::async_trait]
+impl TokenBlocklist for RedisTokenBlocklist {
+    async fn block_token(&self, jti: &str, ttl_secs: u64) -> Result<(), String> {
+        let mut redis = self.redis.clone();
+        redis::cmd("SET")
+            .arg(format!("blocklist:{}", jti))
+            .arg("1")
+            .arg("EX")
+            .arg(ttl_secs)
+            .query_async::<()>(&mut redis)
+            .await
+            .map_err(|e| format!("Redis SET failed: {e}"))?;
+        Ok(())
+    }
+
+    async fn is_blocked(&self, jti: &str) -> Result<bool, String> {
+        let mut redis = self.redis.clone();
+        let exists: bool = redis::cmd("EXISTS")
+            .arg(format!("blocklist:{}", jti))
+            .query_async(&mut redis)
+            .await
+            .map_err(|e| format!("Redis EXISTS failed: {e}"))?;
+        Ok(exists)
+    }
+}
+
+/// Check if a token's JTI is blocked before accepting it.
+///
+/// Call this after decoding the JWT to verify the token hasn't been revoked.
+pub async fn verify_token_not_blocked(
+    claims: &Claims,
+    blocklist: &dyn TokenBlocklist,
+) -> Result<(), PlatformError> {
+    if blocklist.is_blocked(&claims.jti).await.unwrap_or(false) {
+        return Err(PlatformError::AuthorizationDenied(
+            "Token has been revoked".to_string()
+        ));
+    }
+    Ok(())
+}

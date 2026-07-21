@@ -5,3 +5,4 @@ pub mod database;
 pub mod entities;
 pub mod messaging;
 pub mod repository;
+pub mod pdf_generator;

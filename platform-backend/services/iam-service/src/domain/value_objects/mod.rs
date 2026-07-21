@@ -1,6 +1,7 @@
 use platform_error::ValidationError;
 
 pub mod totp;
+pub mod webauthn;
 
 /// Email value object with validation.
 #[derive(Debug, Clone, PartialEq, Eq)]

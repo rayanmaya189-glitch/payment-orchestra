@@ -3,6 +3,8 @@ use uuid::Uuid;
 use crate::domain::aggregates::KybCase;
 use platform_error::PlatformError;
 
+pub mod aml_rules;
+
 #[async_trait]
 pub trait KybCaseRepository: Send + Sync {
     async fn find_by_id(&self, id: Uuid) -> Result<Option<KybCase>, PlatformError>;

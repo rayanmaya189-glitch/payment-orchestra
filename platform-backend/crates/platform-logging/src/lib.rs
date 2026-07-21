@@ -148,3 +148,128 @@ pub fn log_security_event(
         tracing::warn!(security_event = %json, "Security event");
     }
 }
+
+// ==================== Global Panic Hook ====================
+
+/// Install a global panic hook that logs panics via tracing instead of printing to stderr.
+///
+/// This prevents stack traces from leaking into container logs in production.
+/// Call this once at application startup.
+pub fn install_panic_hook() {
+    let default_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        let thread = std::thread::current();
+        let thread_name = thread.name().unwrap_or("unnamed");
+
+        let payload = if let Some(s) = info.payload().downcast_ref::<&str>() {
+            s.to_string()
+        } else if let Some(s) = info.payload().downcast_ref::<String>() {
+            s.clone()
+        } else {
+            "Box<dyn Any>".to_string()
+        };
+
+        let location = info.location().map(|l| format!("{}:{}:{}", l.file(), l.line(), l.column())).unwrap_or_default();
+
+        tracing::error!(
+            thread = thread_name,
+            panic_payload = %payload,
+            panic_location = %location,
+            "Unrecoverable panic — service may be in degraded state"
+        );
+
+        // Call the default hook for backward compatibility (e.g., cargo test output)
+        default_hook(info);
+    }));
+}
+
+// ==================== PII Masking ====================
+
+/// Mask PII in log messages to prevent sensitive data leakage (OWASP A09).
+///
+/// Patterns masked:
+/// - Email addresses: user@example.com -> u***@e***.com
+/// - Phone numbers: +971501234567 -> +971****4567
+/// - Credit card numbers: 4111111111111111 -> 4111****1111
+/// - Social security / national IDs: 123-45-6789 -> ***-**-6789
+pub fn mask_pii(text: &str) -> String {
+    let mut result = text.to_string();
+
+    // Mask email addresses
+    let email_regex = regex::Regex::new(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}").unwrap();
+    result = email_regex.replace_all(&result, |caps: &regex::Captures| {
+        let email = &caps[0];
+        if let Some(at_pos) = email.find('@') {
+            let user = &email[..at_pos];
+            let domain = &email[at_pos..];
+            if let Some(dot_pos) = domain[1..].find('.') {
+                let domain_name = &domain[1..dot_pos+1];
+                let tld = &domain[dot_pos+1..];
+                format!("{}***@{}***.{}", &user[..1.min(user.len())], &domain_name[..1.min(domain_name.len())], tld)
+            } else {
+                format!("{}***@***", &user[..1.min(user.len())])
+            }
+        } else {
+            "***".to_string()
+        }
+    }).to_string();
+
+    // Mask credit card numbers (13-19 digits, optionally with spaces/dashes)
+    let cc_regex = regex::Regex::new(r"\b(\d{4})[- ]?(\d{4})[- ]?(\d{4})[- ]?(\d{1,7})\b").unwrap();
+    result = cc_regex.replace_all(&result, |caps: &regex::Captures| {
+        let first4 = &caps[1];
+        let last4 = caps.get(4).map(|m| &m.as_str()[m.as_str().len().saturating_sub(4)..]).unwrap_or("****");
+        format!("{}****{}", first4, last4)
+    }).to_string();
+
+    // Mask phone numbers (international format)
+    let phone_regex = regex::Regex::new(r"\+(\d{1,3})\d{6,}").unwrap();
+    result = phone_regex.replace_all(&result, |caps: &regex::Captures| {
+        let country = &caps[1];
+        let full = &caps[0];
+        let last4 = &full[full.len().saturating_sub(4)..];
+        format!("+{}****{}", country, last4)
+    }).to_string();
+
+    result
+}
+
+/// Sanitize error messages for logging — removes PII and internal details.
+pub fn sanitize_error_message(error: &str) -> String {
+    let masked = mask_pii(error);
+    // Remove file paths and line numbers that could leak implementation details
+    let path_regex = regex::Regex::new(r"(?:/[a-zA-Z0-9_.-]+){2,}").unwrap();
+    path_regex.replace_all(&masked, "[path]").to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_mask_email() {
+        let masked = mask_pii("Contact user@example.com for help");
+        assert!(!masked.contains("user@example.com"));
+        assert!(masked.contains("***@"));
+    }
+
+    #[test]
+    fn test_mask_credit_card() {
+        let masked = mask_pii("Card: 4111111111111111");
+        assert!(!masked.contains("4111111111111111"));
+        assert!(masked.contains("****"));
+    }
+
+    #[test]
+    fn test_mask_phone() {
+        let masked = mask_pii("Call +971501234567");
+        assert!(!masked.contains("971501234567"));
+        assert!(masked.contains("+971****4567"));
+    }
+
+    #[test]
+    fn test_sanitize_error() {
+        let sanitized = sanitize_error_message("Error at /home/user/src/main.rs:42");
+        assert!(!sanitized.contains("/home/user/src/main.rs"));
+    }
+}

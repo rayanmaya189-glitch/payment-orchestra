@@ -2,6 +2,9 @@
 //! Shared database and cache connection utilities with retry logic.
 //! Used by all services — eliminates code duplication.
 
+pub mod health;
+pub mod leader;
+
 use sea_orm::{ConnectOptions, Database, DatabaseConnection};
 use redis::aio::ConnectionManager;
 use redis::Client;
