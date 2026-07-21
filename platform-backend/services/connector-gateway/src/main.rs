@@ -16,6 +16,7 @@ use crate::infrastructure::adapters::PostgresGatewayProfileRepository;
 
 #[tokio::main]
 async fn main() {
+    platform_logging::install_panic_hook();
     ServiceLogger::init("connector-gateway");
 
     let config = AppConfig::from_env_or_panic("connector-gateway");

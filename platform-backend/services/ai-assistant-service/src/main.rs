@@ -15,6 +15,7 @@ use crate::infrastructure::adapters::PostgresQueryRepository;
 
 #[tokio::main]
 async fn main() {
+    platform_logging::install_panic_hook();
     ServiceLogger::init("ai-assistant-service");
     let config = AppConfig::from_env_or_panic("ai-assistant-service");
     let db = infrastructure::database::connect(&config.database).await;

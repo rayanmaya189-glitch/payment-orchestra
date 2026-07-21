@@ -11,6 +11,7 @@ use platform_logging::ServiceLogger;
 
 #[tokio::main]
 async fn main() {
+    platform_logging::install_panic_hook();
     ServiceLogger::init("outbox-relay");
 
     let config = AppConfig::from_env_or_panic("outbox-relay");

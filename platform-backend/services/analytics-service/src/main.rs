@@ -15,6 +15,7 @@ use crate::infrastructure::adapters::PostgresAnalyticsRepository;
 
 #[tokio::main]
 async fn main() {
+    platform_logging::install_panic_hook();
     ServiceLogger::init("analytics-service");
 
     let config = AppConfig::from_env_or_panic("analytics-service");

@@ -15,6 +15,7 @@ use crate::infrastructure::adapters::PostgresSettlementRepository;
 
 #[tokio::main]
 async fn main() {
+    platform_logging::install_panic_hook();
     ServiceLogger::init("reconciliation-service");
     let config = AppConfig::from_env_or_panic("reconciliation-service");
     let db = infrastructure::database::connect(&config.database).await;

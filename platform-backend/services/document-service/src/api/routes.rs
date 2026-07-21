@@ -24,15 +24,10 @@ async fn upload_document(
     Json(req): Json<serde_json::Value>,
 ) -> Result<(axum::http::StatusCode, Json<serde_json::Value>), (axum::http::StatusCode, Json<serde_json::Value>)> {
     // Extract required fields
-    let operator_id = req["operator_id"]
+    let requested_operator_id = req["operator_id"]
         .as_str()
-        .and_then(|s| Uuid::parse_str(s).ok())
-        .ok_or_else(|| {
-            (
-                axum::http::StatusCode::BAD_REQUEST,
-                Json(serde_json::json!({"error": "Invalid or missing operator_id", "code": "INVALID_OPERATOR_ID"})),
-            )
-        })?;
+        .and_then(|s| Uuid::parse_str(s).ok());
+    let operator_id = shared_types::derive_operator_id(&auth.principal_id, &auth.role, requested_operator_id);
 
     let document_type = req["document_type"]
         .as_str()

@@ -76,16 +76,24 @@ where
 pub struct JwtAuthLayer {
     config: AuthConfig,
     require: bool,
+    /// Optional token blocklist for server-side revocation (OWASP A04/A07).
+    blocklist: Option<Arc<dyn TokenBlocklist>>,
 }
 
 impl JwtAuthLayer {
     pub fn new(config: AuthConfig) -> Self {
-        Self { config, require: true }
+        Self { config, require: true, blocklist: None }
     }
 
     /// Create a layer that does NOT require authentication (pass-through for unauthenticated).
     pub fn optional(config: AuthConfig) -> Self {
-        Self { config, require: false }
+        Self { config, require: false, blocklist: None }
+    }
+
+    /// Enable token blocklist for server-side revocation.
+    pub fn with_blocklist(mut self, blocklist: Arc<dyn TokenBlocklist>) -> Self {
+        self.blocklist = Some(blocklist);
+        self
     }
 }
 
@@ -97,6 +105,7 @@ impl<S> Layer<S> for JwtAuthLayer {
             inner,
             config: self.config.clone(),
             require: self.require,
+            blocklist: self.blocklist.clone(),
         }
     }
 }
@@ -106,6 +115,7 @@ pub struct JwtAuthService<S> {
     inner: S,
     config: AuthConfig,
     require: bool,
+    blocklist: Option<Arc<dyn TokenBlocklist>>,
 }
 
 impl<S> Service<http::Request<Body>> for JwtAuthService<S>
@@ -124,6 +134,7 @@ where
     fn call(&mut self, mut req: http::Request<Body>) -> Self::Future {
         let config = self.config.clone();
         let require = self.require;
+        let blocklist = self.blocklist.clone();
         let mut inner = self.inner.clone();
 
         Box::pin(async move {
@@ -172,6 +183,13 @@ where
                             // Check expiry
                             if claims.exp < Utc::now().timestamp() as usize {
                                 return Ok(forbidden_response("Token expired"));
+                            }
+
+                            // Check token blocklist for server-side revocation (OWASP A04/A07)
+                            if let Some(ref blocklist) = blocklist {
+                                if let Ok(true) = blocklist.is_blocked(&claims.jti).await {
+                                    return Ok(forbidden_response("Token has been revoked"));
+                                }
                             }
 
                             let principal_id = match Uuid::parse_str(&claims.sub) {

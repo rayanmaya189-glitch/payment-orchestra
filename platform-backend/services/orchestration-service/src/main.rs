@@ -17,6 +17,7 @@ use crate::infrastructure::connector_client::HttpConnectorClient;
 
 #[tokio::main]
 async fn main() {
+    platform_logging::install_panic_hook();
     ServiceLogger::init("orchestration-service");
 
     let config = AppConfig::from_env_or_panic("orchestration-service");

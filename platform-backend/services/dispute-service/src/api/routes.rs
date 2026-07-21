@@ -74,15 +74,10 @@ async fn open_dispute(
                 Json(serde_json::json!({"error": "Invalid payment_intent_id", "code": "VALIDATION_ERROR"})),
             )
         })?;
-    let operator_id = req["operator_id"]
+    let requested_operator_id = req["operator_id"]
         .as_str()
-        .and_then(|s| Uuid::parse_str(s).ok())
-        .ok_or_else(|| {
-            (
-                axum::http::StatusCode::BAD_REQUEST,
-                Json(serde_json::json!({"error": "Invalid operator_id", "code": "VALIDATION_ERROR"})),
-            )
-        })?;
+        .and_then(|s| Uuid::parse_str(s).ok());
+    let operator_id = shared_types::derive_operator_id(&auth.principal_id, &auth.role, requested_operator_id);
 
     let cmd = OpenDisputeCommand {
         payment_intent_id,
@@ -211,15 +206,10 @@ async fn submit_evidence(
         )
     })?;
 
-    let operator_id = req["operator_id"]
+    let requested_operator_id = req["operator_id"]
         .as_str()
-        .and_then(|s| Uuid::parse_str(s).ok())
-        .ok_or_else(|| {
-            (
-                axum::http::StatusCode::BAD_REQUEST,
-                Json(serde_json::json!({"error": "Invalid operator_id", "code": "VALIDATION_ERROR"})),
-            )
-        })?;
+        .and_then(|s| Uuid::parse_str(s).ok());
+    let operator_id = shared_types::derive_operator_id(&auth.principal_id, &auth.role, requested_operator_id);
 
     match state
         .service

@@ -144,7 +144,7 @@ fn error_response(status: axum::http::StatusCode, error: &PlatformError) -> (axu
         ),
         _ => (
             "INTERNAL_ERROR".to_string(),
-            error.to_string(),
+            "Internal error".to_string(),
         ),
     };
     (
@@ -199,8 +199,13 @@ async fn create_subscription(
 
 async fn get_subscription(
     State(state): State<AppState>,
+    auth: AuthPrincipal,
     Path(id): Path<String>,
 ) -> Result<Json<SubscriptionResponse>, (axum::http::StatusCode, Json<serde_json::Value>)> {
+    if !matches!(auth.role.as_str(), "platform_admin" | "operator_admin" | "compliance_officer") {
+        return Err((axum::http::StatusCode::FORBIDDEN, Json(serde_json::json!({"error": "Insufficient permissions", "code": "FORBIDDEN"}))));
+    }
+
     let sub_id = Uuid::parse_str(&id).map_err(|_| {
         error_response(
             axum::http::StatusCode::BAD_REQUEST,
@@ -285,9 +290,14 @@ async fn cancel_subscription(
 
 async fn charge_subscription(
     State(state): State<AppState>,
+    auth: AuthPrincipal,
     Path(id): Path<String>,
     Json(req): Json<ChargeSubscriptionRequest>,
 ) -> Result<Json<serde_json::Value>, (axum::http::StatusCode, Json<serde_json::Value>)> {
+    if !matches!(auth.role.as_str(), "platform_admin" | "operator_admin") {
+        return Err((axum::http::StatusCode::FORBIDDEN, Json(serde_json::json!({"error": "Insufficient permissions", "code": "FORBIDDEN"}))));
+    }
+
     let sub_id = Uuid::parse_str(&id).map_err(|_| {
         error_response(
             axum::http::StatusCode::BAD_REQUEST,

@@ -16,6 +16,7 @@ use crate::infrastructure::adapters::PostgresInvoiceRepository;
 
 #[tokio::main]
 async fn main() {
+    platform_logging::install_panic_hook();
     ServiceLogger::init("invoice-service");
 
     let config = AppConfig::from_env_or_panic("invoice-service");

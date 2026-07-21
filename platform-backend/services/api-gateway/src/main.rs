@@ -15,6 +15,7 @@ use crate::infrastructure::adapters::PostgresRouteRepository;
 
 #[tokio::main]
 async fn main() {
+    platform_logging::install_panic_hook();
     ServiceLogger::init("api-gateway");
 
     let config = AppConfig::from_env_or_panic("api-gateway");

@@ -9,6 +9,7 @@ use uuid::Uuid;
 use crate::api::AppState;
 use crate::application::commands::*;
 use crate::application::services::AiAssistantService;
+use platform_middleware::AuthPrincipal;
 
 pub fn router(state: AppState) -> Router {
     Router::new()
@@ -41,10 +42,15 @@ struct CitationJson {
 
 async fn query_ai(
     State(state): State<AppState>,
+    auth: AuthPrincipal,
     Json(req): Json<QueryRequest>,
 ) -> Result<Json<QueryResponseJson>, (axum::http::StatusCode, Json<serde_json::Value>)> {
+    if !matches!(auth.role.as_str(), "platform_admin" | "operator_admin" | "compliance_officer" | "api_client") {
+        return Err((axum::http::StatusCode::FORBIDDEN, Json(serde_json::json!({"error": "Insufficient permissions", "code": "FORBIDDEN"}))));
+    }
+
     let cmd = AiQueryCommand {
-        principal_id: Uuid::nil(),
+        principal_id: auth.principal_id,
         query_text: req.query,
         session_id: req.session_id,
     };
@@ -61,16 +67,21 @@ async fn query_ai(
             }).collect(),
             confidence: resp.confidence,
         })),
-        Err(e) => Err((
+        Err(_) => Err((
             axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-            Json(serde_json::json!({"error": e.to_string()})),
+            Json(serde_json::json!({"error": "Internal error", "code": "INTERNAL_ERROR"})),
         )),
     }
 }
 
 async fn get_query(
     State(_state): State<AppState>,
+    auth: AuthPrincipal,
     Path(_id): Path<String>,
 ) -> Result<Json<serde_json::Value>, (axum::http::StatusCode, Json<serde_json::Value>)> {
+    if !matches!(auth.role.as_str(), "platform_admin" | "operator_admin" | "compliance_officer" | "api_client") {
+        return Err((axum::http::StatusCode::FORBIDDEN, Json(serde_json::json!({"error": "Insufficient permissions", "code": "FORBIDDEN"}))));
+    }
+
     Ok(Json(serde_json::json!({"status": "ok"})))
 }

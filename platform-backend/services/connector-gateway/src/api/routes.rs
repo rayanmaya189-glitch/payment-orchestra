@@ -185,8 +185,28 @@ async fn select_gateway(
     Json(req): Json<SelectGatewayRequest>,
 ) -> Result<Json<GatewaySelectionResponse>, (StatusCode, Json<ErrorResponse>)> {
     // ABAC: Verify the authenticated principal has access to this operator
-    // TODO: Check auth.principal_id has permission for operator_id
-    let _ = &auth;
+    if let Err(e) = platform_middleware::evaluate_policy(&platform_middleware::AbacContext {
+        principal_id: auth.principal_id,
+        role: auth.role.clone(),
+        action: "create".to_string(),
+        resource: "gateway_selection".to_string(),
+        resource_id: Some(operator_id),
+        amount: Some(req.amount.amount_minor_units),
+        ip_address: None,
+        operator_id: Some(operator_id),
+    }) {
+        platform_logging::log_security_event(
+            "connector-gateway",
+            platform_logging::SecurityEventType::PermissionDenied,
+            platform_logging::SecurityOutcome::Blocked,
+            Some(auth.principal_id),
+            None,
+            None,
+            None,
+            Some(serde_json::json!({"action": "select_gateway", "operator_id": operator_id, "reason": e.to_string()})),
+        );
+        return Err((StatusCode::FORBIDDEN, Json(ErrorResponse { error: "Access denied".into(), code: "FORBIDDEN".into() })));
+    }
 
     let cmd = crate::application::services::SelectGatewayCommand {
         operator_id,

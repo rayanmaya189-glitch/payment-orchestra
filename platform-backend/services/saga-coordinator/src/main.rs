@@ -15,6 +15,7 @@ use crate::infrastructure::adapters::PostgresSagaRepository;
 
 #[tokio::main]
 async fn main() {
+    platform_logging::install_panic_hook();
     ServiceLogger::init("saga-coordinator");
     let config = AppConfig::from_env_or_panic("saga-coordinator");
 

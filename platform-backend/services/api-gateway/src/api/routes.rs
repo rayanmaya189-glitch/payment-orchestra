@@ -11,6 +11,7 @@ use crate::api::dto::*;
 use crate::application::commands::*;
 use crate::application::services::ApiGatewayService;
 use platform_error::PlatformError;
+use platform_middleware::AuthPrincipal;
 
 pub fn router(state: AppState) -> Router {
     Router::new()
@@ -46,14 +47,20 @@ fn platform_error_to_response(e: PlatformError) -> (axum::http::StatusCode, Json
         ),
         _ => (
             axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-            Json(serde_json::json!({"error": e.to_string(), "code": "INTERNAL_ERROR"})),
+            Json(serde_json::json!({"error": "Internal error", "code": "INTERNAL_ERROR"})),
         ),
     }
 }
 
 async fn list_routes(
     State(state): State<AppState>,
+    auth: AuthPrincipal,
 ) -> Result<Json<serde_json::Value>, (axum::http::StatusCode, Json<serde_json::Value>)> {
+    // Only platform_admin can list routes
+    if auth.role != "platform_admin" {
+        return Err((axum::http::StatusCode::FORBIDDEN, Json(serde_json::json!({"error": "Insufficient permissions", "code": "FORBIDDEN"}))));
+    }
+
     match state.service.list_routes().await {
         Ok(result) => Ok(Json(serde_json::json!({
             "data": result.routes.iter().map(|r| r.to_json()).collect::<Vec<_>>()
@@ -64,8 +71,14 @@ async fn list_routes(
 
 async fn resolve_route(
     State(state): State<AppState>,
+    auth: AuthPrincipal,
     Json(req): Json<RouteRequestDto>,
 ) -> Result<Json<serde_json::Value>, (axum::http::StatusCode, Json<serde_json::Value>)> {
+    // Only platform_admin can resolve routes
+    if auth.role != "platform_admin" {
+        return Err((axum::http::StatusCode::FORBIDDEN, Json(serde_json::json!({"error": "Insufficient permissions", "code": "FORBIDDEN"}))));
+    }
+
     let cmd = RouteRequest {
         method: req.method,
         path: req.path,
@@ -87,8 +100,14 @@ async fn resolve_route(
 
 async fn forward_request(
     State(state): State<AppState>,
+    auth: AuthPrincipal,
     Json(req): Json<ForwardRequestDto>,
 ) -> Result<Json<serde_json::Value>, (axum::http::StatusCode, Json<serde_json::Value>)> {
+    // Only platform_admin can forward requests
+    if auth.role != "platform_admin" {
+        return Err((axum::http::StatusCode::FORBIDDEN, Json(serde_json::json!({"error": "Insufficient permissions", "code": "FORBIDDEN"}))));
+    }
+
     let body_bytes = req
         .body
         .and_then(|b| base64::engine::general_purpose::STANDARD.decode(&b).ok())
@@ -99,7 +118,7 @@ async fn forward_request(
         path: req.path,
         headers: req.headers.unwrap_or_default(),
         body: body_bytes,
-        principal_id: req.principal_id,
+        principal_id: Some(auth.principal_id.to_string()),
     };
 
     match state.service.forward_request(cmd).await {
@@ -122,8 +141,14 @@ async fn forward_request(
 
 async fn create_route(
     State(state): State<AppState>,
+    auth: AuthPrincipal,
     Json(req): Json<CreateRouteDto>,
 ) -> Result<Json<serde_json::Value>, (axum::http::StatusCode, Json<serde_json::Value>)> {
+    // Only platform_admin can create routes
+    if auth.role != "platform_admin" {
+        return Err((axum::http::StatusCode::FORBIDDEN, Json(serde_json::json!({"error": "Insufficient permissions", "code": "FORBIDDEN"}))));
+    }
+
     let cmd = CreateRouteCommand {
         path_prefix: req.path_prefix,
         target_service: req.target_service,
@@ -146,9 +171,15 @@ async fn create_route(
 
 async fn update_route(
     State(state): State<AppState>,
+    auth: AuthPrincipal,
     Path(route_id): Path<String>,
     Json(req): Json<UpdateRouteDto>,
 ) -> Result<Json<serde_json::Value>, (axum::http::StatusCode, Json<serde_json::Value>)> {
+    // Only platform_admin can update routes
+    if auth.role != "platform_admin" {
+        return Err((axum::http::StatusCode::FORBIDDEN, Json(serde_json::json!({"error": "Insufficient permissions", "code": "FORBIDDEN"}))));
+    }
+
     let rid = Uuid::parse_str(&route_id).map_err(|_| {
         (
             axum::http::StatusCode::BAD_REQUEST,
@@ -174,8 +205,14 @@ async fn update_route(
 
 async fn delete_route(
     State(state): State<AppState>,
+    auth: AuthPrincipal,
     Path(route_id): Path<String>,
 ) -> Result<Json<serde_json::Value>, (axum::http::StatusCode, Json<serde_json::Value>)> {
+    // Only platform_admin can delete routes
+    if auth.role != "platform_admin" {
+        return Err((axum::http::StatusCode::FORBIDDEN, Json(serde_json::json!({"error": "Insufficient permissions", "code": "FORBIDDEN"}))));
+    }
+
     let rid = Uuid::parse_str(&route_id).map_err(|_| {
         (
             axum::http::StatusCode::BAD_REQUEST,
@@ -193,8 +230,14 @@ async fn delete_route(
 
 async fn get_route_health(
     State(state): State<AppState>,
+    auth: AuthPrincipal,
     Path(route_id): Path<String>,
 ) -> Result<Json<serde_json::Value>, (axum::http::StatusCode, Json<serde_json::Value>)> {
+    // Only platform_admin can view route health
+    if auth.role != "platform_admin" {
+        return Err((axum::http::StatusCode::FORBIDDEN, Json(serde_json::json!({"error": "Insufficient permissions", "code": "FORBIDDEN"}))));
+    }
+
     let rid = Uuid::parse_str(&route_id).map_err(|_| {
         (
             axum::http::StatusCode::BAD_REQUEST,
@@ -215,7 +258,13 @@ async fn get_route_health(
 
 async fn get_stats(
     State(state): State<AppState>,
+    auth: AuthPrincipal,
 ) -> Result<Json<serde_json::Value>, (axum::http::StatusCode, Json<serde_json::Value>)> {
+    // Only platform_admin can view stats
+    if auth.role != "platform_admin" {
+        return Err((axum::http::StatusCode::FORBIDDEN, Json(serde_json::json!({"error": "Insufficient permissions", "code": "FORBIDDEN"}))));
+    }
+
     match state.service.get_stats().await {
         Ok(result) => Ok(Json(result.stats.to_json())),
         Err(e) => Err(platform_error_to_response(e)),

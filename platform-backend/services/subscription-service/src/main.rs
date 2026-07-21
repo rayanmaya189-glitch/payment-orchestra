@@ -15,6 +15,7 @@ use crate::infrastructure::adapters::PostgresSubscriptionRepository;
 
 #[tokio::main]
 async fn main() {
+    platform_logging::install_panic_hook();
     ServiceLogger::init("subscription-service");
 
     let config = AppConfig::from_env_or_panic("subscription-service");

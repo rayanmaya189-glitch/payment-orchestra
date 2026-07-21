@@ -19,7 +19,8 @@ pub fn router(state: AppState) -> Router {
 struct KybCaseResponse { kyb_case_id: String, status: String, assigned_officer: Option<String>, risk_score: Option<f64> }
 
 async fn submit_kyb(State(state): State<AppState>, auth: AuthPrincipal, Json(req): Json<serde_json::Value>) -> Result<(axum::http::StatusCode, Json<serde_json::Value>), (axum::http::StatusCode, Json<serde_json::Value>)> {
-    let operator_id = req["operator_id"].as_str().and_then(|s| Uuid::parse_str(s).ok()).unwrap_or(Uuid::nil());
+    let requested_operator_id = req["operator_id"].as_str().and_then(|s| Uuid::parse_str(s).ok());
+    let operator_id = shared_types::derive_operator_id(&auth.principal_id, &auth.role, requested_operator_id);
     match state.service.submit_kyb(SubmitKybCommand { operator_id, principal_id: auth.principal_id, role: auth.role.clone() }).await {
         Ok(id) => Ok((axum::http::StatusCode::CREATED, Json(serde_json::json!({"kyb_case_id": id.to_string(), "status": "submitted"})))),
         Err(e) => Err((axum::http::StatusCode::BAD_REQUEST, Json(serde_json::json!({"error": e.to_string()})))),

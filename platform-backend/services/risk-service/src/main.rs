@@ -17,6 +17,7 @@ use crate::infrastructure::adapters::PostgresRiskRepository;
 
 #[tokio::main]
 async fn main() {
+    platform_logging::install_panic_hook();
     ServiceLogger::init("risk-service");
     let config = AppConfig::from_env_or_panic("risk-service");
     let db = infrastructure::database::connect(&config.database).await;

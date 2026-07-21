@@ -33,7 +33,7 @@ async fn send_notification(
     }
 
     let cmd = SendNotificationCommand {
-        operator_id: Uuid::now_v7(), // In production: derive from auth context
+        operator_id: shared_types::derive_operator_id(&auth.principal_id, &auth.role, None),
         notification_type: req.notification_type,
         recipient: req.recipient,
         subject: req.subject,

@@ -124,7 +124,7 @@ fn error_response(
         PlatformError::Validation(e) => ("VALIDATION_ERROR".to_string(), e.to_string()),
         PlatformError::Conflict(e) => ("CONFLICT".to_string(), e.to_string()),
         PlatformError::AuthorizationDenied(msg) => ("FORBIDDEN".to_string(), msg.clone()),
-        _ => ("INTERNAL_ERROR".to_string(), error.to_string()),
+        _ => ("INTERNAL_ERROR".to_string(), "Internal error".to_string()),
     };
     (
         status,
@@ -169,11 +169,16 @@ async fn create_payment_link(
 
 async fn get_payment_link(
     State(state): State<AppState>,
+    auth: AuthPrincipal,
     Path(id): Path<String>,
 ) -> Result<
     Json<PaymentLinkResponse>,
     (axum::http::StatusCode, Json<serde_json::Value>),
 > {
+    if !matches!(auth.role.as_str(), "platform_admin" | "operator_admin" | "compliance_officer") {
+        return Err((axum::http::StatusCode::FORBIDDEN, Json(serde_json::json!({"error": "Insufficient permissions", "code": "FORBIDDEN"}))));
+    }
+
     let link_id = Uuid::parse_str(&id).map_err(|_| {
         error_response(
             axum::http::StatusCode::BAD_REQUEST,

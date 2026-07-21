@@ -15,6 +15,7 @@ use crate::infrastructure::adapters::PostgresPaymentLinkRepository;
 
 #[tokio::main]
 async fn main() {
+    platform_logging::install_panic_hook();
     ServiceLogger::init("payment-link-service");
     let config = AppConfig::from_env_or_panic("payment-link-service");
     let db = infrastructure::database::connect(&config.database).await;

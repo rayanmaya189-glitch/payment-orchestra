@@ -16,6 +16,7 @@ use crate::infrastructure::repository::PostgresEvidenceRepository;
 
 #[tokio::main]
 async fn main() {
+    platform_logging::install_panic_hook();
     ServiceLogger::init("dispute-service");
     let config = AppConfig::from_env_or_panic("dispute-service");
 

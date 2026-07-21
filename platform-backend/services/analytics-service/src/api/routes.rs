@@ -48,7 +48,7 @@ fn platform_error_to_response(e: PlatformError) -> (axum::http::StatusCode, Json
         ),
         _ => (
             axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-            Json(serde_json::json!({"error": e.to_string(), "code": "INTERNAL_ERROR"})),
+            Json(serde_json::json!({"error": "Internal error", "code": "INTERNAL_ERROR"})),
         ),
     }
 }
