@@ -2,6 +2,8 @@ pub mod network_international;
 pub mod fawry;
 pub mod tap;
 pub mod hyperpay;
+pub mod checkout_com;
+pub mod telr;
 
 
 use async_trait::async_trait;

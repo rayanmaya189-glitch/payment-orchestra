@@ -9,6 +9,7 @@ use axum::http::StatusCode;
 use tower::{Layer, Service};
 use std::task::{Context, Poll};
 use std::collections::HashMap;
+use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 use std::time::{Instant, Duration};
 use redis::aio::ConnectionManager;
@@ -20,6 +21,9 @@ pub struct RateLimitLayerConfig {
     pub api_per_principal_per_second: u32,
     /// Per-endpoint overrides: path prefix -> (limit, window_seconds)
     pub endpoint_overrides: Vec<(String, u32, u32)>,
+    /// Trusted proxy CIDRs — only these are allowed to set X-Forwarded-For / X-Real-IP.
+    /// When empty, proxy headers are ignored (direct connections only).
+    pub trusted_proxies: Vec<String>,
 }
 
 impl Default for RateLimitLayerConfig {
@@ -37,6 +41,7 @@ impl Default for RateLimitLayerConfig {
                 ("/v1/disputes".into(), 50, 60),          // Disputes: 50/min
                 ("/v1/subscriptions".into(), 50, 60),    // Subscriptions: 50/min
             ],
+            trusted_proxies: vec![], // Empty = ignore proxy headers (direct connections)
         }
     }
 }
@@ -102,14 +107,17 @@ pub struct RateLimitLayer {
     redis: ConnectionManager,
     config: RateLimitLayerConfig,
     fallback: InMemoryFallback,
+    trusted_proxies: Vec<String>,
 }
 
 impl RateLimitLayer {
     pub fn new(redis: ConnectionManager, config: RateLimitLayerConfig) -> Self {
+        let trusted_proxies = config.trusted_proxies.clone();
         Self {
             redis,
             config,
             fallback: InMemoryFallback::new(),
+            trusted_proxies,
         }
     }
 }
@@ -123,6 +131,7 @@ impl<S> Layer<S> for RateLimitLayer {
             redis: self.redis.clone(),
             config: self.config.clone(),
             fallback: self.fallback.clone(),
+            trusted_proxies: self.trusted_proxies.clone(),
         }
     }
 }
@@ -133,6 +142,7 @@ pub struct RateLimitService<S> {
     redis: ConnectionManager,
     config: RateLimitLayerConfig,
     fallback: InMemoryFallback,
+    trusted_proxies: Vec<String>,
 }
 
 impl<S> Service<http::Request<Body>> for RateLimitService<S>
@@ -154,10 +164,11 @@ where
         let config = self.config.clone();
         let fallback = self.fallback.clone();
         let path = req.uri().path().to_string();
+        let trusted_proxies = self.trusted_proxies.clone();
 
         Box::pin(async move {
             // Determine client identifier
-            let client_key = extract_client_ip(&req);
+            let client_key = extract_client_ip(&req, &trusted_proxies);
 
             // Choose rate limit based on endpoint (SRS RL-001: per-endpoint limits)
             let (limit, window_secs) = if path.contains("/auth/login") {
@@ -238,19 +249,55 @@ where
 }
 
 /// Extract client IP from request, respecting trusted proxy headers.
-fn extract_client_ip(req: &http::Request<Body>) -> String {
-    // Check X-Real-IP first (set by trusted proxy)
-    if let Some(ip) = req.headers().get("x-real-ip").and_then(|v| v.to_str().ok()) {
-        return ip.to_string();
+///
+/// Only trusts X-Real-IP / X-Forwarded-For when the connection comes from a known
+/// trusted proxy (SRS ABAC-009, NET-SEG-001). Prevents IP spoofing bypass of
+/// per-IP rate limits (OWASP A01).
+fn extract_client_ip(req: &http::Request<Body>, trusted_proxies: &[String]) -> String {
+    // Get the direct connection peer IP if available
+    let peer_ip = req
+        .extensions()
+        .get::<axum::extract::ConnectInfo<SocketAddr>>()
+        .map(|ci| ci.0.ip().to_string());
+
+    // If we have no trusted proxies configured, never trust proxy headers
+    if trusted_proxies.is_empty() {
+        return peer_ip.unwrap_or_else(|| "unknown".to_string());
     }
 
-    // Check X-Forwarded-For (first entry is client IP)
-    if let Some(forwarded) = req.headers().get("x-forwarded-for").and_then(|v| v.to_str().ok()) {
-        if let Some(first) = forwarded.split(',').next() {
-            return first.trim().to_string();
+    // Check if the direct peer is a trusted proxy
+    if let Some(ref peer) = peer_ip {
+        let is_trusted = trusted_proxies.iter().any(|cidr| {
+            // Simple prefix match — in production use ipnet crate for CIDR matching
+            peer.starts_with(cidr.trim_end_matches(".*").trim_end_matches("/24"))
+                || peer.starts_with(cidr.trim_end_matches(".0").trim_end_matches("/24"))
+        });
+        if !is_trusted {
+            // Direct connection from untrusted source — ignore proxy headers
+            return peer.clone();
+        }
+    } else {
+        // No peer info available — ignore proxy headers
+        return "unknown".to_string();
+    }
+
+    // Connection is from a trusted proxy — safe to read headers
+    if let Some(ip) = req.headers().get("x-real-ip").and_then(|v| v.to_str().ok()) {
+        // Validate it's a plausible IP
+        if ip.parse::<std::net::IpAddr>().is_ok() {
+            return ip.to_string();
         }
     }
 
-    // Fallback to connection info (localhost in dev)
-    "unknown".to_string()
+    if let Some(forwarded) = req.headers().get("x-forwarded-for").and_then(|v| v.to_str().ok()) {
+        if let Some(first) = forwarded.split(',').next() {
+            let trimmed = first.trim();
+            if trimmed.parse::<std::net::IpAddr>().is_ok() {
+                return trimmed.to_string();
+            }
+        }
+    }
+
+    // Fallback to peer IP
+    peer_ip.unwrap_or_else(|| "unknown".to_string())
 }

@@ -265,12 +265,34 @@ fn generate_subdomain(legal_name: &str) -> String {
         .collect::<Vec<_>>()
         .join("-");
 
-    // Truncate to 63 chars (DNS limit)
-    if subdomain.len() > 63 {
+    // Truncate to 63 chars (DNS limit per RFC 1035)
+    let subdomain = if subdomain.len() > 63 {
         subdomain[..63].trim_end_matches('-').to_string()
     } else {
         subdomain
+    };
+
+    // DNS validation: must not start/end with hyphen, must be 1-63 chars
+    // Only allows [a-z0-9-] (already filtered above)
+    validate_subdomain(&subdomain).then_some(subdomain).unwrap_or_default()
+}
+
+/// Validate a subdomain string against DNS naming rules (RFC 1035).
+/// - 1-63 characters
+/// - Only [a-z0-9-]
+/// - Must not start or end with hyphen
+/// - Must not contain consecutive hyphens
+fn validate_subdomain(subdomain: &str) -> bool {
+    if subdomain.is_empty() || subdomain.len() > 63 {
+        return false;
     }
+    if subdomain.starts_with('-') || subdomain.ends_with('-') {
+        return false;
+    }
+    if subdomain.contains("--") {
+        return false;
+    }
+    subdomain.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
 }
 
 #[cfg(test)]
@@ -282,5 +304,17 @@ mod tests {
         assert_eq!(generate_subdomain("Acme Corp"), "acme-corp");
         assert_eq!(generate_subdomain("Al Futtaim Group"), "al-futtaim-group");
         assert_eq!(generate_subdomain("  Spaces  "), "spaces");
+    }
+
+    #[test]
+    fn test_validate_subdomain() {
+        assert!(validate_subdomain("acme-corp"));
+        assert!(validate_subdomain("a"));
+        assert!(validate_subdomain("test123"));
+        assert!(!validate_subdomain("")); // empty
+        assert!(!validate_subdomain("-start")); // starts with hyphen
+        assert!(!validate_subdomain("end-")); // ends with hyphen
+        assert!(!validate_subdomain("double--hyphen")); // consecutive hyphens
+        assert!(!validate_subdomain(&"a".repeat(64))); // too long
     }
 }

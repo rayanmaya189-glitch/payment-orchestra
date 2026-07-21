@@ -15,6 +15,7 @@ pub trait PaymentIntentRepository: Send + Sync {
 
 #[async_trait]
 pub trait RoutingPolicyRepository: Send + Sync {
+    async fn load(&self, id: Uuid) -> Result<Option<RoutingPolicy>, PlatformError>;
     async fn load_active_for_operator(&self, operator_id: Uuid) -> Result<Option<RoutingPolicy>, PlatformError>;
     async fn save(&self, policy: &RoutingPolicy) -> Result<(), PlatformError>;
 }

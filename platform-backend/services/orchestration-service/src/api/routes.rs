@@ -14,12 +14,13 @@ use platform_middleware::AuthPrincipal;
 
 pub fn router(state: AppState) -> Router {
     Router::new()
-        .route("/payment-intents", axum::routing::post(create_payment_intent))
+        .route("/payment-intents", axum::routing::get(list_payment_intents).post(create_payment_intent))
         .route("/payment-intents/{payment_intent_id}", axum::routing::get(get_payment_intent))
         .route("/payment-intents/{payment_intent_id}/authorize", axum::routing::post(authorize))
         .route("/payment-intents/{payment_intent_id}/capture", axum::routing::post(capture))
         .route("/payment-intents/{payment_intent_id}/void", axum::routing::post(void))
         .route("/payment-intents/{payment_intent_id}/refund", axum::routing::post(refund))
+        .route("/routing-policies/{routing_policy_id}/activate", axum::routing::post(activate_routing_policy))
         .with_state(state)
 }
 
@@ -187,4 +188,42 @@ fn error_to_response(e: platform_error::PlatformError) -> (StatusCode, Json<Erro
     };
 
     (status, Json(ErrorResponse { error: message, code: code.to_string() }))
+}
+
+async fn list_payment_intents(
+    State(state): State<AppState>,
+    auth: AuthPrincipal,
+    axum::extract::Query(params): axum::extract::Query<ListPaymentIntentsParams>,
+) -> Result<Json<Vec<PaymentIntentResponse>>, (StatusCode, Json<ErrorResponse>)> {
+    let operator_id = shared_types::derive_operator_id(&auth.principal_id, &auth.role, None);
+    let query = ListPaymentIntentsQuery {
+        operator_id,
+        status: params.status,
+        limit: params.limit.map(|l| l as u32),
+        cursor: params.cursor,
+    };
+
+    match state.service.list_payment_intents(query).await {
+        Ok(response) => Ok(Json(response)),
+        Err(e) => Err(error_to_response(e)),
+    }
+}
+
+async fn activate_routing_policy(
+    State(state): State<AppState>,
+    auth: AuthPrincipal,
+    Path(routing_policy_id): Path<Uuid>,
+) -> Result<Json<PaymentIntentResponse>, (StatusCode, Json<ErrorResponse>)> {
+    let operator_id = shared_types::derive_operator_id(&auth.principal_id, &auth.role, None);
+    let cmd = ActivateRoutingPolicyCommand {
+        routing_policy_id,
+        principal_id: auth.principal_id,
+        role: auth.role.clone(),
+        operator_id,
+    };
+
+    match state.service.activate_routing_policy(cmd).await {
+        Ok(response) => Ok(Json(response)),
+        Err(e) => Err(error_to_response(e)),
+    }
 }

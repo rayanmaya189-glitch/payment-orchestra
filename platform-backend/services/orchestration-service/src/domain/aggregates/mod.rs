@@ -743,3 +743,194 @@ mod tests {
         assert!(attempt.decline_reason.is_none());
     }
 }
+
+// ==================== Property-Based Tests (SRS PROP-TEST-001) ====================
+
+#[cfg(test)]
+mod proptests {
+    use super::*;
+    use proptest::prelude::*;
+
+    fn arb_currency() -> impl Strategy<Value = shared_types::CurrencyCode> {
+        prop_oneof![
+            Just(shared_types::CurrencyCode::new("AED").unwrap()),
+            Just(shared_types::CurrencyCode::new("USD").unwrap()),
+            Just(shared_types::CurrencyCode::new("EUR").unwrap()),
+            Just(shared_types::CurrencyCode::new("GBP").unwrap()),
+            Just(shared_types::CurrencyCode::new("SAR").unwrap()),
+        ]
+    }
+
+    fn arb_amount() -> impl Strategy<Value = i64> {
+        (1i64..1_000_000_000) // 0.01 to 10,000,000.00 in minor units
+    }
+
+    fn arb_money() -> impl Strategy<Value = Money> {
+        (arb_amount(), arb_currency()).prop_map(|(amount, currency)| Money {
+            amount_minor_units: amount,
+            currency,
+        })
+    }
+
+    proptest! {
+        #[test]
+        fn prop_new_intent_always_created(amount in arb_money()) {
+            let intent = PaymentIntent::new(
+                Uuid::now_v7(),
+                amount.clone(),
+                format!("idem_{}", Uuid::now_v7()),
+                PaymentPurpose::Payment,
+            );
+            prop_assert_eq!(intent.status, PaymentStatus::Created);
+            prop_assert_eq!(intent.requested_amount.amount_minor_units, amount.amount_minor_units);
+            prop_assert_eq!(intent.uncommitted_events.len(), 1);
+        }
+
+        #[test]
+        fn prop_authorize_sets_authorized(amount in arb_money()) {
+            let mut intent = PaymentIntent::new(
+                Uuid::now_v7(),
+                amount.clone(),
+                format!("idem_{}", Uuid::now_v7()),
+                PaymentPurpose::Payment,
+            );
+            intent.record_authorization(amount.clone());
+            prop_assert_eq!(intent.status, PaymentStatus::Authorized);
+            prop_assert_eq!(intent.authorized_amount.amount_minor_units, amount.amount_minor_units);
+        }
+
+        #[test]
+        fn prop_capture_never_exceeds_authorized(
+            auth_amount in arb_amount(),
+            capture_amount in arb_amount(),
+        ) {
+            let mut intent = PaymentIntent::new(
+                Uuid::now_v7(),
+                Money { amount_minor_units: auth_amount, currency: shared_types::CurrencyCode::new("AED").unwrap() },
+                format!("idem_{}", Uuid::now_v7()),
+                PaymentPurpose::Payment,
+            );
+            intent.record_authorization(Money { amount_minor_units: auth_amount, currency: shared_types::CurrencyCode::new("AED").unwrap() });
+
+            let capped_capture = capture_amount.min(auth_amount);
+            intent.record_capture(Money { amount_minor_units: capped_capture, currency: shared_types::CurrencyCode::new("AED").unwrap() });
+
+            // INV-01: captured_amount <= authorized_amount
+            prop_assert!(
+                intent.captured_amount.amount_minor_units <= intent.authorized_amount.amount_minor_units,
+                "captured {} exceeded authorized {}",
+                intent.captured_amount.amount_minor_units,
+                intent.authorized_amount.amount_minor_units,
+            );
+        }
+
+        #[test]
+        fn prop_refund_never_exceeds_captured(
+            auth_amount in arb_amount(),
+            capture_amount in arb_amount(),
+            refund_amount in arb_amount(),
+        ) {
+            let capped_auth = auth_amount.max(1);
+            let capped_capture = capture_amount.min(capped_auth);
+            let capped_refund = refund_amount.min(capped_capture);
+
+            let mut intent = PaymentIntent::new(
+                Uuid::now_v7(),
+                Money { amount_minor_units: capped_auth, currency: shared_types::CurrencyCode::new("AED").unwrap() },
+                format!("idem_{}", Uuid::now_v7()),
+                PaymentPurpose::Payment,
+            );
+            intent.record_authorization(Money { amount_minor_units: capped_auth, currency: shared_types::CurrencyCode::new("AED").unwrap() });
+            intent.record_capture(Money { amount_minor_units: capped_capture, currency: shared_types::CurrencyCode::new("AED").unwrap() });
+            intent.record_refund(Money { amount_minor_units: capped_refund, currency: shared_types::CurrencyCode::new("AED").unwrap() });
+
+            // INV-01: refunded_amount <= captured_amount
+            prop_assert!(
+                intent.refunded_amount.amount_minor_units <= intent.captured_amount.amount_minor_units,
+                "refunded {} exceeded captured {}",
+                intent.refunded_amount.amount_minor_units,
+                intent.captured_amount.amount_minor_units,
+            );
+        }
+
+        #[test]
+        fn prop_from_events_replay_produces_same_state(
+            auth_amount in arb_amount(),
+        ) {
+            let id = Uuid::now_v7();
+            let events = vec![
+                PaymentIntentEvent::Created {
+                    operator_id: Uuid::now_v7(),
+                    amount_minor_units: auth_amount,
+                    currency: "AED".to_string(),
+                    idempotency_key: "idem_replay".to_string(),
+                    purpose: "payment".to_string(),
+                },
+                PaymentIntentEvent::Authorized {
+                    amount_minor_units: auth_amount,
+                    acquirer_reference: "acq_123".to_string(),
+                },
+            ];
+
+            let intent = PaymentIntent::from_events(id, events);
+            prop_assert_eq!(intent.payment_intent_id, id);
+            prop_assert_eq!(intent.status, PaymentStatus::Authorized);
+            prop_assert_eq!(intent.authorized_amount.amount_minor_units, auth_amount);
+            prop_assert!(intent.uncommitted_events.is_empty());
+        }
+
+        #[test]
+        fn prop_void_only_from_authorized(amount in arb_amount()) {
+            let mut intent = PaymentIntent::new(
+                Uuid::now_v7(),
+                Money { amount_minor_units: amount, currency: shared_types::CurrencyCode::new("AED").unwrap() },
+                format!("idem_{}", Uuid::now_v7()),
+                PaymentPurpose::Payment,
+            );
+
+            // Can't void from Created
+            prop_assert!(!intent.can_void());
+
+            intent.record_authorization(Money { amount_minor_units: amount, currency: shared_types::CurrencyCode::new("AED").unwrap() });
+
+            // Can void from Authorized
+            prop_assert!(intent.can_void());
+
+            intent.record_void();
+
+            // Can't void after voided
+            prop_assert!(!intent.can_void());
+        }
+
+        #[test]
+        fn prop_state_machine_consistency(
+            auth_amount in arb_amount(),
+            capture_amount in arb_amount(),
+        ) {
+            let capped_auth = auth_amount.max(1);
+            let capped_capture = capture_amount.min(capped_auth);
+
+            let mut intent = PaymentIntent::new(
+                Uuid::now_v7(),
+                Money { amount_minor_units: capped_auth, currency: shared_types::CurrencyCode::new("AED").unwrap() },
+                format!("idem_{}", Uuid::now_v7()),
+                PaymentPurpose::Payment,
+            );
+
+            // Created -> Authorized
+            prop_assert!(intent.can_authorize());
+            intent.record_authorization(Money { amount_minor_units: capped_auth, currency: shared_types::CurrencyCode::new("AED").unwrap() });
+            prop_assert!(!intent.can_authorize());
+            prop_assert!(intent.can_capture());
+            prop_assert!(intent.can_void());
+
+            // Authorized -> Captured/PartiallyCaptured
+            intent.record_capture(Money { amount_minor_units: capped_capture, currency: shared_types::CurrencyCode::new("AED").unwrap() });
+            prop_assert!(!intent.can_void());
+            prop_assert!(intent.can_refund());
+
+            // INV-01: captured <= authorized
+            prop_assert!(intent.captured_amount.amount_minor_units <= intent.authorized_amount.amount_minor_units);
+        }
+    }
+}

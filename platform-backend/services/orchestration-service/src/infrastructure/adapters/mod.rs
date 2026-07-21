@@ -276,6 +276,14 @@ impl PostgresRoutingPolicyRepository {
 
 #[async_trait]
 impl crate::infrastructure::repository::RoutingPolicyRepository for PostgresRoutingPolicyRepository {
+    async fn load(&self, id: Uuid) -> Result<Option<RoutingPolicy>, PlatformError> {
+        let model = routing_policy::Entity::find_by_id(id)
+            .one(&self.db)
+            .await
+            .map_err(|e| PlatformError::Internal(format!("Database error: {e}")))?;
+        Ok(model.map(|m| m.to_domain()))
+    }
+
     async fn load_active_for_operator(&self, operator_id: Uuid) -> Result<Option<RoutingPolicy>, PlatformError> {
         let model = routing_policy::Entity::find()
             .filter(routing_policy::Column::OperatorId.eq(operator_id))

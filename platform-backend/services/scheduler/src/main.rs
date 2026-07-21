@@ -408,7 +408,7 @@ async fn run_settlement_polling(db: &sea_orm::DatabaseConnection) {
                     // to fetch settlement file, parse, and reconcile against
                     // payment intents. Emit SettlementReconciled event.
                     for row in &rows {
-                        if let Some(batch_id) = row.try_get::<uuid::Uuid>("", "settlement_batch_id").ok().flatten() {
+                        if let Some(batch_id) = row.try_get::<uuid::Uuid>("", "settlement_batch_id").ok() {
                             tracing::debug!(batch_id = %batch_id, "Processing settlement batch");
                         }
                     }
@@ -453,7 +453,7 @@ async fn run_exception_aging_alerts(db: &sea_orm::DatabaseConnection) {
         )).await {
             Ok(rows) => {
                 let critical: Vec<_> = rows.iter().filter(|r| {
-                    r.try_get::<String>("", "severity").ok().flatten().as_deref() == Some("critical")
+                    r.try_get::<String>("", "severity").ok().as_deref() == Some("critical")
                 }).collect();
                 let total = rows.len();
 

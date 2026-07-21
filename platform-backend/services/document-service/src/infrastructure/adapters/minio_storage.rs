@@ -154,9 +154,10 @@ impl StorageProvider for MinioStorageProvider {
             .map_err(|e| PlatformError::Internal(format!("MinIO download request failed: {e}")))?;
 
         if response.status() == reqwest::StatusCode::NOT_FOUND {
-            return Err(PlatformError::NotFound(format!(
-                "Document not found in MinIO: {key}"
-            )));
+            return Err(PlatformError::NotFound {
+                resource: "Document".into(),
+                id: uuid::Uuid::nil(),
+            });
         }
 
         if !response.status().is_success() {

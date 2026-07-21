@@ -84,6 +84,9 @@ ipnet = "2"
 # Async traits
 async-trait = "0.1"
 
+# Property-based testing
+proptest = "1"
+
 # JWT
 jsonwebtoken = "9"
 

@@ -56,7 +56,11 @@ async fn main() {
         platform_middleware::RateLimitLayerConfig { endpoint_overrides: vec![],
             login_per_ip_per_minute: config.rate_limit.login_per_ip_per_minute,
             api_per_principal_per_second: config.rate_limit.api_per_principal_per_second,
+            ..Default::default()
         },
+    );
+    let body_limit = platform_middleware::BodyLimitLayer::new(
+        platform_middleware::BodyLimitConfig::default(),
     );
 
     let app = Router::new()
@@ -66,6 +70,7 @@ async fn main() {
             .layer(platform_middleware::JwtAuthLayer::new(config.auth.clone())))
         .layer(platform_middleware::SecurityHeadersLayer)
         .layer(platform_middleware::RequestIdLayer)
+        .layer(body_limit)
         .layer(rate_limit)
         .layer(cors)
         .layer(TraceLayer::new_for_http());

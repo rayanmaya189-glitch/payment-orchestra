@@ -48,3 +48,13 @@ pub struct RefundPaymentIntentCommand {
     pub role: String,
     pub operator_id: Uuid,
 }
+
+/// Activate a routing policy for an operator (SRS UC-011, EVT-11/EVT-12).
+/// Uses Maker/Checker: the activation must be approved before taking effect.
+#[derive(Debug, Clone)]
+pub struct ActivateRoutingPolicyCommand {
+    pub routing_policy_id: Uuid,
+    pub principal_id: Uuid,
+    pub role: String,
+    pub operator_id: Uuid,
+}

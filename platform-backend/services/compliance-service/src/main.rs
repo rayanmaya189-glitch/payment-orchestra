@@ -39,5 +39,5 @@ async fn main() {
 }
 async fn healthz() -> &'static str { "ok" }
 async fn startupz() -> axum::Json<serde_json::Value> {
-    axum::Json(platform_db::health::startup_response_with_uptime("compliance-service", *STARTED_AT))
+    axum::Json(serde_json::json!({"status": "ok", "service": "compliance-service"}))
 }

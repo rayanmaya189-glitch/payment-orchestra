@@ -27,6 +27,13 @@ pub struct RefundPaymentIntentRequest {
     pub amount: Money,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct ListPaymentIntentsParams {
+    pub status: Option<String>,
+    pub limit: Option<u64>,
+    pub cursor: Option<String>,
+}
+
 #[derive(Debug, Serialize)]
 pub struct PaymentIntentResponse {
     pub payment_intent_id: Uuid,

@@ -23,6 +23,7 @@ mod m20240101_000020_create_documents;
 mod m20240101_000021_create_ai_requests;
 mod m20240101_000022_create_route_configs;
 mod m20240101_000023_create_saga_instances;
+mod m20240102_000001_add_row_level_security;
 
 pub struct Migrator;
 
@@ -53,6 +54,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20240101_000021_create_ai_requests::Migration),
             Box::new(m20240101_000022_create_route_configs::Migration),
             Box::new(m20240101_000023_create_saga_instances::Migration),
+            Box::new(m20240102_000001_add_row_level_security::Migration),
         ]
     }
 }

@@ -304,6 +304,35 @@ impl IamService for IamServiceImpl {
         let principal_id = Uuid::parse_str(&claims.sub)
             .map_err(|_| PlatformError::AuthorizationDenied("Invalid principal ID".to_string()))?;
 
+        // Check refresh token rotation window (SRS SESS-SEC-003)
+        // If the token was created more than rotation_window_secs ago, the client
+        // isn't rotating tokens properly — invalidate all sessions as a safety measure.
+        let token_iat = chrono::DateTime::from_timestamp(claims.iat as i64, 0)
+            .unwrap_or_else(|| chrono::Utc::now());
+        let elapsed = chrono::Utc::now().signed_duration_since(token_iat);
+        if elapsed.num_seconds() > self.config.refresh_token_rotation_window_secs as i64 {
+            platform_logging::log_security_event(
+                "iam-service",
+                platform_logging::SecurityEventType::BruteForceDetected,
+                platform_logging::SecurityOutcome::Blocked,
+                Some(principal_id),
+                Some(&cmd.ip_address),
+                Some(&cmd.user_agent),
+                None,
+                Some(serde_json::json!({
+                    "reason": "rotation_window_exceeded",
+                    "elapsed_secs": elapsed.num_seconds(),
+                    "window_secs": self.config.refresh_token_rotation_window_secs,
+                    "message": "Refresh token used outside rotation window"
+                })),
+            );
+            self.session_store.invalidate_all_principal_tokens(&principal_id.to_string()).await?;
+            self.refresh_token_repo.revoke_all_for_principal(principal_id).await?;
+            return Err(PlatformError::AuthorizationDenied(
+                "Session expired — rotation window exceeded".to_string()
+            ));
+        }
+
         // Verify client fingerprint (SRS SESS-SEC-003: Session binding)
         let expected_fingerprint = platform_middleware::client_fingerprint(&cmd.ip_address, &cmd.user_agent);
         if claims.fingerprint_hash != expected_fingerprint {

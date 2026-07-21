@@ -31,6 +31,9 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Test
         run: cargo test --workspace
+      - name: Test (property-based)
+        run: cargo test --workspace -- prop_ --nocapture
+        continue-on-error: false
 
   clippy:
     name: Clippy
@@ -57,7 +60,7 @@ jobs:
         run: cargo fmt --all -- --check
 
   deny:
-    name: Deny
+    name: Deny (Supply Chain)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -66,7 +69,7 @@ jobs:
           command: check
 
   audit:
-    name: Audit
+    name: Audit (Vulnerabilities)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -74,10 +77,39 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
+  security-sast:
+    name: SAST (cargo-audit)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install cargo-audit
+        run: cargo install cargo-audit
+      - name: Run audit
+        run: cargo audit
+        working-directory: platform-backend
+
+  sbom:
+    name: SBOM Generation
+    runs-on: ubuntu-latest
+    needs: [check, test, clippy, fmt, deny, audit]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install cargo-cyclonedx
+        run: cargo install cargo-cyclonedx
+      - name: Generate SBOM
+        run: cargo cyclonedx --format json --output-dir sbom
+        working-directory: platform-backend
+      - name: Upload SBOM
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-${{ github.sha }}
+          path: platform-backend/sbom/
+          retention-days: 90
+
   docker:
     name: Docker Build
     runs-on: ubuntu-latest
-    needs: [check, test, clippy, fmt, deny, audit]
+    needs: [check, test, clippy, fmt, deny, audit, security-sast]
     strategy:
       matrix:
         service:
@@ -99,6 +131,8 @@ jobs:
           - document-service
           - saga-coordinator
           - api-gateway
+          - outbox-relay
+          - scheduler
     steps:
       - uses: actions/checkout@v4
       - name: Set up Docker Buildx
@@ -122,3 +156,18 @@ jobs:
         run: |
           docker push ghcr.io/${{ github.repository }}/${{ matrix.service }}:${{ github.sha }}
           docker push ghcr.io/${{ github.repository }}/${{ matrix.service }}:latest
+      - name: Scan image for vulnerabilities
+        if: github.event_name == 'push'
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ghcr.io/${{ github.repository }}/${{ matrix.service }}:${{ github.sha }}
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+          severity: 'CRITICAL,HIGH'
+        continue-on-error: true
+      - name: Upload Trivy scan results
+        if: github.event_name == 'push'
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: 'trivy-results.sarif'
+        continue-on-error: true

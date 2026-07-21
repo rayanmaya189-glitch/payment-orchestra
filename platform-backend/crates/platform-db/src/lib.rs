@@ -91,3 +91,46 @@ pub async fn connect_redis(config: &RedisConfig) -> ConnectionManager {
         }
     }
 }
+
+/// Set the RLS tenant context for the current database session.
+///
+/// Must be called at the start of each request to enforce Row-Level Security (SRS SECTEST-004).
+/// Uses `SET LOCAL` so the setting applies only to the current transaction.
+///
+/// ```rust,no_run
+/// # async fn example(db: sea_orm::DatabaseConnection) -> Result<(), sea_orm::DbErr> {
+/// let operator_id = uuid::Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000").unwrap();
+/// platform_db::set_operator_context(&db, operator_id).await?;
+/// // All subsequent queries in this transaction are filtered by operator_id
+/// # Ok(())
+/// # }
+/// ```
+pub async fn set_operator_context(
+    db: &DatabaseConnection,
+    operator_id: uuid::Uuid,
+) -> Result<(), sea_orm::DbErr> {
+    use sea_orm::{ConnectionTrait, Statement};
+
+    db.execute(Statement::from_sql_and_values(
+        sea_orm::DatabaseBackend::Postgres,
+        "SELECT set_config('app.current_operator_id', $1, true)",
+        vec![operator_id.to_string().into()],
+    ))
+    .await?;
+
+    Ok(())
+}
+
+/// Clear the RLS tenant context (for system-level operations).
+pub async fn clear_operator_context(db: &DatabaseConnection) -> Result<(), sea_orm::DbErr> {
+    use sea_orm::{ConnectionTrait, Statement};
+
+    db.execute(Statement::from_sql_and_values(
+        sea_orm::DatabaseBackend::Postgres,
+        "SELECT set_config('app.current_operator_id', '', true)",
+        vec![],
+    ))
+    .await?;
+
+    Ok(())
+}

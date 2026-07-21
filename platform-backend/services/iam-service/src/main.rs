@@ -55,6 +55,7 @@ async fn main() {
             ],
             login_per_ip_per_minute: config.rate_limit.login_per_ip_per_minute,
             api_per_principal_per_second: config.rate_limit.api_per_principal_per_second,
+            ..Default::default()
         },
     );
 

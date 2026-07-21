@@ -34,9 +34,11 @@ async fn main() {
     let cors = platform_middleware::cors_layer(&config.cors);
     let rate_limit = platform_middleware::RateLimitLayer::new(
         redis,
-        platform_middleware::RateLimitLayerConfig { endpoint_overrides: vec![],
+        platform_middleware::RateLimitLayerConfig {
+            endpoint_overrides: vec![],
             login_per_ip_per_minute: config.rate_limit.login_per_ip_per_minute,
             api_per_principal_per_second: config.rate_limit.api_per_principal_per_second,
+            ..Default::default()
         },
     );
 

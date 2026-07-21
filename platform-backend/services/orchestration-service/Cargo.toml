@@ -29,3 +29,6 @@ platform-proto.workspace = true
 redis.workspace = true
 reqwest.workspace = true
 hex.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true

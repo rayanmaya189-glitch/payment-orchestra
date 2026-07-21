@@ -50,7 +50,9 @@ fn default_stream_name() -> String {
 
 /// Authentication configuration — JWT, API keys, MFA, lockout policy.
 /// All secrets loaded from environment variables, NEVER hardcoded.
-#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+///
+/// NOTE: Custom Debug impl prevents secrets from leaking into logs (OWASP A02/A09).
+#[derive(Clone, Deserialize, PartialEq, Eq)]
 pub struct AuthConfig {
     /// JWT signing secret — for HS256 (test/development only).
     /// Production MUST use RSA keys via jwt_private_key_pem / jwt_public_key_pem.
@@ -83,6 +85,27 @@ pub struct AuthConfig {
     /// Encryption key for PII fields (AES-256, 32 bytes hex-encoded)
     /// Loaded from PLATFORM__AUTH__ENCRYPTION_KEY env var
     pub encryption_key: Option<String>,
+}
+
+/// Custom Debug for AuthConfig — redacts all secret fields to prevent log leakage.
+impl std::fmt::Debug for AuthConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AuthConfig")
+            .field("jwt_secret", &"[REDACTED]")
+            .field("jwt_private_key_pem", &self.jwt_private_key_pem.as_ref().map(|_| "[REDACTED]"))
+            .field("jwt_public_key_pem", &self.jwt_public_key_pem.as_ref().map(|_| "[REDACTED]"))
+            .field("jwt_access_token_ttl_secs", &self.jwt_access_token_ttl_secs)
+            .field("jwt_refresh_token_ttl_secs", &self.jwt_refresh_token_ttl_secs)
+            .field("refresh_token_rotation_window_secs", &self.refresh_token_rotation_window_secs)
+            .field("lockout_attempts_15min", &self.lockout_attempts_15min)
+            .field("lockout_attempts_1hr", &self.lockout_attempts_1hr)
+            .field("lockout_attempts_suspend", &self.lockout_attempts_suspend)
+            .field("password_min_length", &self.password_min_length)
+            .field("api_key_default_expiry_days", &self.api_key_default_expiry_days)
+            .field("api_key_max_expiry_days", &self.api_key_max_expiry_days)
+            .field("encryption_key", &self.encryption_key.as_ref().map(|_| "[REDACTED]"))
+            .finish()
+    }
 }
 
 /// CORS configuration per SRS CORS-001
