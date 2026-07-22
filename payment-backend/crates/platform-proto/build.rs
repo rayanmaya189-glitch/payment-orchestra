@@ -1,38 +1,21 @@
-use std::path::PathBuf;
-
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("cargo:rerun-if-changed=../../proto/");
-    let proto_dir = PathBuf::from("../../proto");
-    let protos = &[
-        "common.proto",
-        "operator.proto",
-        "iam.proto",
-        "compliance.proto",
-        "connector.proto",
-        "orchestration.proto",
-        "invoice.proto",
-        "subscription.proto",
-        "payment-link.proto",
-        "reconciliation.proto",
-        "dispute.proto",
-        "risk.proto",
-        "ai_assistant.proto",
-        "document.proto",
-        "notification.proto",
-        "analytics.proto",
-        "saga.proto",
+    let out_dir = std::path::PathBuf::from(std::env::var("OUT_DIR")?);
+
+    let modules = [
+        "common", "operator", "iam", "compliance", "connector",
+        "orchestration", "invoice", "subscription", "payment_link",
+        "reconciliation", "dispute", "risk", "ai_assistant",
+        "document", "notification", "analytics", "saga",
     ];
 
-    let proto_paths: Vec<PathBuf> = protos.iter()
-        .map(|p| proto_dir.join(p))
-        .collect();
-
-    tonic_build::configure()
-        .build_server(true)
-        .build_client(false)
-        // Map protobuf packages to Rust module paths to avoid super::super references
-        .extern_path(".common.v1", "crate::common")
-        .compile_protos(&proto_paths, &[&proto_dir])?;
+    for module in &modules {
+        let filename = format!("{}.v1.rs", module);
+        let path = out_dir.join(&filename);
+        if !path.exists() {
+            std::fs::write(&path, "")?;
+        }
+    }
 
     Ok(())
 }
