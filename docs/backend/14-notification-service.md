@@ -1,5 +1,6 @@
 # 14 — notification-service (BC-14 Notification Service)
 
+n> **Architecture Context**: This module runs within the modular monolith alongside all other modules. All inter-module communication uses in-process gRPC (synchronous) or in-process NATS channels (asynchronous). The module boundaries defined here can be extracted into separate microservices in a future architecture evolution if scaling requires it.
 At-least-once delivery. Subscribes to domain events. Email/SMS dispatch.
 
 ---

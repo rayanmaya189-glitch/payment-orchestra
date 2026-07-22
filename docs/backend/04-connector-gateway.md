@@ -1,5 +1,6 @@
 # 04 — connector-gateway (BC-04 Gateway Connector Framework)
 
+n> **Architecture Context**: This module runs within the modular monolith alongside all other modules. All inter-module communication uses in-process gRPC (synchronous) or in-process NATS channels (asynchronous). The module boundaries defined here can be extracted into separate microservices in a future architecture evolution if scaling requires it.
 Anti-Corruption Layer. Translates N acquirer APIs into one normalized internal protocol.
 
 **BYOK Critical Service**: This service provides the `OnboardingSchema` and credential validation that every merchant needs to connect their own gateway credentials.

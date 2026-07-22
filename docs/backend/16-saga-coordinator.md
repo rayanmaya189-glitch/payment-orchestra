@@ -1,5 +1,6 @@
 # 16 — Saga Coordinator (BC-17)
 
+n> **Architecture Context**: This module runs within the modular monolith alongside all other modules. All inter-module communication uses in-process gRPC (synchronous) or in-process NATS channels (asynchronous). The module boundaries defined here can be extracted into separate microservices in a future architecture evolution if scaling requires it.
 Cross-cutting infrastructure. Durable state machine for multi-step, cross-aggregate workflows.
 
 ---

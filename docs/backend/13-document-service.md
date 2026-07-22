@@ -1,5 +1,6 @@
 # 13 — document-service (BC-13 Document Management)
 
+n> **Architecture Context**: This module runs within the modular monolith alongside all other modules. All inter-module communication uses in-process gRPC (synchronous) or in-process NATS channels (asynchronous). The module boundaries defined here can be extracted into separate microservices in a future architecture evolution if scaling requires it.
 MinIO-backed blob storage + metadata. Triggers OCR pipeline.
 
 ---

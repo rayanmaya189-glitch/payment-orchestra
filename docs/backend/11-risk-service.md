@@ -1,5 +1,6 @@
 # 11 — risk-service (BC-11 Fraud & Risk Scoring)
 
+n> **Architecture Context**: This module runs within the modular monolith alongside all other modules. All inter-module communication uses in-process gRPC (synchronous) or in-process NATS channels (asynchronous). The module boundaries defined here can be extracted into separate microservices in a future architecture evolution if scaling requires it.
 Initial release: Rule-based scoring. Future: ML-based scoring.
 
 ---

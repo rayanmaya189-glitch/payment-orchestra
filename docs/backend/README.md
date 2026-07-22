@@ -16,7 +16,7 @@ This directory contains implementation-ready DDD + TDD specifications for all mi
 
 ```
 BYOK-First, Protobuf-Native, Dual API (REST JSON + Protobuf)
-Rust + SeaORM + NATS JetStream + PostgreSQL + Redis + Ollama
+Rust + SeaORM + In-process NATS (async channels) + PostgreSQL + Redis + Ollama
 ```
 
 ## Service Index

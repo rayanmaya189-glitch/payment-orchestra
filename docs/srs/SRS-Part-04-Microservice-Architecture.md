@@ -377,9 +377,9 @@ pub struct DlqEventModel {
 
 *(Full Kubernetes/Docker deployment specification is in Part 11; this section previews the shape so Parts 5–10 can assume a consistent mental model.)*
 
-- Each service in §1.1 is an independently deployable, independently scalable container. `orchestration-service` and `connector-gateway` are provisioned with the highest replica-count floor and tightest autoscaling responsiveness, since they sit on the checkout-latency-critical path.
-- `ai-assistant-service` and its Ollama inference backend are deployed on GPU-backed node pools, separate from the general CPU-only service mesh, with the `ai-gateway` mediating so that a spike in AI usage cannot starve GPU resources needed for anything else (there is nothing else GPU-bound at launch, but this isolation is kept as a forward-looking discipline).
-- All services are deployed behind a service mesh providing mTLS between services (Part 8, zero-trust internal networking) — this is what makes the "trust only the propagated gateway context" claim enforceable rather than aspirational: services physically cannot be reached except through authenticated mesh identities.
+- The entire platform is deployed as a single deployable unit (modular monolith). All modules run within the same process, communicating via in-process gRPC (synchronous) or in-process NATS channels (asynchronous). Horizontal scaling is achieved by running multiple replicas of the unit behind a load balancer. Critical-path modules (orchestration, connector-gateway) share process resources and scale together.
+- `ai-assistant-service` and its Ollama inference backend are deployed on GPU-backed infrastructure, with the `ai-gateway` mediating so that a spike in AI usage cannot starve GPU resources needed for anything else (there is nothing else GPU-bound at launch, but this isolation is kept as a forward-looking discipline).
+- Internal module communication uses in-process calls within a single process. No service mesh is needed. mTLS is used only for external API connections and database connections — this is what makes the "trust only the propagated gateway context" claim enforceable rather than aspirational: services physically cannot be reached except through authenticated mesh identities.
 
 ---
 
@@ -400,11 +400,11 @@ pub struct DlqEventModel {
 
 The SRS specifies TLS 1.3 for external traffic (Part 8 ENC-001) and mTLS for service-to-service (AUTH-006) but does not specify encryption for NATS JetStream or Redis — the two most sensitive internal data paths after the database.
 
-**NATS-ENC-001**: All NATS client-server connections use TLS 1.3 with mTLS (service mesh certificates). No plaintext NATS connections are permitted in any environment (dev/staging/prod).
+**NATS-ENC-001: All NATS channels use TLS 1.3 within the modular monolith. Internal module communication uses in-process channels (async) that do not require wire encryption since they never leave process memory.
 
 **NATS-ENC-002**: NATS JetStream message stores are encrypted at rest using AES-256-GCM via JetStream's native encryption configuration. Encryption keys are managed through the platform KMS (Part 8 SEC-001).
 
-**NATS-ENC-003**: NATS connection configuration must specify `tls_client_cert_file` and `tls_client_key_file` for every service, with `tls_ca_file` pointing to the service mesh CA. Connection fails if TLS negotiation fails — no plaintext fallback.
+**NATS-ENC-003: NATS channel configuration is internal to the monolith process. No TLS certificate management needed for inter-module communication.
 
 **REDIS-ENC-001**: All Redis client-server connections use TLS with mutual authentication (mTLS or AUTH with TLS).
 
@@ -522,7 +522,7 @@ message EventEnvelope {
 **NET-EGRESS-001**: In addition to ingress NetworkPolicies (HARD-002), egress restrictions are specified:
 - `connector-gateway`: egress restricted to known acquirer IP ranges (maintained in a ConfigMap, updated per connector)
 - `notification-service`: egress restricted to known email/SMS provider IPs
-- All other services: egress restricted to internal service mesh only (no direct external egress)
+- All other modules: no direct external egress (no direct external egress)
 - DNS egress restricted to platform DNS resolver
 
 ---

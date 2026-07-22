@@ -1,5 +1,6 @@
 # 15 — analytics-service (BC-15 Analytics & Reporting)
 
+n> **Architecture Context**: This module runs within the modular monolith alongside all other modules. All inter-module communication uses in-process gRPC (synchronous) or in-process NATS channels (asynchronous). The module boundaries defined here can be extracted into separate microservices in a future architecture evolution if scaling requires it.
 Pure query-side read model. Consumes all domain events into ClickHouse.
 
 ---

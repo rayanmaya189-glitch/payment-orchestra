@@ -1,5 +1,6 @@
 # 05 — orchestration-service (BC-05 Payment Orchestration)
 
+n> **Architecture Context**: This module runs within the modular monolith alongside all other modules. All inter-module communication uses in-process gRPC (synchronous) or in-process NATS channels (asynchronous). The module boundaries defined here can be extracted into separate microservices in a future architecture evolution if scaling requires it.
 The core domain service. Event-sourced. Owns `PaymentIntent` and `RoutingPolicy` aggregates.
 
 ---

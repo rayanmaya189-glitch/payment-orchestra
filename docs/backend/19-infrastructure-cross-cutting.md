@@ -1,5 +1,6 @@
 # 19 — Infrastructure & Cross-Cutting Concerns
 
+n> **Architecture Context**: This module runs within the modular monolith alongside all other modules. All inter-module communication uses in-process gRPC (synchronous) or in-process NATS channels (asynchronous). The module boundaries defined here can be extracted into separate microservices in a future architecture evolution if scaling requires it.
 Missing from all service-specific backend docs. Covers: outbox, health checks, graceful shutdown, leader election, feature flags, logging, connection pools, degraded modes, secrets, encryption, audit, SSRF, and operational hardening.
 
 ---
@@ -55,7 +56,7 @@ Every service exposes on port 8081:
 Every service implements on SIGTERM:
 
 ```
-1. Stop accepting new requests (deregister from service mesh)
+1. Stop accepting new requests (deregister from load balancer)
 2. Complete in-flight requests (drain timeout: 15s checkout-critical, 60s others)
 3. Flush outbox entries
 4. Release leader election locks
