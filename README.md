@@ -426,7 +426,7 @@ payment-orchestra/
 │   │   ├── SRS-Part-01-Vision-Business-Scope-Stakeholders.md
 │   │   ├── SRS-Part-02-Business-Processes-Use-Cases.md
 │   │   ├── SRS-Part-03-DDD-Bounded-Contexts.md
-│   │   ├── SRS-Part-04-Microservice-Architecture.md
+│   │   ├── SRS-Part-04-Architecture-Service-Design.md
 │   │   ├── SRS-Part-05-Payment-Orchestration-Engine.md
 │   │   ├── SRS-Part-06-AI-Assistant-RAG.md
 │   │   ├── SRS-Part-07-Gateway-Connector-Framework.md

@@ -829,7 +829,7 @@ CI Stages:
 | Shared Types | `00-shared-types.md` | Money, IDs, PaymentStatus, EventEnvelope, protobuf types |
 | API Gateway | `17-api-gateway.md` | Endpoint design, rate limiting, auth flow, CORS, TDD tests |
 | Cross-Cutting Infrastructure | `19-infrastructure-cross-cutting.md` | Outbox pattern, health checks, leader election, logging, encryption |
-| SRS Part 04 | `docs/srs/SRS-Part-04-Microservice-Architecture.md` | Full architecture decisions, service catalog, communication patterns |
+| SRS Part 04 | `docs/srs/SRS-Part-04-Architecture-Service-Design.md` | Full architecture decisions, service catalog, communication patterns |
 | SRS Part 09 | `docs/srs/SRS-Part-09-Database-Design.md` | Database schemas, event store design, Redis cache, RLS policies |
 | SRS Part 10 | `docs/srs/SRS-Part-10-APIs-gRPC-Contracts.md` | Full gRPC contract definitions, API conventions |
 | SRS Part 11 | `docs/srs/SRS-Part-11-Testing-DevOps-Deployment.md` | CI/CD pipeline, load testing, deployment topology |

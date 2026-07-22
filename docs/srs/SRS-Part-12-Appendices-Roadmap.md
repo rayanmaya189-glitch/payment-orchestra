@@ -25,7 +25,7 @@
 | 1 | Vision, Business Requirements, Scope, Stakeholders | Why the product exists; BIZ-xxx register; the no-custody constraint; single-tenant deployment model; Rust-only with SeaORM |
 | 2 | Business Processes & Use Cases | UC-xxx catalog with full flows, tied to BIZ-xxx; operator onboarding lifecycle |
 | 3 | DDD & Bounded Contexts | 15 bounded contexts + Saga Coordinator (BC-17), SeaORM entities (Rust), domain event catalog + outbox pattern |
-| 4 | Microservice Architecture | 18-service catalog with Go/Rust language split, API/AI Gateway, gRPC vs NATS decision rules, versioned NATS subjects, outbox relay, circuit breakers, feature flags, graceful degradation framework |
+| 4 | Architecture & Service Design | 22-service catalog, API/AI Gateway, in-process gRPC + NATS decision rules, versioned NATS subjects, outbox relay, circuit breakers, feature flags, graceful degradation framework |
 | 5 | Payment Orchestration Engine | State machine, routing algorithm, idempotency, partial auth handling, currency precision, subscription pause/resume (all SeaORM entities) |
 | 6 | AI Payment Assistant & RAG | Model routing, RAG pipeline, guardrails, evaluation harness, production quality monitoring, tool use (Phase 2), multi-step reasoning (Phase 2), enhanced prompt injection defense |
 | 7 | Gateway Connector Framework | ACL trait design, capability flags, decline normalization, settlement formats, circuit breakers, bulkhead isolation, per-connector retry config |
@@ -41,7 +41,7 @@
 
 *(A representative, consolidated cross-section; the authoritative per-domain detail lives in each Part's own §9/§10/§12 traceability table — this matrix exists to show the chain end-to-end for the requirements with the deepest cross-part reach.)*
 
-| Business Requirement (Part 1) | Use Case (Part 2) | Bounded Context / Aggregate (Part 3) | Microservice (Part 4) | Deep-Dive Part | Data Layer (Part 9) | API Surface (Part 10) | Test Gate (Part 11) |
+| Business Requirement (Part 1) | Use Case (Part 2) | Bounded Context / Aggregate (Part 3) | Module (Part 4) | Deep-Dive Part | Data Layer (Part 9) | API Surface (Part 10) | Test Gate (Part 11) |
 |---|---|---|---|---|---|---|---|
 | BIZ-010 (configurable routing) | UC-011 | BC-05 / `RoutingPolicy` (AGG-02) | `orchestration-service` (SVC-05) | Part 5 §3 | `event_store` (orchestration DB) | `/v1/routing-policies` | Unit tests on INV-05, E2E UC-011 |
 | BIZ-011 (no custody) | Structural absence of platform-owned-balance aggregate | Architecture review (no numeric test possible for an absence) |

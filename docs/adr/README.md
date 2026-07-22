@@ -2,7 +2,7 @@
 
 > This directory contains Architecture Decision Records for the Payment Orchestra platform. ADRs document significant architectural decisions with their context, rationale, consequences, and current status.
 
-**Total Records:** 12  
+**Total Records:** 14  
 **Status Legend:** ✅ Accepted | 🔄 Superseded | ❌ Rejected | ⏳ Proposed
 
 ---
@@ -23,6 +23,8 @@
 | [ADR-010](#adr-010-in-process-grpc-for-synchronous-inter-module-calls) | In-Process gRPC for Synchronous Inter-Module Calls | ✅ Accepted | 2026-07-22 |
 | [ADR-011](#adr-011-transactional-outbox-for-event-publish-reliability) | Transactional Outbox for Event Publish Reliability | ✅ Accepted | 2026-07-22 |
 | [ADR-012](#adr-012-circuit-breaker-per-merchant-acquirer-link) | Circuit Breaker per Merchant-Acquirer Link | ✅ Accepted | 2026-07-22 |
+| [ADR-013](#adr-013-abac-attribute-based-access-control-over-rbac) | ABAC over RBAC | ✅ Accepted | 2026-07-22 |
+| [ADR-014](#adr-014-envelope-encryption-for-credential-storage) | Envelope Encryption for Credential Storage | ✅ Accepted | 2026-07-22 |
 
 ---
 
@@ -690,6 +692,184 @@ Implement a **circuit breaker per `MerchantAcquirerLink`**:
 
 - ADR-007 (BYOK model)
 - References: `04-connector-gateway.md`, SRS Part 04 §11.2, `21-merchant-acquirer-link-service.md`
+
+---
+
+## ADR-013: ABAC (Attribute-Based Access Control) over RBAC
+
+| Field | Value |
+|---|---|
+| **Status** | ✅ Accepted |
+| **Date** | 2026-07-22 |
+| **Author** | Platform Architecture Team |
+| **Deciders** | Platform Architecture Team |
+| **Consulted** | Security, Compliance |
+| **Last Modified** | 2026-07-22 |
+
+### Context
+
+The platform needs an authorization model. The primary contenders are:
+
+1. **RBAC (Role-Based Access Control)**: Users are assigned roles, roles have permissions. Simple and widely understood, but rigid.
+2. **ABAC (Attribute-Based Access Control)**: Access decisions are based on attributes of the user, resource, action, and environment. More flexible but more complex.
+3. **ReBAC (Relationship-Based Access Control)**: Access based on relationships between entities (e.g., "is the owner of"). Less mature ecosystem.
+
+**Key considerations:**
+
+- **Fine-grained permissions**: Payment operations have complex authorization requirements. For example: "A finance operator can approve reconciliation exceptions only up to AED 10,000; above that requires an Admin." RBAC would need separate roles for each threshold, while ABAC handles this via a simple attribute condition.
+- **Threshold-based approvals**: Maker/Checker pattern (Part 3 §9.2) needs amount-based conditions and role-based conditions in the same rule.
+- **API key scoping**: API keys can be scoped to specific MerchantAcquirerLink IDs (APIKEY-001, Part 3 §9.8) — this is naturally expressed as an attribute condition, not a role.
+- **Audit trail**: ABAC policies can be evaluated at runtime with the full decision context logged (which attributes were checked, what values they had, whether they passed). This provides richer audit data than "role X was checked."
+- **Future-proofing**: As the platform grows, new access conditions (time-based, location-based, risk-score-based) can be added without role proliferation.
+
+### Decision
+
+Adopt **ABAC (Attribute-Based Access Control)** as the primary authorization model, with roles used as convenience groupings of common attribute sets:
+
+- Access decisions are based on a policy defined by conditions over attributes of the principal, resource, action, and environment
+- Roles exist as shorthand for common attribute bundles (e.g., "Admin" = `{department: operations, clearance_level: 5}`)
+- Policies are evaluated at the command-handler level (not the API gateway) — this ensures authorization happens in the domain context where all attributes are visible
+- The IAM service (SVC-02) owns policy definitions and provides the evaluation engine
+
+```rust
+// Simplified ABAC policy structure
+pub struct AccessPolicy {
+    pub policy_id: Uuid,
+    pub action: String,                          // e.g., "resolve_reconciliation_exception"
+    pub conditions: Vec<AccessCondition>,        // ALL conditions must match (AND)
+    pub effect: PolicyEffect,                    // Allow | Deny
+}
+
+pub enum AccessCondition {
+    Role(Vec<String>),                            // user has one of these roles
+    AmountBelow { currency: String, amount: i64 },// transaction amount below threshold
+    ResourceAttribute { key: String, value: String }, // resource has attribute
+    TimeWindow { start: NaiveTime, end: NaiveTime }, // time-based access
+    TwoPersonApproval,                            // Maker/Checker required
+}
+```
+
+### Consequences
+
+**Positive:**
+
+- 🟢 Fine-grained, expressive policies without role explosion
+- 🟢 Threshold-based conditions (amount, count) naturally supported
+- 🟢 API key scoping to specific resource IDs is a simple attribute check
+- 🟢 Rich audit trail — every policy evaluation context is logged
+- 🟢 Extensible — new condition types can be added without changing the authorization model
+
+**Negative:**
+
+- 🔴 More complex than RBAC — requires policy evaluation engine and condition parsing
+- 🔴 Policy evaluation latency must be minimized (sits on the critical path of every API call)
+- 🔴 Policy management UI is more complex than role assignment
+- 🔴 Testing requires validating combinations of attributes, not just role-permission mappings
+
+### Related
+
+- References: SRS Part 08 §2.2 (ABAC-001), `docs/backend/02-iam-service.md`
+
+---
+
+## ADR-014: Envelope Encryption for Credential Storage
+
+| Field | Value |
+|---|---|
+| **Status** | ✅ Accepted |
+| **Date** | 2026-07-22 |
+| **Author** | Platform Architecture Team |
+| **Deciders** | Platform Architecture Team |
+| **Consulted** | Security, Infra |
+| **Last Modified** | 2026-07-22 |
+
+### Context
+
+The BYOK model (ADR-007) requires the platform to store merchant gateway credentials (API keys, secrets, certificates) at rest. These are highly sensitive — a breach of credential storage would allow an attacker to make payments through the merchant's gateway accounts.
+
+Options considered:
+
+1. **Plaintext storage with database-level encryption**: Relies solely on Postgres TDE or volume encryption. If the database is compromised, credentials are exposed.
+2. **Application-layer encryption with a single key**: All credentials encrypted with one symmetric key. If the key is compromised, all credentials are exposed. Key rotation requires re-encrypting all credentials.
+3. **Envelope encryption (KMS-managed KEK + per-link DEK)**: Each `MerchantAcquirerLink` has its own Data Encryption Key (DEK), encrypted by a Key Encryption Key (KEK) stored in a KMS/Hardware Security Module (HSM).
+4. **HSM-only**: All encryption operations happen inside an HSM. Strongest security but highest latency and cost.
+
+**Key considerations:**
+
+- **Credential isolation**: If one merchant's gateway credentials are compromised (e.g., through a side-channel attack), the damage must be contained to that one link. A per-link DEK ensures this.
+- **Key rotation**: The KEK can be rotated without re-encrypting all credentials — only the DEK-wrapping operation needs to be re-executed. Per-link DEKs can be rotated independently when a merchant updates their credentials.
+- **Operational complexity**: Envelope encryption adds complexity (DEK lifecycle management, caching strategy) but is a well-understood pattern (AWS KMS, GCP Cloud KMS, HashiCorp Vault all support it).
+- **Compliance**: PCI-DSS and UAE Central Bank regulations require strong encryption of stored cardholder data and authentication credentials. Envelope encryption with a hardware-rooted KEK satisfies these requirements.
+
+### Decision
+
+Use **Envelope Encryption** for all credential storage:
+
+- **KEK (Key Encryption Key)**: Stored in a KMS/HSM (HashiCorp Vault or cloud-native KMS). Never leaves the HSM boundary.
+- **DEK (Data Encryption Key)**: One per `MerchantAcquirerLink` (per-link DEK). Generated by the KMS and returned in encrypted form (wrapped by the KEK).
+- **Storage**: Encrypted DEK is stored alongside the credential record in PostgreSQL. The plaintext DEK is cached in memory (with TTL) for the lifetime of the application process.
+- **Encryption algorithm**: AES-256-GCM for DEK encryption of credential payloads. The DEK itself is wrapped using the KMS's native key wrapping algorithm.
+- **AAD (Additional Authenticated Data)**: Each encryption operation binds the `merchant_acquirer_link_id` as AAD, preventing ciphertext from being moved to a different record.
+
+```rust
+// Key management flow
+pub struct EnvelopeEncryptionService {
+    kms_client: KmsClient,
+    kek_id: String,
+    dek_cache: Arc<RwLock<HashMap<Uuid, Vec<u8>>>>,  // link_id -> plaintext DEK
+}
+
+impl EnvelopeEncryptionService {
+    /// Encrypt credential payload for a specific link
+    pub async fn encrypt_credential(
+        &self,
+        link_id: Uuid,
+        plaintext: &[u8],
+    ) -> Result<EncryptedCredential, EncryptionError> {
+        let dek = self.get_or_generate_dek(link_id).await?;
+        let aad = link_id.as_bytes().to_vec();
+        let ciphertext = aes_256_gcm_encrypt(plaintext, &dek, &aad);
+        Ok(EncryptedCredential {
+            ciphertext,
+            kek_version: self.current_kek_version(),
+        })
+    }
+
+    /// Decrypt credential payload
+    pub async fn decrypt_credential(
+        &self,
+        link_id: Uuid,
+        encrypted: &EncryptedCredential,
+    ) -> Result<Vec<u8>, EncryptionError> {
+        let dek = self.get_or_generate_dek(link_id).await?;
+        let aad = link_id.as_bytes().to_vec();
+        aes_256_gcm_decrypt(&encrypted.ciphertext, &dek, &aad)
+    }
+}
+```
+
+### Consequences
+
+**Positive:**
+
+- 🟢 Per-link credential isolation — compromise of one DEK affects only one merchant's connection to one acquirer
+- 🟢 KEK never leaves HSM — root key is hardware-protected
+- 🟢 KEK rotation does not require re-encrypting credentials (only DEK wrapping)
+- 🟢 AAD binding prevents ciphertext relocation attacks
+- 🟢 Industry-standard pattern, well-supported by cloud KMS providers
+- 🟢 Satisfies PCI-DSS and UAE regulatory encryption requirements
+
+**Negative:**
+
+- 🔴 KMS/HSM dependency — adds operational overhead and cost
+- 🔴 DEK caching in memory — if process memory is dumped, plaintext DEKs could be exposed (mitigated by short TTL and Rust's memory safety)
+- 🔴 KMS latency on DEK generation at link creation time — acceptable for a one-time operation
+- 🔴 Key management complexity — KEK rotation schedule, DEK version tracking, audit logging
+
+### Related
+
+- Related decisions: ADR-007 (BYOK model)
+- References: `21-merchant-acquirer-link-service.md`, `19-infrastructure-cross-cutting.md` §1, SRS Part 08 §3 (SEC-001)
 
 ---
 

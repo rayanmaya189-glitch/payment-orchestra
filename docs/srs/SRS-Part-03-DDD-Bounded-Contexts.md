@@ -14,12 +14,12 @@
 |---|---|
 | Part | 3 of 12 — DDD & Bounded Contexts |
 | Depends On | Part 1 (Business Requirements), Part 2 (Use Cases) |
-| Feeds Into | Part 4 (Microservice Architecture — one microservice per bounded context, generally), Part 5 (Payment Orchestration deep-dive), Part 6 (AI Assistant deep-dive), Part 9 (Database Design), Part 10 (API/gRPC contracts) |
+| Feeds Into | Part 4 (Architecture & Service Design — one module per bounded context, generally), Part 5 (Payment Orchestration deep-dive), Part 6 (AI Assistant deep-dive), Part 9 (Database Design), Part 10 (API/gRPC contracts) |
 | ID Scheme | `BC-##` (bounded context), `AGG-##` (aggregate), `EVT-##` (domain event), `INV-##` (invariant) |
 
 ### 0.1 Modeling Approach
 
-This platform is modeled using **strategic DDD** (context mapping, ubiquitous language per context, explicit anti-corruption layers at every external-system boundary) and **tactical DDD** (aggregates, entities, value objects, domain events, repositories) implemented via **event sourcing + CQRS** for money-movement-relevant contexts (Payment Orchestration, Settlement/Reconciliation, Dispute Management) and simpler CRUD-plus-events for lower-risk supporting contexts (Notification, Document Management metadata).
+This platform is modeled using **strategic DDD** (context mapping, ubiquitous language per context, explicit anti-corruption layers at every external-system boundary) and **tactical DDD** (aggregates, entities, value objects, domain events, repositories) implemented via **event sourcing + CQRS** for money-movement-relevant contexts (Payment Orchestration, Settlement/Reconciliation) and simpler CRUD-plus-events for lower-risk supporting contexts (Dispute Management, Notification, Document Management metadata).
 
 **ORM Layer**: All database access is through SeaORM — no raw SQL in application code:
 - **All services**: SeaORM entities with derive macros (single ORM across the entire platform)
@@ -47,7 +47,7 @@ This distinction is deliberate — not every context needs the cost of full even
 | BC-07 | Payment Link Service | Core Supporting | Strongly consistent, thin layer over BC-05 |
 | BC-08 | Subscription Billing | Core Supporting | Event-sourced (billing history matters for disputes) |
 | BC-09 | Settlement & Reconciliation | **Core Domain** | Event-sourced, eventually consistent against BC-05 |
-| BC-10 | Dispute Management (Chargebacks) | Core Supporting | Event-sourced |
+| BC-10 | Dispute Management (Chargebacks) | Core Supporting | CRUD + events |
 | BC-11 | Fraud & Risk Scoring | Core Supporting | Eventually consistent, read-heavy |
 | BC-12 | AI Payment Assistant (RAG) | **Core Domain (differentiator)** | Eventually consistent, read-only over other contexts |
 | BC-13 | Document Management | Generic Supporting | Strongly consistent metadata, object storage for blobs |
@@ -92,7 +92,7 @@ Using standard DDD context-mapping patterns (Partnership, Customer/Supplier, Con
 
 - **BC-04 (Gateway Connector Framework) is deliberately separated from BC-05 (Payment Orchestration)** even though they are tightly related, because BC-04's entire reason to exist is translating N different acquirer APIs into one normalized internal protocol (the Anti-Corruption Layer pattern). Merging them would leak acquirer-specific concepts (e.g., a specific PSP's proprietary decline code taxonomy) into the core orchestration domain model, violating BIZ-010's requirement that routing be configurable without code change per acquirer.
 - **BC-09 (Settlement & Reconciliation) is separate from BC-05 (Payment Orchestration)** because they have fundamentally different temporal characteristics: orchestration is synchronous/near-real-time (seconds), reconciliation is batch/asynchronous (settlement files arrive hours to days later) and reasons over a different aggregate root (`SettlementBatch` vs `PaymentIntent`). Conflating them would force the orchestration hot path to carry reconciliation-batch complexity it doesn't need.
-- **BC-12 (AI Payment Assistant) is modeled as a read-only Conformist** against every other context specifically so that the "no unauthorized AI-driven money movement" guardrail (BR-041-1, BR-050-1 from Part 2) is a *structural* property of the architecture, not merely a prompt-level instruction to the model. The AI service has no command API for money-movement contexts in its dependency graph — this is enforced at the network/service-mesh level in Part 4, not just documented here.
+- **BC-12 (AI Payment Assistant) is modeled as a read-only Conformist** against every other context specifically so that the "no unauthorized AI-driven money movement" guardrail (BR-041-1, BR-050-1 from Part 2) is a *structural* property of the architecture, not merely a prompt-level instruction to the model. The AI service has no command API for money-movement contexts in its dependency graph — this is enforced at the module-boundary level in Part 4, not just documented here.
 - **BC-12 (AI Payment Assistant) is modeled as a read-only Conformist** against every other context specifically so that the "no unauthorized AI-driven money movement" guardrail is a *structural* property of the architecture, not merely a prompt-level instruction to the model.
 
 ---
@@ -795,4 +795,4 @@ Extended `SettlementRecord` to include `FeeBreakdown` as an optional field (not 
 
 ---
 
-*End of Part 3. Proceed to Part 4: Microservice Architecture.*
+*End of Part 3. Proceed to Part 4: Architecture & Service Design.*

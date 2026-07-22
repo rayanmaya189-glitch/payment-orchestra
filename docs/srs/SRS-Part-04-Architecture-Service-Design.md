@@ -2,7 +2,7 @@
 ## AI-Native Payment Orchestration Platform (UAE-First, Multi-Country Ready)
 
 **Document Series:** 12-Part Enterprise SRS
-**Part 4 of 12:** Microservice Architecture
+**Part 4 of 12:** Architecture & Service Design
 **Document Status:** Draft v0.1
 **Classification:** Confidential — Internal Engineering & Product Use
 
@@ -12,10 +12,10 @@
 
 | Field | Value |
 |---|---|
-| Part | 4 of 12 — Microservice Architecture |
+| Part | 4 of 12 — Architecture & Service Design |
 | Depends On | Part 3 (Bounded Contexts map 1:1, with two deliberate exceptions noted in §1.2) |
-| Feeds Into | Part 5 (Orchestration Engine internals), Part 6 (AI Gateway/Assistant internals), Part 7 (Connector Framework internals), Part 9 (per-service database ownership), Part 10 (gRPC/REST contracts), Part 11 (deployment, K8s topology) |
-| Core Principle | One microservice owns exactly one bounded context's write model; no service reaches into another service's database. All cross-service communication is either synchronous gRPC (request/response, same-transaction-latency needs) or asynchronous NATS JetStream events (cross-context side effects). |
+| Feeds Into | Part 5 (Orchestration Engine internals), Part 6 (AI Gateway/Assistant internals), Part 7 (Connector Framework internals), Part 9 (per-service database ownership), Part 10 (gRPC + Protobuf contracts), Part 11 (deployment, K8s topology) |
+| Core Principle | One module owns exactly one bounded context's write model; no module reaches into another module's database. All cross-module communication is either synchronous in-process gRPC (request/response, same-transaction-latency needs) or asynchronous in-process NATS channels (cross-context side effects). |
 
 ---
 
@@ -42,12 +42,15 @@
 | SVC-15 | `analytics-service` | BC-15 Analytics & Reporting | Rust | PostgreSQL (initially) → ClickHouse (Phase 2) | PostgreSQL → ClickHouse |
 | SVC-17 | `api-gateway` | Cross-cutting (not a bounded context) | Rust (Axum) | SeaORM | Redis (rate-limit counters only) |
 | SVC-18 | `ai-gateway` | Cross-cutting (middleware within api-gateway) | Rust | — | Redis (rate limits), Postgres (guardrail audit log) |
-| SVC-19 | `notification-service` | Cross-cutting (merged with SVC-14) | Rust (SeaORM) | SeaORM | PostgreSQL (subscriptions, delivery logs) |
-| **SVC-21** | **`merchant-acquirer-link-service`** | **BYOK Core (NEW)** | **Rust (SeaORM)** | **SeaORM** | **PostgreSQL** |
+| SVC-19 | `webhook-delivery` (merged into SVC-14) | Cross-cutting (merged) | Rust (SeaORM) | SeaORM | PostgreSQL (subscriptions, delivery logs) |
+| **SVC-21** | **`merchant-acquirer-link-service`** | **BYOK Core** | **Rust (SeaORM)** | **SeaORM** | **PostgreSQL** |
+| **SVC-22** | **`merchant-connector-onboarding`** | **BYOK Onboarding (NEW)** | **Rust (SeaORM)** | **SeaORM** | **PostgreSQL** |
 
-**NEW SVC-21**: `merchant-acquirer-link-service` — BYOK (Bring Your Own Key) core service. Owns the `MerchantAcquirerLink` aggregate that connects a merchant to a specific payment gateway using the merchant's own credentials. This is the foundational BYOK entity. See `docs/backend/21-merchant-acquirer-link-service.md` for full specification.
+**SVC-21**: `merchant-acquirer-link-service` — BYOK (Bring Your Own Key) core service. Owns the `MerchantAcquirerLink` aggregate that connects a merchant to a specific payment gateway using the merchant's own credentials. See `docs/backend/21-merchant-acquirer-link-service.md`.
 
-**SVC-19 Merged**: `webhook-delivery-service` is merged into `notification-service` (SVC-14). Both are outbound delivery mechanisms with different destinations (email/SMS vs webhook). Merging them reduces operational complexity while keeping delivery auditing centralized.
+**SVC-22**: `merchant-connector-onboarding` — BYOK onboarding orchestration. Manages the connector selection, credential entry, validation, and activation workflow for merchants connecting their payment gateways. See `docs/backend/22-merchant-connector-onboarding.md`.
+
+**SVC-19 Merged**: `webhook-delivery-service` (formerly SVC-19) is merged into `notification-service` (SVC-14). Both are outbound delivery mechanisms with different destinations (email/SMS vs webhook). Merging reduces operational complexity while keeping delivery auditing centralized.
 
 ### 1.2 Deliberate Deviations from Strict 1:1 Mapping
 
@@ -123,26 +126,25 @@ The AI Gateway exists because AI-Assistant traffic has distinct requirements tha
 | API Gateway → domain service (synchronous) | **gRPC** | HTTP/2 + Protobuf | Low latency, strongly-typed contracts (Part 10) |
 | `orchestration-service` → `connector-gateway` (authorize/capture/refund) | **gRPC** (synchronous, in the checkout hot path) | HTTP/2 + Protobuf | Must return a result within the latency budget (BR-020-2) |
 | `orchestration-service` → `risk-service` (pre-authorization risk score) | **gRPC** (synchronous, in the checkout hot path) | HTTP/2 + Protobuf | Risk score needed before routing decision; must be fast |
-| `orchestration-service` publishing domain events | **NATS JetStream** (async, durable) | NATS protocol | Multiple downstream consumers; publisher must not block |
-| `reconciliation-service` ingesting settlement files | **Mixed**: webhook via gRPC at connector-gateway → published to NATS; polling/SFTP via scheduled job → published to NATS | NATS protocol | Decouples ingestion cadence from downstream processing |
-| `ai-assistant-service` reading context | **gRPC** (direct read-model queries) | HTTP/2 + Protobuf | BC-12 is a read-only Conformist; must never acquire write path |
-| `notification-service` triggering | **NATS JetStream** subscription | NATS protocol | Naturally asynchronous, at-least-once |
-| `compliance-service` → `document-service` | **gRPC** (synchronous) | HTTP/2 + Protobuf | Request-response; caller needs OCR result |
-| `analytics-service` consuming events | **NATS JetStream** subscription | NATS protocol | Pure event consumer, never called synchronously |
-| Cross-service queries | **gRPC** (query endpoints) | HTTP/2 + Protobuf | Type-safe, observable, traceable |
+| `orchestration-service` publishing domain events | **In-process NATS channels** (async, durable) | In-process NATS-compatible API | Multiple downstream consumers; publisher must not block |
+| `reconciliation-service` ingesting settlement files | **Mixed**: webhook via gRPC at connector-gateway → published to in-process NATS channels; polling/SFTP via scheduled job → published to in-process NATS channels | In-process NATS-compatible API | Decouples ingestion cadence from downstream processing |
+| `ai-assistant-service` reading context | **gRPC** (direct read-model queries) | In-process gRPC | BC-12 is a read-only Conformist; must never acquire write path |
+| `notification-service` triggering | **In-process NATS channels** subscription | In-process NATS-compatible API | Naturally asynchronous, at-least-once |
+| `compliance-service` → `document-service` | **gRPC** (synchronous) | In-process gRPC | Request-response; caller needs OCR result |
+| `analytics-service` consuming events | **In-process NATS channels** subscription | In-process NATS-compatible API | Pure event consumer, never called synchronously |
+| Cross-module queries | **gRPC** (query endpoints) | In-process gRPC | Type-safe, observable, traceable |
 
 ### 4.2 gRPC vs NATS Decision Rules
 
-- **RULE-001**: External API traffic uses **Protobuf-over-HTTP POST** — binary protobuf request/response bodies, no REST conventions (PROTO-001).
-- **RULE-002**: Use **gRPC** when the caller needs a synchronous response within the request's latency budget (checkout path, pre-authorization checks, document OCR requests).
-- **RULE-003**: Use **NATS JetStream** when the interaction is naturally asynchronous, fan-out to multiple consumers, or doesn't require the caller to wait for completion (domain event publishing, notification dispatch, analytics ingestion).
-- **RULE-004**: Never use NATS for the checkout hot path (Create/Authorize/Capture) — the latency of NATS publish-ack is unnecessary overhead when a direct gRPC call is more appropriate.
+- **RULE-001**: External API uses **RESTful URL paths with protobuf-encoded request/response bodies**. HTTP methods: POST (create/search/action), PATCH (update), DELETE (remove). NO GET, no JSON, no form data.
+- **RULE-002**: Use **in-process gRPC** when the caller needs a synchronous response within the request's latency budget (checkout path, pre-authorization checks, document OCR requests).
+- **RULE-003**: Use **in-process NATS channels** when the interaction is naturally asynchronous, fan-out to multiple consumers, or doesn't require the caller to wait for completion (domain event publishing, notification dispatch, analytics ingestion).
+- **RULE-004**: Never use in-process NATS channels for the checkout hot path (Create/Authorize/Capture) — unnecessary overhead when a direct in-process gRPC call is more appropriate.
 - **RULE-005**: Never use gRPC for fan-out event distribution — the publisher would need to know and manage all consumers, defeating the decoupling benefit of event-driven architecture.
-- **RULE-006**: All service-to-service calls use gRPC with Protobuf — SeaORM services generate clients from `.proto` files for type-safe inter-service communication.
-- **RULE-007: External API uses RESTful URL paths with protobuf-encoded request/response bodies. HTTP methods: POST (create/search/action), PATCH (update), DELETE (remove). NO GET, no JSON, no form data.
-- **RULE-008: Internal service-to-service communication uses native gRPC with the same protobuf schemas as the external API.
+- **RULE-006**: All module-to-module calls use in-process gRPC with Protobuf — SeaORM services generate clients from `.proto` files for type-safe inter-module communication.
+- **RULE-007**: Internal module-to-module communication uses in-process gRPC with the same protobuf schemas as the external API.
 
-### 4.3 NATS JetStream Subject Taxonomy (Versioned)
+### 4.3 In-Process NATS Channel Subject Taxonomy (Versioned)
 
 Following the naming convention introduced in Part 3 §4:
 
@@ -165,11 +167,11 @@ events.document.document.document_ocr_completed.v1
 - **NATS-VER-001**: Every subject includes a version suffix (`v1`, `v2`, ...) that corresponds to the event's `event_version` field (Part 10 §2.2 GRPC-003). When an event schema changes in a backward-incompatible way, the version is incremented and a new subject is published to — consumers explicitly migrate to the new subject rather than auto-handling the new shape.
 - **NATS-VER-002**: Consumers subscribe to a specific version (e.g., `events.orchestration.payment_intent.payment_authorized.v1`) — not a wildcard — to ensure they receive only the schema they expect. This prevents version mismatch bugs where a consumer receives an event it doesn't understand.
 - **NATS-VER-003**: During a version transition (v1 → v2), the publisher emits to BOTH subjects for a defined deprecation window (default: 30 days). Consumers are migrated during this window. After the window, v1 publishing stops.
-- **NATS-VER-004**: Subject naming uses snake_case for all segments: `events.<context_snake>.<aggregate_snake>.<event_name_snake>.v<N>`. This is consistent across Go and Rust publishers.
+- **NATS-VER-004**: Subject naming uses snake_case for all segments: `events.<context_snake>.<aggregate_snake>.<event_name_snake>.v<N>`.
 
-- **Streams**: One JetStream stream per bounded context (e.g., `ORCHESTRATION_EVENTS`, `RECONCILIATION_EVENTS`), partitioned by subject wildcard, retained per the policy resolved in OQ-008 (Part 3) — to be finalized numerically in Part 9 alongside storage sizing.
-- **Consumer groups**: Each downstream service creates a durable consumer per stream it subscribes to, with explicit ack after successful projection/side-effect processing, and dead-letter handling (redeliver with backoff, then park in a `*_DLQ` subject after N failed attempts) surfaced to SVC-07... correction: surfaced to an operational alert channel monitored by ACT-07 (Support/Ops Engineer, Part 2).
-- **Exactly-once processing semantics**: NATS JetStream provides at-least-once delivery; **exactly-once effect** is achieved at the consumer level via idempotent projections keyed on `event_id` (dedup table per consumer), not assumed from the transport layer.
+- **Streams**: One logical event stream per bounded context (e.g., `ORCHESTRATION_EVENTS`, `RECONCILIATION_EVENTS`), partitioned by subject wildcard, retained per the policy resolved in OQ-008 (Part 3) — to be finalized numerically in Part 9 alongside storage sizing.
+- **Consumer groups**: Each downstream module creates a durable consumer per stream it subscribes to, with explicit ack after successful projection/side-effect processing, and dead-letter handling (redeliver with backoff, then park in a `*_DLQ` subject after N failed attempts) surfaced to an operational alert channel monitored by ACT-07 (Support/Ops Engineer, Part 2).
+- **Exactly-once processing semantics**: In-process NATS channels provide at-least-once delivery; **exactly-once effect** is achieved at the consumer level via idempotent projections keyed on `event_id` (dedup table per consumer), not assumed from the transport layer.
 
 ### 4.4 gRPC Contract Ownership
 
@@ -432,7 +434,7 @@ The SRS specifies TLS 1.3 for external traffic (Part 8 ENC-001) and mTLS for ser
 pub struct FeatureFlag {
     pub flag_key: String,           // e.g., "routing.dynamic_weighted"
     pub enabled: bool,
-    pub targeting: FlagTargeting,   // percentage rollout, user segment, tenant list
+    pub targeting: FlagTargeting,   // percentage rollout, user segment
     pub kill_switch: bool,          // if true, overrides all targeting — immediate effect
     pub created_at: DateTimeWithTimeZone,
     pub updated_at: DateTimeWithTimeZone,
@@ -441,7 +443,6 @@ pub struct FeatureFlag {
 pub enum FlagTargeting {
     Global(bool),
     Percentage(f64),                // 0.0-1.0, deterministic hash of entity_id
-    TenantList(Vec<Uuid>),
     Segment(String),                // e.g., "enterprise", "sandbox"
 }
 ```
