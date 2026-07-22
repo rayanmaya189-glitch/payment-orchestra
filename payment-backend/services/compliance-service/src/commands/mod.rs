@@ -1,1 +1,339 @@
-//! Auto-generated module — fill in implementation.
+//! Command handlers for BC-03 Merchant Compliance.
+
+use chrono::Utc;
+use tracing::info;
+use uuid::Uuid;
+
+use crate::domain::{KybCase, AmlAlert, AmlMonitor, RecentTransaction, ComplianceError};
+use crate::events::{ComplianceEvent, KybCaseSubmitted, KybCaseApproved, KybCaseRejected, AmlAlertCreated};
+use crate::repository::ComplianceRepository;
+
+#[async_trait::async_trait]
+pub trait CommandHandler: Send + Sync {
+    async fn submit_kyb_evidence(&self, cmd: SubmitKybEvidence) -> Result<SubmitKybEvidenceResult, ComplianceError>;
+    async fn review_kyb_case(&self, cmd: ReviewKybCase) -> Result<ReviewKybCaseResult, ComplianceError>;
+    async fn scan_transaction(&self, cmd: ScanTransaction) -> Result<ScanTransactionResult, ComplianceError>;
+    async fn review_aml_alert(&self, cmd: ReviewAmlAlert) -> Result<ReviewAmlAlertResult, ComplianceError>;
+}
+
+// ─── Command Types ──────────────────────────────────────────────────────────
+
+pub struct SubmitKybEvidence {
+    pub operator_id: Uuid,
+    pub document_ids: Vec<Uuid>,
+    pub submitted_by: Uuid,
+}
+
+pub struct ReviewKybCase {
+    pub kyb_case_id: Uuid,
+    pub approved: bool,
+    pub reason: Option<String>,
+    pub reviewed_by: Uuid,
+}
+
+pub struct ScanTransaction {
+    pub transaction_id: Uuid,
+    pub operator_id: Uuid,
+    pub amount_minor_units: i64,
+    pub payment_method_id: Option<String>,
+}
+
+pub struct ReviewAmlAlert {
+    pub alert_id: Uuid,
+    pub reviewer_id: Uuid,
+    pub decision: AmlAlertDecision,
+    pub notes: Option<String>,
+}
+
+pub enum AmlAlertDecision {
+    Escalated,
+    ClosedFalsePositive,
+}
+
+// ─── Results ────────────────────────────────────────────────────────────────
+
+pub struct SubmitKybEvidenceResult {
+    pub kyb_case: KybCase,
+}
+
+pub struct ReviewKybCaseResult {
+    pub kyb_case: KybCase,
+}
+
+pub struct ScanTransactionResult {
+    pub alerts: Vec<AmlAlert>,
+    pub blocked: bool,
+}
+
+pub struct ReviewAmlAlertResult {
+    pub alert: AmlAlert,
+}
+
+// ─── Command Handler ────────────────────────────────────────────────────────
+
+pub struct ComplianceCommandHandler<R: ComplianceRepository> {
+    repository: R,
+    aml_monitor: AmlMonitor,
+}
+
+impl<R: ComplianceRepository> ComplianceCommandHandler<R> {
+    pub fn new(repository: R) -> Self {
+        Self {
+            repository,
+            aml_monitor: AmlMonitor::new(),
+        }
+    }
+
+    fn publish_event(&self, _event: ComplianceEvent) {
+        // Event publishing via platform_messaging::event_bus will be wired later
+        tracing::debug!(event_type = %_event.event_type(), "Domain event");
+    }
+}
+
+#[async_trait::async_trait]
+impl<R: ComplianceRepository + Send + Sync> CommandHandler for ComplianceCommandHandler<R> {
+    async fn submit_kyb_evidence(&self, cmd: SubmitKybEvidence) -> Result<SubmitKybEvidenceResult, ComplianceError> {
+        if cmd.document_ids.is_empty() {
+            return Err(ComplianceError::KybNoDocuments);
+        }
+
+        let kase = KybCase::new(
+            cmd.operator_id,
+            cmd.submitted_by,
+            cmd.document_ids,
+        );
+
+        self.repository.save_kyb_case(&kase).await?;
+
+        self.publish_event(ComplianceEvent::KybCaseSubmitted(KybCaseSubmitted {
+            kyb_case_id: kase.kyb_case_id,
+            operator_id: kase.operator_id,
+            document_count: kase.document_ids.len() as u32,
+            occurred_at: Utc::now(),
+        }));
+
+        info!(
+            kyb_case_id = %kase.kyb_case_id,
+            operator_id = %kase.operator_id,
+            "KYB evidence submitted"
+        );
+
+        Ok(SubmitKybEvidenceResult { kyb_case: kase })
+    }
+
+    async fn review_kyb_case(&self, cmd: ReviewKybCase) -> Result<ReviewKybCaseResult, ComplianceError> {
+        let mut kase = self.repository.load_kyb_case(cmd.kyb_case_id).await?
+            .ok_or(ComplianceError::KybCaseNotFound(cmd.kyb_case_id))?;
+
+        if cmd.approved {
+            kase.approve()?;
+            self.publish_event(ComplianceEvent::KybCaseApproved(KybCaseApproved {
+                kyb_case_id: kase.kyb_case_id,
+                operator_id: kase.operator_id,
+                occurred_at: Utc::now(),
+            }));
+            info!(kyb_case_id = %kase.kyb_case_id, "KYB case approved");
+        } else {
+            let reason = cmd.reason.unwrap_or_else(|| "No reason provided".into());
+            kase.reject(reason.clone())?;
+            self.publish_event(ComplianceEvent::KybCaseRejected(KybCaseRejected {
+                kyb_case_id: kase.kyb_case_id,
+                operator_id: kase.operator_id,
+                reason,
+                occurred_at: Utc::now(),
+            }));
+            info!(kyb_case_id = %kase.kyb_case_id, "KYB case rejected");
+        }
+
+        self.repository.save_kyb_case(&kase).await?;
+
+        Ok(ReviewKybCaseResult { kyb_case: kase })
+    }
+
+    async fn scan_transaction(&self, cmd: ScanTransaction) -> Result<ScanTransactionResult, ComplianceError> {
+        let recent_txns = self.repository.get_recent_transactions(cmd.operator_id, 60).await?;
+        let recent_by_method = if let Some(ref method_id) = cmd.payment_method_id {
+            self.repository.get_recent_by_method(method_id, 300).await?
+        } else {
+            vec![]
+        };
+        let avg_amount = self.repository.get_average_amount(cmd.operator_id, 30).await?;
+
+        let alerts = self.aml_monitor.scan(
+            cmd.transaction_id,
+            cmd.operator_id,
+            cmd.amount_minor_units,
+            &recent_txns,
+            &recent_by_method,
+            avg_amount,
+        );
+
+        for alert in &alerts {
+            self.repository.save_aml_alert(alert).await?;
+            self.publish_event(ComplianceEvent::AmlAlertCreated(AmlAlertCreated {
+                alert_id: alert.alert_id,
+                operator_id: alert.operator_id,
+                alert_type: alert.alert_type.as_str().to_string(),
+                severity: alert.severity.as_str().to_string(),
+                occurred_at: Utc::now(),
+            }));
+        }
+
+        let blocked = alerts.iter().any(|a| a.severity.as_str() == "critical");
+
+        if !alerts.is_empty() {
+            info!(
+                transaction_id = %cmd.transaction_id,
+                alert_count = alerts.len(),
+                blocked = blocked,
+                "AML scan completed"
+            );
+        }
+
+        Ok(ScanTransactionResult { alerts, blocked })
+    }
+
+    async fn review_aml_alert(&self, cmd: ReviewAmlAlert) -> Result<ReviewAmlAlertResult, ComplianceError> {
+        let mut alert = self.repository.load_aml_alert(cmd.alert_id).await?
+            .ok_or(ComplianceError::AmlAlertNotFound(cmd.alert_id))?;
+
+        if alert.status != crate::domain::AlertStatus::Open {
+            return Err(ComplianceError::AmlAlertAlreadyReviewed(cmd.alert_id));
+        }
+
+        match cmd.decision {
+            AmlAlertDecision::Escalated => {
+                alert.status = crate::domain::AlertStatus::Escalated;
+            }
+            AmlAlertDecision::ClosedFalsePositive => {
+                alert.status = crate::domain::AlertStatus::Closed;
+            }
+        }
+
+        alert.reviewed_by = Some(cmd.reviewer_id);
+        alert.reviewed_at = Some(Utc::now());
+        self.repository.save_aml_alert(&alert).await?;
+
+        info!(
+            alert_id = %alert.alert_id,
+            status = %alert.status.as_str(),
+            "AML alert reviewed"
+        );
+
+        Ok(ReviewAmlAlertResult { alert })
+    }
+}
+
+// ─── Tests ─────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::domain::AlertStatus;
+    use crate::repository::InMemoryComplianceRepository;
+
+    async fn setup() -> ComplianceCommandHandler<InMemoryComplianceRepository> {
+        let repo = InMemoryComplianceRepository::new();
+        ComplianceCommandHandler::new(repo)
+    }
+
+    #[tokio::test]
+    async fn test_submit_kyb_evidence_success() {
+        let handler = setup().await;
+        let result = handler.submit_kyb_evidence(SubmitKybEvidence {
+            operator_id: Uuid::now_v7(),
+            document_ids: vec![Uuid::now_v7(), Uuid::now_v7()],
+            submitted_by: Uuid::now_v7(),
+        }).await.unwrap();
+
+        assert_eq!(result.kyb_case.status.as_str(), "submitted");
+        assert_eq!(result.kyb_case.document_ids.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_submit_kyb_no_documents_rejected() {
+        let handler = setup().await;
+        let result = handler.submit_kyb_evidence(SubmitKybEvidence {
+            operator_id: Uuid::now_v7(),
+            document_ids: vec![],
+            submitted_by: Uuid::now_v7(),
+        }).await;
+
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_kyb_approve() {
+        let handler = setup().await;
+        let submitted = handler.submit_kyb_evidence(SubmitKybEvidence {
+            operator_id: Uuid::now_v7(),
+            document_ids: vec![Uuid::now_v7()],
+            submitted_by: Uuid::now_v7(),
+        }).await.unwrap();
+
+        let result = handler.review_kyb_case(ReviewKybCase {
+            kyb_case_id: submitted.kyb_case.kyb_case_id,
+            approved: true,
+            reason: None,
+            reviewed_by: Uuid::now_v7(),
+        }).await.unwrap();
+
+        assert_eq!(result.kyb_case.status.as_str(), "approved");
+    }
+
+    #[tokio::test]
+    async fn test_kyb_reject() {
+        let handler = setup().await;
+        let submitted = handler.submit_kyb_evidence(SubmitKybEvidence {
+            operator_id: Uuid::now_v7(),
+            document_ids: vec![Uuid::now_v7()],
+            submitted_by: Uuid::now_v7(),
+        }).await.unwrap();
+
+        let result = handler.review_kyb_case(ReviewKybCase {
+            kyb_case_id: submitted.kyb_case.kyb_case_id,
+            approved: false,
+            reason: Some("Invalid documents".into()),
+            reviewed_by: Uuid::now_v7(),
+        }).await.unwrap();
+
+        assert_eq!(result.kyb_case.status.as_str(), "rejected");
+        assert_eq!(result.kyb_case.rejection_reason.unwrap(), "Invalid documents");
+    }
+
+    #[tokio::test]
+    async fn test_scan_transaction_no_alerts() {
+        let handler = setup().await;
+        let result = handler.scan_transaction(ScanTransaction {
+            transaction_id: Uuid::now_v7(),
+            operator_id: Uuid::now_v7(),
+            amount_minor_units: 1000,
+            payment_method_id: None,
+        }).await.unwrap();
+
+        assert!(result.alerts.is_empty());
+        assert!(!result.blocked);
+    }
+
+    #[tokio::test]
+    async fn test_review_aml_alert() {
+        let handler = setup().await;
+        let scan = handler.scan_transaction(ScanTransaction {
+            transaction_id: Uuid::now_v7(),
+            operator_id: Uuid::now_v7(),
+            amount_minor_units: 600_000_00, // 600,000 AED (above absolute threshold)
+            payment_method_id: None,
+        }).await.unwrap();
+
+        assert!(!scan.alerts.is_empty());
+
+        let result = handler.review_aml_alert(ReviewAmlAlert {
+            alert_id: scan.alerts[0].alert_id,
+            reviewer_id: Uuid::now_v7(),
+            decision: AmlAlertDecision::ClosedFalsePositive,
+            notes: Some("False positive".into()),
+        }).await.unwrap();
+
+        assert_eq!(result.alert.status, AlertStatus::Closed);
+    }
+}
