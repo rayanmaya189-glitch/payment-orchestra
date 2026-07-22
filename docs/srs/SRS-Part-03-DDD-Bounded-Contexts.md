@@ -259,7 +259,7 @@ EventEnvelope {
 - **Aggregate**: `Subscription` (root), entities: `BillingCycle`. Event-sourced given dispute-relevance of full billing history. Events: `SubscriptionCreated`, `SubscriptionRenewed`, `SubscriptionRenewalFailed`, `SubscriptionDunningExhausted`, `SubscriptionCancelled`.
 
 ### 5.7 BC-11 — Fraud & Risk Scoring
-- **Aggregate**: `RiskAssessment` (root, linked 1:1 with a `PaymentIntent`). MVP is rule-based (heuristic scoring); H3 introduces ML-based scoring (GOAL-009 adjacent). Events: `RiskAssessmentCompleted`, `TransactionFlaggedHighRisk`.
+- **Aggregate**: `RiskAssessment` (root, linked 1:1 with a `PaymentIntent`). initial launch is rule-based (heuristic scoring); H3 introduces ML-based scoring (GOAL-009 adjacent). Events: `RiskAssessmentCompleted`, `TransactionFlaggedHighRisk`.
 
 ### 5.8 BC-12 — AI Payment Assistant (RAG)
 - Not an aggregate-owning transactional context; modeled as a **query-side, read-only context** with its own internal state limited to: `ConversationSession`, `GroundingCitation` records (for audit per BIZ-023), and retrieval indices (BGE-M3 embeddings + OpenSearch). Full design in Part 6.
@@ -455,7 +455,7 @@ pub enum Relation {}
 impl ActiveModelBehavior for ActiveModel {}
 ```
 
-**Relay Process (OUTBOX-001)**: A dedicated relay process (implemented within each event-sourced service, not a separate microservice for MVP) polls unpublished outbox entries, publishes to NATS JetStream, and marks them published. The relay runs at sub-second polling intervals to minimize propagation lag. On crash recovery, the relay resumes from the last unconfirmed publish — at-least-once delivery is guaranteed; exactly-once effect is achieved at the consumer level per Part 4 §4.2.
+**Relay Process (OUTBOX-001)**: A dedicated relay process (implemented within each event-sourced service, not a separate microservice for initial launch) polls unpublished outbox entries, publishes to NATS JetStream, and marks them published. The relay runs at sub-second polling intervals to minimize propagation lag. On crash recovery, the relay resumes from the last unconfirmed publish — at-least-once delivery is guaranteed; exactly-once effect is achieved at the consumer level per Part 4 §4.2.
 
 **Why this matters for BIZ-040/PRIN-05**: Without the outbox pattern, a crash between Postgres commit and NATS publish would silently lose domain events, breaking the "event stream IS the audit log" claim. The outbox table is the durable bridge.
 
@@ -788,7 +788,7 @@ Extended `SettlementRecord` to include `FeeBreakdown` as an optional field (not 
 
 - **OQ-007**: Confirm whether `RiskAssessment` (BC-11) should be its own bounded context or a value object embedded in `PaymentIntent` once ML-based scoring (H3) is designed in detail — kept separate for now to avoid coupling BC-05's release cadence to fraud-model iteration speed, but should be revisited in Part 5.
 - **OQ-008**: Confirm event retention/replay policy in NATS JetStream (how long raw event streams are retained vs. archived to object storage) — affects whether "rebuild aggregate from full event history" remains cheap indefinitely or requires snapshotting; addressed in Part 4/9.
-- **OQ-029**: Finalize saga persistence strategy — whether saga state is stored in the same Postgres database as the aggregate it orchestrates or in a dedicated saga database. Recommended: same database for MVP (simpler transactional guarantees), split later if saga volume warrants it.
+- **OQ-029**: Finalize saga persistence strategy — whether saga state is stored in the same Postgres database as the aggregate it orchestrates or in a dedicated saga database. Recommended: same database for initial launch (simpler transactional guarantees), split later if saga volume warrants it.
 - **OQ-030**: Determine outbox relay polling interval trade-offs — sub-second polling adds Postgres load; consider CDC via Debezium for production scale. Decision deferred to Part 11 capacity planning.
 - **OQ-031**: Finalize circuit breaker thresholds (CB-001 error-rate threshold, open-window duration) against real acquirer failure-mode data from pilot merchants.
 - **OQ-032**: Confirm archival retention period (ARCH-001 default 90 days) against legal/compliance retention floor (Part 8 AUD-001, OQ-018) — archival must not move data out of reach before the retention floor expires.

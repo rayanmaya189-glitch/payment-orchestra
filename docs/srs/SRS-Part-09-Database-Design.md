@@ -388,7 +388,7 @@ This same `auth_rate_hourly_mv`-style rollup is exactly the "summary document" s
 
 ### 7.1 Redis HA Configuration
 
-- **REDIS-HA-001**: Redis is deployed in Redis Sentinel mode (not Redis Cluster for MVP) with:
+- **REDIS-HA-001**: Redis is deployed in Redis Sentinel mode (not Redis Cluster for initial launch) with:
   - 1 primary instance (handles all writes)
   - 2 sentinel instances (monitor primary health, coordinate failover)
   - Automatic failover: if primary fails, sentinel promotes a replica within 10 seconds
@@ -672,7 +672,7 @@ GRANT SELECT ON payment_events TO ai_assistant_service;
 
 **DB-CONN-002**: Connection-string validation in CI: no `sslmode=disable` or `sslmode=allow` permitted in any environment configuration.
 
-**DB-CONN-003**: Database IP allowlisting via `pg_hba.conf` or cloud security groups, restricting connections to service mesh IPs only.
+**DB-CONN-003**: Database IP allowlisting via `pg_hba.conf` or cloud security groups, restricting connections to known service IPs only.
 
 ### 12.7 Automated Data Retention Enforcement
 

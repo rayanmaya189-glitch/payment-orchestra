@@ -113,7 +113,7 @@ message ListPaymentIntentsResponse {
   - Breaking changes (field removal, type change) are detected automatically
   - Schema versions follow semantic versioning (GRPC-VER-001)
 
-- **SCHEMA-REG-002**: Services generate their gRPC clients and servers from the shared schema registry, ensuring type safety across the entire service mesh.
+- **SCHEMA-REG-002**: Services generate their gRPC clients and servers from the shared schema registry, ensuring type safety across all internal communication.
 
 ### 2.3 Representative Proto — Payment Orchestration Service
 
@@ -438,7 +438,7 @@ When a request is rate-limited, the API returns HTTP 429 with the following body
 ### 6.7 gRPC Security
 
 - **APISEC-010**: Internal gRPC communication security:
-  - mTLS enforced via service mesh (Part 4 §8)
+  - mTLS enforced at API Gateway; internal calls use in-process identity propagation (Part 4 §7)
   - Actor context propagated in call metadata (GRPC-001)
   - Request size limits: 4MB default, configurable per service
   - Deadlines enforced on all gRPC calls (matching API-002 timeout specifications)
@@ -673,7 +673,7 @@ When a request is rate-limited, the API returns HTTP 429 with the following body
 - **OQ-024**: Confirm final SDK language priority order (§4 SDK-001) against actual pilot-merchant technology stack survey results.
 - **OQ-025**: Confirm authentication header scheme for machine clients (§1.3 API-008).
 - **OQ-048**: Finalize webhook replay window (§7 WEBHOOK-REPLAY-001, default 5 minutes) — too short causes legitimate delayed webhooks to be rejected; too long increases replay attack surface.
-- **OQ-049**: Confirm whether `X-SDK-Version` header tracking (§8 SDK-DEP-003) is required for MVP or deferred to H2 SDK ecosystem maturity.
+- **OQ-049**: Confirm whether `X-SDK-Version` header tracking (§8 SDK-DEP-003) is required for initial launch or deferred to Phase 2 SDK ecosystem maturity.
 
 ---
 

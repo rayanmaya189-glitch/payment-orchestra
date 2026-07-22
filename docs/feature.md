@@ -12,9 +12,9 @@ A single-tenant, API-first payment orchestration platform that enables merchants
 
 **No custody**: The platform never holds merchant or customer funds. All settlement occurs directly between acquirers/banks and the merchant.
 
-## 2. Feature List by Milestone
+## 2. Complete Feature Catalog
 
-### M1 — Foundation (Core Infrastructure)
+### 2.1 Core Infrastructure & Administration
 
 | Feature ID | Feature | Priority | Bounded Context |
 |---|---|---|---|
@@ -29,9 +29,16 @@ A single-tenant, API-first payment orchestration platform that enables merchants
 | F-009 | PostgreSQL TDE & connection security | Must | Infrastructure |
 | F-010 | Redis authentication & encryption | Must | Infrastructure |
 | F-011 | Local development environment (docker-compose) | Must | DX |
-| F-012 | Gap: Protobuf-only API convention (no REST, no GET, no path variables) | Must | Cross-cutting |
+| F-012 | Protobuf-only API convention (REST paths + protobuf bodies) | Must | Cross-cutting |
+| F-130 | Availability SLO (99.9%+) | Must | Operations |
+| F-131 | Data durability guarantee (zero data loss) | Must | Operations |
+| F-132 | Minimum TPS target | Must | Operations |
+| F-133 | Capacity projections (volume, storage, cost) | Must | Operations |
+| F-134 | DR quarterly drill execution | Must | Operations |
+| F-135 | PCI-DSS QSA scoping assessment | Must | Compliance |
+| F-136 | Infrastructure degraded modes (Redis/NATS/ClickHouse/OpenSearch/MinIO) | Must | Infrastructure |
 
-### M1.5 — Gateway Profiles (Core Configuration)
+### 2.2 Gateway Profile Configuration
 
 | Feature ID | Feature | Priority | Bounded Context |
 |---|---|---|---|
@@ -46,7 +53,7 @@ A single-tenant, API-first payment orchestration platform that enables merchants
 | F-023 | Gateway profile bulk operations (bulk limit update, bulk enable/disable) | Must | BC-04 |
 | F-024 | Gateway health dashboard (success rate, latency, circuit breaker status) | Must | BC-04 |
 
-### M2 — First Connector (Core Payment Flow)
+### 2.3 Payment Processing & Routing
 
 | Feature ID | Feature | Priority | Bounded Context |
 |---|---|---|---|
@@ -68,7 +75,7 @@ A single-tenant, API-first payment orchestration platform that enables merchants
 | F-035 | Saga coordinator (payment lifecycle saga) | Must | BC-17 |
 | F-036 | Card testing abuse prevention | Must | BC-05 |
 
-### M3 — Multi-Connector Routing
+### 2.4 Multi-Connector & Failover Routing
 
 | Feature ID | Feature | Priority | Bounded Context |
 |---|---|---|---|
@@ -82,7 +89,7 @@ A single-tenant, API-first payment orchestration platform that enables merchants
 | F-047 | Gap: Risk-based routing rules | Should | BC-05 |
 | F-048 | Gap: Source context on PaymentIntent (payment origin tracking) | Must | BC-05 |
 
-### M4 — Reconciliation
+### 2.5 Reconciliation & Settlement
 
 | Feature ID | Feature | Priority | Bounded Context |
 |---|---|---|---|
@@ -94,13 +101,13 @@ A single-tenant, API-first payment orchestration platform that enables merchants
 | F-055 | Reconciliation exception queue | Must | BC-09 |
 | F-056 | Settlement file security (SFTP, checksum) | Must | BC-09 |
 | F-057 | Ledger balance verification (daily job) | Must | BC-09 |
-| F-058 | Gap: Settlement timing (T+N) tracking and overdue alerting | Must | BC-09 |
-| F-059 | Gap: Fee variance tracking (estimated vs. actual fee) | Must | BC-09 |
-| F-060a | Gap: Partial settlement handling | Must | BC-09 |
-| F-060b | Gap: Refund settlement reconciliation | Must | BC-09 |
-| F-060c | Gap: Settlement adjustment handling (post-settlement corrections) | Must | BC-09 |
+| F-058 | Settlement timing (T+N) tracking and overdue alerting | Must | BC-09 |
+| F-059 | Fee variance tracking (estimated vs. actual fee) | Must | BC-09 |
+| F-060a | Partial settlement handling | Must | BC-09 |
+| F-060b | Refund settlement reconciliation | Must | BC-09 |
+| F-060c | Settlement adjustment handling (post-settlement corrections) | Must | BC-09 |
 
-### M5 — Products Layer
+### 2.6 Products: Invoices, Payment Links & Subscriptions
 
 | Feature ID | Feature | Priority | Bounded Context |
 |---|---|---|---|
@@ -118,16 +125,16 @@ A single-tenant, API-first payment orchestration platform that enables merchants
 | F-071 | Webhook payload versioning | Must | Cross-cutting |
 | F-072 | Webhook delivery backpressure & dedup | Must | Cross-cutting |
 | F-073 | Notification service (email/SMS) | Must | BC-14 |
-| F-074 | Gap: Outbound webhook subscription management | Must | Cross-cutting |
-| F-075 | Gap: Outbound webhook delivery retry with exponential backoff | Must | Cross-cutting |
-| F-076 | Gap: Outbound webhook delivery audit trail | Must | Cross-cutting |
-| F-077 | Gap: Payment method token lifecycle (store, expire, revoke) | Must | BC-05 |
-| F-078 | Gap: Chargeback representment evidence management | Must | BC-10 |
-| F-079 | Gap: Chargeback representment deadline tracking | Must | BC-10 |
-| F-080a | Gap: FX rate query integration for cross-border transactions | Should | BC-04 |
-| F-080b | Gap: Cross-border detection for fee calculation | Should | BC-04 |
+| F-074 | Outbound webhook subscription management | Must | Cross-cutting |
+| F-075 | Outbound webhook delivery retry with exponential backoff | Must | Cross-cutting |
+| F-076 | Outbound webhook delivery audit trail | Must | Cross-cutting |
+| F-077 | Payment method token lifecycle (store, expire, revoke) | Must | BC-05 |
+| F-078 | Chargeback representment evidence management | Must | BC-10 |
+| F-079 | Chargeback representment deadline tracking | Must | BC-10 |
+| F-080a | FX rate query integration for cross-border transactions | Should | BC-04 |
+| F-080b | Cross-border detection for fee calculation | Should | BC-04 |
 
-### M6 — AI Assistant
+### 2.7 AI Assistant & Document Management
 
 | Feature ID | Feature | Priority | Bounded Context |
 |---|---|---|---|
@@ -143,7 +150,7 @@ A single-tenant, API-first payment orchestration platform that enables merchants
 | F-089 | Document upload & OCR pipeline | Must | BC-13 |
 | F-090 | OpenSearch security & tenant isolation | Must | BC-12 |
 
-### M7 — Compliance Hardening
+### 2.8 Compliance, Security & Operations
 
 | Feature ID | Feature | Priority | Bounded Context |
 |---|---|---|---|
@@ -167,7 +174,7 @@ A single-tenant, API-first payment orchestration platform that enables merchants
 | F-117 | Data portability export API | Must | Compliance |
 | F-118 | Mass API key revocation | Must | BC-02 |
 | F-119 | Break-glass support access | Must | BC-02 |
-| F-120 | AANI/UAEFTS data model extensions | Could | BC-05 |
+| F-120 | AANI/UAEFTS data model extensions | Must | BC-05 |
 | F-121 | PCI-DSS 4.0 targeted risk analysis | Must | Compliance |
 | F-122 | Card scheme regulations mapping | Must | Compliance |
 | F-123 | Runbooks (10 critical scenarios) | Must | Operations |
@@ -175,18 +182,6 @@ A single-tenant, API-first payment orchestration platform that enables merchants
 | F-125 | Contract tests (orchestration ↔ connector) | Must | Testing |
 | F-126 | Concurrent payment load tests | Must | Testing |
 | F-127 | Payment-specific chaos scenarios | Must | Testing |
-
-### M8 — Pilot GA
-
-| Feature ID | Feature | Priority | Bounded Context |
-|---|---|---|---|
-| F-130 | Availability SLO (99.9%+) | Must | Operations |
-| F-131 | Data durability guarantee (zero data loss) | Must | Operations |
-| F-132 | Minimum TPS target (against pilot volume) | Must | Operations |
-| F-133 | Capacity projections (volume, storage, cost) | Must | Operations |
-| F-134 | DR quarterly drill execution | Must | Operations |
-| F-135 | PCI-DSS QSA scoping assessment | Must | Compliance |
-| F-136 | Infrastructure degraded modes (Redis/NATS/ClickHouse/OpenSearch/MinIO) | Must | Infrastructure |
 
 ## 3. Tech Stack
 
@@ -244,7 +239,7 @@ All frontend pages communicate with the backend via protobuf-over-HTTP POST. The
 
 ## 4. Open Questions (OQ-001 through OQ-100)
 
-See Part 12 §4 for the consolidated open questions register. Key blockers for M1:
+See Part 12 §4 for the consolidated open questions register. Key infrastructure decisions:
 
 - OQ-066: NATS/Redis encryption configuration
 - OQ-073: PostgreSQL TDE mechanism

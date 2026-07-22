@@ -14,7 +14,7 @@
 |---|---|
 | Part | 12 of 12 — Appendices & Roadmap (FINAL PART OF SERIES) |
 | Depends On | All Parts 1–11 |
-| Purpose | Close out the series: full traceability matrix, consolidated glossary, consolidated open-questions register (every OQ across Parts 1–11 in one place with owners), and the MVP → Enterprise implementation roadmap. |
+| Purpose | Close out the series: full traceability matrix, consolidated glossary, consolidated open-questions register (every OQ across Parts 1–11 in one place with owners), and the complete implementation roadmap. |
 
 ---
 
@@ -27,7 +27,7 @@
 | 3 | DDD & Bounded Contexts | 15 bounded contexts + Saga Coordinator (BC-17), SeaORM entities (Rust), domain event catalog + outbox pattern |
 | 4 | Microservice Architecture | 18-service catalog with Go/Rust language split, API/AI Gateway, gRPC vs NATS decision rules, versioned NATS subjects, outbox relay, circuit breakers, feature flags, graceful degradation framework |
 | 5 | Payment Orchestration Engine | State machine, routing algorithm, idempotency, partial auth handling, currency precision, subscription pause/resume (all SeaORM entities) |
-| 6 | AI Payment Assistant & RAG | Model routing, RAG pipeline, guardrails, evaluation harness, production quality monitoring, tool use (H2), multi-step reasoning (H2), enhanced prompt injection defense |
+| 6 | AI Payment Assistant & RAG | Model routing, RAG pipeline, guardrails, evaluation harness, production quality monitoring, tool use (Phase 2), multi-step reasoning (Phase 2), enhanced prompt injection defense |
 | 7 | Gateway Connector Framework | ACL trait design, capability flags, decline normalization, settlement formats, circuit breakers, bulkhead isolation, per-connector retry config |
 | 8 | Identity, Security & Compliance | ABAC, secrets/encryption (HSM-backed, AES-256, TLS 1.3), audit framework, UAE regulatory mapping, threat model (STRIDE + abuse cases), OWASP Top 10 controls, PCI-DSS scope minimization, AML/CFT monitoring, fraud scoring, security headers, container hardening, SSRF prevention, PAM, data classification, supply chain security |
 | 9 | Database Design | Postgres (SeaORM entities for Rust), Redis, ClickHouse (Rust driver), OpenSearch, MinIO; outbox table, event store archival, connection pooling, RLS policies |
@@ -91,16 +91,16 @@
 | ID | Description | Owner | Blocks |
 |---|---|---|---|
 | ASSUMP-001 / OQ-001 (Part 1 §6.4) | Confirm no-custody/licensing posture with UAE legal counsel per business model | Legal (STK-014) | Finalizing Part 5 marketplace-split behavior, GA launch |
-| OQ-003 (Part 1) / OQ-016 (Part 7) | Confirm final MVP acquirer/PSP shortlist | Product (STK-007) | Part 7 connector implementation start |
+| OQ-003 (Part 1) / OQ-016 (Part 7) | Confirm final Phase 1 acquirer/PSP shortlist | Product (STK-007) | Part 7 connector implementation start |
 | OQ-004 (Part 1) | Confirm GPU/inference infrastructure budget | Product/Eng leadership | Part 6 model variant selection, Part 11 §6 benchmarking |
 | OQ-005 (Part 2) | Finalize dunning retry schedule defaults | Product | UC-031 final configuration defaults |
 | OQ-006 (Part 2) | Secondary-approver threshold for AI-suggested reconciliation matches | Compliance (STK-010) | **Resolved in Part 8 §2.2 ABAC-001** — yes, threshold-based dual control |
-| OQ-007 (Part 3) | Whether `RiskAssessment` (BC-11) stays a separate context once ML scoring (H3) is designed | Architecture | H3 fraud/risk design spike |
+| OQ-007 (Part 3) | Whether `RiskAssessment` (BC-11) stays a separate context once ML scoring (Phase 3) is designed | Architecture | Phase 3 fraud/risk design spike |
 | OQ-008 (Part 3) / OQ-021 (Part 9) | Event retention/archival policy in NATS JetStream and Postgres | Engineering | Part 11 §7 DR-002 DR runbook finalization |
 | OQ-009 (Part 4) | Whether risk-service synchronous scoring adds unacceptable checkout latency | Engineering | Part 11 §6 benchmarking spike (OQ-026) |
 | OQ-010 (Part 4) / OQ-022 (Part 9) | Shared vs. separate Postgres instances for invoice/payment-link services | Engineering/Infra | Part 11 infrastructure-as-code templates |
 | OQ-011 (Part 5) | Default/configurable range for hard failover hop ceiling | Engineering | Part 11 §6.2 PERF-002 |
-| OQ-012 (Part 5) | Which MVP connectors support native idempotency vs. status-check fallback | Engineering | Depends on OQ-003/OQ-016 resolution |
+| OQ-012 (Part 5) | Which initial connectors support native idempotency vs. status-check fallback | Engineering | Depends on OQ-003/OQ-016 resolution |
 | OQ-013 (Part 6) | Finalize top-50 AI Assistant question list | Product + Finance-Ops persona input | Part 6 §6 evaluation harness content |
 | OQ-014 (Part 6) | Confirm GPU hardware spec/quantity | Engineering/Infra | Part 6 NFR-AI-001 numeric targets, Part 11 §6 |
 | OQ-015 (Part 6) | Bounded conversation-history window size | Product/UX | Part 6 SESS-001 finalization |
@@ -122,19 +122,19 @@
 | OQ-034 (Part 4) | Finalize circuit breaker library choice for Rust | Engineering | Part 4 §9.2 |
 | OQ-035 (Part 4) | Confirm feature flag store — Redis-backed vs. off-the-shelf | Engineering/Infra | Part 4 §9.4 MFF-001 |
 | OQ-036 (Part 5) | Finalize default PartialAuthorizationPolicy | Product | Part 5 §9.1 PARTIAL-AUTH-002 |
-| OQ-037 (Part 5) | Confirm supported currencies and minor-unit precisions for MVP | Product/Engineering | Part 5 §9.2 CURRENCY-001 |
+| OQ-037 (Part 5) | Confirm supported currencies and minor-unit precisions for initial launch | Product/Engineering | Part 5 §9.2 CURRENCY-001 |
 | OQ-038 (Part 5) | Finalize subscription proration calculation method | Product | Part 5 §9.6 SUB-PAUSE-002 |
 | OQ-039 (Part 6) | Finalize feedback-loop UX design (thumbs-up/down vs. structured) | Product/UX | Part 6 §9.1 AIMON-001 |
-| OQ-040 (Part 6) | Confirm tool-use API surface for H2 | Product/Engineering | Part 6 §9.4 AITOOL-001 |
+| OQ-040 (Part 6) | Confirm tool-use API surface for Phase 2 | Product/Engineering | Part 6 §9.4 AITOOL-001 |
 | OQ-041 (Part 6) | Finalize multi-step reasoning step limit (default 3) | Engineering/AI | Part 6 §9.5 AICHAIN-002 |
 | OQ-042 (Part 6) | Evaluate OpenSearch index strategy for single-tenant deployment | Architecture | Part 6 §9.4, Part 9 OS-001 |
 | OQ-043 (Part 7) | Finalize circuit breaker thresholds for acquirer connectors | Engineering | Part 7 §5.1 CB-CONN-001 |
 | OQ-044 (Part 8) | Finalize KEK rotation schedule (default 90 days) | Security/Compliance | Part 8 §12 SEC-ROT-001 |
-| OQ-045 (Part 8) | Confirm API key acquirer scoping for MVP vs. H2 | Product | Part 8 §11 AUTHZ-002 |
+| OQ-045 (Part 8) | Confirm API key acquirer scoping for initial launch vs. Phase 2 | Product | Part 8 §11 AUTHZ-002 |
 | OQ-046 (Part 9) | Finalize outbox relay polling vs. CDC trade-offs | Engineering | Part 9 §6.1 DB-006 |
 | OQ-047 (Part 9) | Confirm PgBouncer vs. built-in connection pooler | Engineering | Part 9 §9 POOL-001 |
 | OQ-048 (Part 10) | Finalize webhook replay window (default 5 minutes) | Security/Engineering | Part 10 §7 WEBHOOK-REPLAY-001 |
-| OQ-049 (Part 10) | Confirm X-SDK-Version header tracking for MVP vs. H2 | Product | Part 10 §8 SDK-DEP-003 |
+| OQ-049 (Part 10) | Confirm X-SDK-Version header tracking for initial launch vs. Phase 2 | Product | Part 10 §8 SDK-DEP-003 |
 | OQ-050 (Part 11) | Finalize canary deployment thresholds against real baseline | Engineering/SRE | Part 11 §7.3 CANARY-001 |
 | OQ-051 (Part 11) | Confirm chaos engineering tooling choice | Engineering/Infra | Part 11 §7.2 CHAOS-001 |
 | OQ-052 (Part 11) | Finalize database migration tooling | Engineering | Part 11 §8.4 MIG-002 |
@@ -156,25 +156,25 @@
 |---|---|---|---|
 | OQ-064 (Part 3 §10.2) | Finalize double-entry ledger design: which entities, which settlement formats, how fee breakdown is populated from acquirer data | Architecture/Engineering | M4 reconciliation implementation |
 | OQ-065 (Part 3 §10.3) | Finalize reconciliation matching algorithm thresholds: auto-confirm threshold, review threshold, per-acquirer fee tolerance | Product/Engineering | M4 reconciliation implementation |
-| OQ-066 (Part 4 §10.1) | Finalize NATS/Redis encryption configuration: TLS cert management, encryption-at-rest key rotation schedule | Security/Infra | M1 foundation |
+| OQ-066 (Part 4 §10.1) | Finalize NATS/Redis encryption configuration: TLS cert management, encryption-at-rest key rotation schedule | Security/Infra | Phase 1 foundation |
 | OQ-067 (Part 4 §10.2) | Finalize feature flag store: Redis-backed vs. off-the-shelf (e.g., LaunchDarkly, Unleash) | Engineering/Infra | M7 compliance hardening |
 | OQ-068 (Part 4 §10.4) | Finalize unified internal error taxonomy mapping to gRPC status codes | Architecture | M2 first connector |
 | OQ-069 (Part 6 §11.1) | Finalize AI bias test set: which protected characteristics, what fairness threshold | Product/AI | M6 AI assistant baseline |
 | OQ-070 (Part 6 §11.2) | Finalize hallucination detection secondary validation: numerical claim extraction vs. LLM-based verification | AI/Engineering | M6 AI assistant baseline |
 | OQ-071 (Part 8 §16.1) | Finalize PaymentMethodToken aggregate ownership: BC-05 extension vs. new BC-18 | Architecture | M2 first connector |
 | OQ-072 (Part 8 §16.2) | Finalize account recovery flow: backup codes vs. Admin-mediated identity verification vs. both | Product/Security | M7 compliance hardening |
-| OQ-073 (Part 8 §16.3) | Finalize PostgreSQL TDE: pg_tde extension vs. cloud-managed TDE vs. column-level encryption alternative | Security/Infra | M1 foundation |
-| OQ-074 (Part 8 §16.5) | Finalize infrastructure component security baselines: Redis AUTH/TLS, OpenSearch security plugin, ClickHouse auth, MinIO IAM | Security/Infra | M1 foundation |
+| OQ-073 (Part 8 §16.3) | Finalize PostgreSQL TDE: pg_tde extension vs. cloud-managed TDE vs. column-level encryption alternative | Security/Infra | Phase 1 foundation |
+| OQ-074 (Part 8 §16.5) | Finalize infrastructure component security baselines: Redis AUTH/TLS, OpenSearch security plugin, ClickHouse auth, MinIO IAM | Security/Infra | Phase 1 foundation |
 | OQ-075 (Part 8 §16.7) | Finalize CSRF protection mechanism: custom header vs. double-submit cookie vs. SameSite-only | Security | M7 compliance hardening |
 | OQ-076 (Part 8 §16.8) | Finalize credential access monitoring: real-time vs. batch alerting, rate limit threshold | Security/Compliance | M7 compliance hardening |
-| OQ-077 (Part 8 §16.10) | Finalize gRPC reflection disable enforcement: CI check vs. runtime assertion | Security/Engineering | M1 foundation |
+| OQ-077 (Part 8 §16.10) | Finalize gRPC reflection disable enforcement: CI check vs. runtime assertion | Security/Engineering | Phase 1 foundation |
 | OQ-078 (Part 8 §16.11) | Finalize AI bias monitoring: automated vs. manual quarterly audit, fairness metric definition | AI/Compliance | M6 AI assistant baseline |
 | OQ-079 (Part 8 §16.12) | Finalize data residency enforcement: IaC constraints vs. runtime validation vs. both | Security/Infra | M7 compliance hardening |
 | OQ-080 (Part 9 §12.2) | Finalize ClickHouse security: per-service user roles, TLS configuration, query logging | Security/Infra | M4 reconciliation |
 | OQ-081 (Part 9 §12.3) | Finalize OpenSearch security: security plugin vs. network-level isolation, index vs. document-level security | Security/Architecture | M6 AI assistant |
 | OQ-082 (Part 9 §12.5) | Finalize data masking service: which tools, which fields, how staging data is generated | Engineering/QA | M7 compliance hardening |
 | OQ-083 (Part 10 §10.3) | Finalize webhook delivery backpressure: adaptive throttling algorithm, priority queue implementation | Engineering | M5 products layer |
-| OQ-084 (Part 11 §13.2) | Finalize runbook templates: which scenarios get full runbooks for MVP, who maintains them | SRE/Engineering | M7 compliance hardening |
+| OQ-084 (Part 11 §13.2) | Finalize runbook templates: which scenarios get full runbooks for initial launch, who maintains them | SRE/Engineering | M7 compliance hardening |
 | OQ-085 (Part 11 §13.7) | Finalize RPO/RTO targets with Product/Compliance: confirm minimums for GA | Product/Compliance/Engineering | M7 compliance hardening |
 
 ### New Open Questions from Round 2 Gap Analysis (OQ-086 through OQ-100)
@@ -187,26 +187,26 @@
 | OQ-089 (Part 8 §17.1) | Finalize PCI-DSS SAQ type with QSA — token classification as cardholder data affects scope | Compliance/Security | M7 compliance hardening |
 | OQ-090 (Part 8 §17.6) | Finalize network segmentation zones: separate K8s namespaces vs. separate clusters for CDE | Security/Infra | M7 compliance hardening |
 | OQ-091 (Part 8 §17.8) | Select edge DDoS protection vendor (Cloudflare, AWS CloudFront + WAF, etc.) | Security/Infra | M7 compliance hardening |
-| OQ-092 (Part 8 §17.11) | Finalize HSM vendor and DR replication mechanism | Security/Infra | M1 foundation |
+| OQ-092 (Part 8 §17.11) | Finalize HSM vendor and DR replication mechanism | Security/Infra | Phase 1 foundation |
 | OQ-093 (Part 5 §12.1) | Finalize deployment epoch grace period (default: 5 minutes) against actual acquirer authorization timeouts | Engineering | M2 first connector |
 | OQ-094 (Part 5 §12.6) | Finalize event signing key storage: KMS-managed vs. HSM-managed signing keys | Security | M7 compliance hardening |
 | OQ-095 (Part 3 §11.1) | Finalize invalid state transition error codes with merchant-facing API documentation | Product/Engineering | M2 first connector |
 | OQ-096 (Part 10 §11.1) | Confirm complete API error code catalog with SDK team for SDK error handling | Product/Engineering | M5 products layer |
 | OQ-097 (Part 11 §14.14) | Set availability SLO (99.9% vs 99.99%) against pilot merchant requirements | Product/Compliance | M7 compliance hardening |
 | OQ-098 (Part 11 §14.15) | Confirm data durability guarantee wording with legal/compliance | Legal/Compliance | M7 compliance hardening |
-| OQ-099 (Part 1 §13.3) | Map card scheme operating regulations (Visa Core Rules, Mastercard Standards) for MVP | Compliance | M7 compliance hardening |
+| OQ-099 (Part 1 §13.3) | Map card scheme operating regulations (Visa Core Rules, Mastercard Standards) for initial launch | Compliance | M7 compliance hardening |
 | OQ-100 (Part 8 §17.25) | Finalize data portability export format and retention for exported archives | Product/Legal | M7 compliance hardening |
 
 ### New Open Questions from SRS ↔ Backend Gap Analysis (OQ-101 through OQ-115)
 
 | ID | Description | Owner | Blocks |
 |---|---|---|---|
-| OQ-101 | Finalize envelope encryption DEK/KEK implementation: which KMS (Vault vs cloud-native), DEK caching strategy, AAD binding | Security/Infra | M1 foundation |
+| OQ-101 | Finalize envelope encryption DEK/KEK implementation: which KMS (Vault vs cloud-native), DEK caching strategy, AAD binding | Security/Infra | Phase 1 foundation |
 | OQ-102 | Finalize outbox relay polling interval vs CDC (Debezium) trade-off for production event volume | Engineering | M2 first connector |
-| OQ-103 | Confirm health check endpoint authentication: internal-only vs unauthenticated for K8s probes | Security/Infra | M1 foundation |
-| OQ-104 | Finalize graceful shutdown drain timeout values per service against real traffic patterns | Engineering | M1 foundation |
+| OQ-103 | Confirm health check endpoint authentication: internal-only vs unauthenticated for K8s probes | Security/Infra | Phase 1 foundation |
+| OQ-104 | Finalize graceful shutdown drain timeout values per service against real traffic patterns | Engineering | Phase 1 foundation |
 | OQ-105 | Confirm feature flag store choice: Redis-backed custom vs off-the-shelf (LaunchDarkly, Unleash) | Engineering/Infra | M7 compliance hardening |
-| OQ-106 | Finalize structured log schema: which fields mandatory vs optional, log retention per service | Engineering/Security | M1 foundation |
+| OQ-106 | Finalize structured log schema: which fields mandatory vs optional, log retention per service | Engineering/Security | Phase 1 foundation |
 | OQ-107 | Confirm connection pool sizing per service against pilot merchant traffic projections | Engineering | M8 pilot GA |
 | OQ-108 | Finalize degraded mode behavior thresholds: Redis lag tolerance, NATS outage duration, ClickHouse staleness limit | SRE/Engineering | M7 compliance hardening |
 | OQ-109 | Confirm SSRF deny-list completeness: all RFC 1918/3927/4193 ranges, IPv6-mapped addresses | Security | M2 first connector |
@@ -215,21 +215,21 @@
 | OQ-112 | Finalize webhook delivery backpressure: adaptive throttling algorithm, priority queue implementation | Engineering | M5 products layer |
 | OQ-113 | Confirm AML transaction monitoring rule set: specific rules, thresholds, detection logic | Compliance/Legal | M7 compliance hardening |
 | OQ-114 | Finalize property-based test coverage targets: which invariants, how many generated cases | Engineering | M2 first connector |
-| OQ-115 | Confirm gRPC .proto file generation pipeline: prost-build vs tonic-build, shared type packaging | Engineering | M1 foundation |
+| OQ-115 | Confirm gRPC .proto file generation pipeline: prost-build vs tonic-build, shared type packaging | Engineering | Phase 1 foundation |
 
-**Program management note**: Items with a Legal owner (ASSUMP-001/OQ-001, OQ-018, OQ-019, OQ-098, OQ-113) are the highest-priority blockers for GA. Items from the gap analysis (OQ-029 through OQ-115) represent engineering decisions that should be resolved during M1–M2 to avoid blocking later milestones. Priority recommendation: resolve OQ-101 (envelope encryption), OQ-102 (outbox relay), OQ-103 (health checks), OQ-106 (log schema), and OQ-115 (proto generation) before M1 implementation begins — these are foundational patterns that affect every service.
+**Program management note**: Items with a Legal owner (ASSUMP-001/OQ-001, OQ-018, OQ-019, OQ-098, OQ-113) are the highest-priority blockers for GA. Items from the gap analysis (OQ-029 through OQ-115) represent engineering decisions that should be resolved during M1–M2 to avoid blocking later milestones. Priority recommendation: resolve OQ-101 (envelope encryption), OQ-102 (outbox relay), OQ-103 (health checks), OQ-106 (log schema), and OQ-115 (proto generation) before Phase 1 implementation begins — these are foundational patterns that affect every service.
 
 ---
 
-## 5. Implementation Roadmap — MVP → Enterprise
+## 5. Implementation Roadmap
 
-### 5.1 Horizon 1 — MVP / UAE Market Entry
+### 5.1 Phase 1 — UAE Market Entry
 
 **Goal**: GOAL-001 through GOAL-005 (Part 1 §3.1) achieved; SUCC-001 through SUCC-005 (Part 1 §11) validated.
 
 | Milestone | Key Deliverables | Primary Parts |
 |---|---|---|
-| M1 — Foundation | `operator-service`, `iam-service`, `compliance-service` live; UC-001/002 functional; NATS/Redis encryption configured; infrastructure security baselines (OQ-066, OQ-074); PostgreSQL TDE (OQ-073); feature flag store decided (OQ-067); HSM DR plan (OQ-092); local dev environment (Part 11 §14.10) | Parts 3, 4, 8, 9 |
+| Phase 1 — Foundation | `operator-service`, `iam-service`, `compliance-service` live; UC-001/002 functional; NATS/Redis encryption configured; infrastructure security baselines (OQ-066, OQ-074); PostgreSQL TDE (OQ-073); feature flag store decided (OQ-067); HSM DR plan (OQ-092); local dev environment (Part 11 §14.10) | Parts 3, 4, 8, 9 |
 | M2 — First Connector | One acquirer connector conformant (Part 7 §5); `connector-gateway` + `orchestration-service` authorize/capture/void/refund functional in sandbox; PaymentMethodToken aggregate (OQ-071); SFTP security (Part 7 §9.1); cross-context idempotency (Part 3 §10.6); invalid state transition table (OQ-095); deployment safety protocol (OQ-093); property-based tests (Part 11 §14.2) | Parts 5, 7, 9, 10 |
 | M3 — Multi-Connector Routing | Two additional connectors; `RoutingPolicy` + failover (UC-011, UC-020 AF-020a) live; scheme compliance monitoring (Part 7 §9.2); contract tests (Part 11 §14.4); card testing abuse prevention (Part 8 §17.5) | Part 5, 7 |
 | M4 — Reconciliation | `reconciliation-service` ingesting at least one connector's settlement format; UC-040/041 functional; double-entry ledger (OQ-064); reconciliation matching algorithm (OQ-065); fee breakdown tracking (Part 5 §11.1); ClickHouse security (OQ-080); ledger balance verification (Part 3 §11.7) | Parts 7, 9 |
@@ -238,12 +238,12 @@
 | M7 — Compliance Hardening | Full audit framework (Part 8 §5), SECTEST-001 cross-tenant suite passing, legal sign-off on custody posture (OQ-001) obtained; audit tamper-evidence (Part 8 §16.4); CSRF protection (OQ-075); credential monitoring (OQ-076); account recovery flow (OQ-072); data masking (OQ-082); runbooks written (Part 11 §14.13); RPO/RTO finalized (OQ-085); data residency enforcement (OQ-079); SIEM selected (OQ-054); PCI token scope confirmed (OQ-089); network zones defined (OQ-090); DDoS edge protection (OQ-091); event signatures (OQ-094); availability SLO set (OQ-097); data durability guarantee (OQ-098); card scheme rules mapped (OQ-099); data portability API (Part 8 §17.25); PCI network diagram (Part 8 §17.23); CHD flow diagram (Part 8 §17.3); key inventory (Part 8 §17.9) | Part 8, Part 11 §7 |
 | M8 — Pilot GA | First pilot merchant live on production with real acquirer connections; PCI-DSS QSA scoping assessment completed; DR drill completed (includes PostgreSQL cluster loss recovery, Part 11 §14.1); capacity projections validated (Part 11 §14.17); concurrent payment load tests passed (Part 11 §14.5) | All |
 
-### 5.2 Horizon 2 — GCC Expansion
+### 5.2 Phase 2 — GCC Expansion
 
 - Saudi Arabia adapter work (mada scheme, SAMA-relevant reporting) layered onto BC-04's connector framework (Part 7) and BC-09's reconciliation format handling (Part 9) — validates the "adapters, not redesign" claim from Part 1 §2.3 pillar 4.
 - Multi-currency reconciliation (BIZ-016) — extends `Money`/FX-provenance value objects (Part 3 PRIN-04).
 
-### 5.3 Horizon 3 — Platform Maturity
+### 5.3 Phase 3 — Platform Maturity
 
 - Success-rate-weighted dynamic routing (GOAL-009, Part 5 §3.3).
 - Proactive AI anomaly detection (GOAL-010, Part 6 §7).
@@ -251,7 +251,7 @@
 
 ### 5.4 Roadmap Sequencing Principle
 
-- **ROAD-001**: No Horizon 2/3 capability is scheduled ahead of its Horizon 1 prerequisite's production validation (e.g., dynamic routing, H3, is not attempted before static routing/failover, H1, has real production authorization-rate data to weight against) — this is a deliberate "walk before run" discipline consistent with the incremental, testable, TDD-driven engineering culture established in Part 11.
+- **ROAD-001**: No Phase 2/3 capability is scheduled ahead of its Phase 1 prerequisite's production validation (e.g., dynamic routing, Phase 3, is not attempted before static routing/failover, Phase 1, has real production authorization-rate data to weight against) — this is a deliberate "walk before run" discipline consistent with the incremental, testable, TDD-driven engineering culture established in Part 11.
 
 ---
 
@@ -263,7 +263,7 @@
 - A comprehensive gap analysis was performed against the complete 12-part SRS across four dimensions: (1) production bank-grade security, (2) missing design patterns, (3) OWASP Top 10 (2021) compliance, and (4) cross-cutting architectural completeness. The findings are integrated into the respective Parts as "Gap Analysis Additions" sections. Key themes: infrastructure component security (NATS, Redis, OpenSearch, ClickHouse, MinIO encryption/auth), saga compensation completeness, double-entry ledger for reconciliation, payment token lifecycle, phishing-resistant MFA, audit tamper-evidence, and AI safety (bias detection, hallucination detection, real-time quality monitoring). New open questions OQ-064 through OQ-085 track the remaining decisions.
 - A **second-pass gap analysis** was performed with single-tenant deployment confirmed, finding ~111 additional findings across security, design patterns, OWASP, and cross-cutting concerns. Key themes: PCI-DSS token classification (acquirer tokens = cardholder data), event signature verification for NATS JetStream, card testing abuse prevention via platform failover, deployment-time payment state corruption prevention, exhaustive invalid state transition table, gRPC actor-context spoofing prevention, network segmentation zones for PCI CDE, and infrastructure degraded-mode behaviors (Redis/NATS/ClickHouse/OpenSearch/MinIO). New open questions OQ-086 through OQ-100 track remaining decisions.
 - A **SRS-to-backend gap analysis** was performed comparing all 12 SRS parts against all 20 backend development files. The backend docs cover core domain logic well (payment orchestration 90%+ complete) but systematically lack cross-cutting security infrastructure, operational hardening, and testing depth. Key gaps: envelope encryption absent, no CDE segmentation, no AML monitoring, no audit tamper-evidence, no supply chain security, no health checks/graceful shutdown, no property-based testing, no degraded mode behaviors, no repository interfaces for 12 of 14 aggregates, no gRPC .proto files for any service, no error catalogs for 17 of 18 services. A new file `docs/backend/19-infrastructure-cross-cutting.md` was created covering outbox, health checks, graceful shutdown, leader election, feature flags, structured logging, connection pools, degraded modes, envelope encryption, SSRF prevention, audit tamper-evidence, card testing abuse prevention, WebAuthn, data retention, CORS, request limits, input validation, cursor pagination security, webhook versioning, API staleness disclosure, and SFTP security. New open questions OQ-101 through OQ-115 track remaining infrastructure decisions.
-- Recommended next step: convene STK-007 (Product), STK-008 (Engineering), STK-010 (Compliance), and STK-014 (Legal) to walk the §4 consolidated open-questions register and assign near-term resolution deadlines before M1 (§5.1) engineering work begins in earnest. Priority focus areas: OQ-101 (envelope encryption), OQ-102 (outbox relay), OQ-103 (health checks), OQ-106 (log schema), OQ-115 (proto generation), OQ-089 (PCI token scope), OQ-092 (HSM DR), and OQ-113 (AML rules).
+- Recommended next step: convene STK-007 (Product), STK-008 (Engineering), STK-010 (Compliance), and STK-014 (Legal) to walk the §4 consolidated open-questions register and assign near-term resolution deadlines before Phase 1 (§5.1) engineering work begins in earnest. Priority focus areas: OQ-101 (envelope encryption), OQ-102 (outbox relay), OQ-103 (health checks), OQ-106 (log schema), OQ-115 (proto generation), OQ-089 (PCI token scope), OQ-092 (HSM DR), and OQ-113 (AML rules).
 
 ---
 

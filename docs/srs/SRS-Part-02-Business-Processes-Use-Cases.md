@@ -88,7 +88,7 @@ A new operator (merchant or platform operator) signs up, provides business and K
 - **Primary Actor**: ACT-01 (Merchant Admin)
 - **Preconditions**: Actor has a valid business email.
 - **Main Flow**:
-  1. ACT-01 submits company legal name, trade license number, country of incorporation (UAE at MVP), business email.
+  1. ACT-01 submits company legal name, trade license number, country of incorporation (UAE at initial launch), business email.
   2. System creates a new Operator aggregate in `Pending` status (see Part 3 for aggregate definition) with a unique operator ID.
   3. System sends email verification to ACT-01.
   4. ACT-01 verifies email; Operator status moves to `Active-Unverified` (can configure sandbox, cannot process live transactions).

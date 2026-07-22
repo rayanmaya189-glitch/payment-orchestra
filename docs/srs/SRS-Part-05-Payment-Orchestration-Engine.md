@@ -105,7 +105,7 @@ At `AuthorizePaymentIntent` time, the engine gathers:
 3. Transaction attributes relevant to routing conditions: card scheme (Visa/Mastercard/Amex/mada, as reported at tokenization/entry time), currency, amount, and (if `risk-service`, SVC-11, is enabled for the tenant per OQ-009) a risk score.
 4. (H3 only, GOAL-009) Historical authorization-rate statistics per acquirer/card-scheme/currency combination, sourced from `analytics-service` read models, for success-rate-weighted dynamic routing.
 
-### 3.2 Algorithm (MVP — Static/Rule-Based)
+### 3.2 Algorithm (Phase 1 — Static/Rule-Based)
 
 ```
 function select_route(intent, policy, links, attempted_hops):
@@ -124,7 +124,7 @@ function select_route(intent, policy, links, attempted_hops):
 
 ### 3.3 Algorithm (H3 — Success-Rate-Weighted Dynamic Routing, GOAL-009)
 
-Extends 3.2 by re-weighting `candidates` using a rolling window (e.g., trailing 1 hour, tenant-configurable) of authorization-rate statistics per acquirer/scheme/currency, subject to a **minimum-sample-size floor** (to avoid a single recent decline skewing routing for a low-volume combination) and a **maximum deviation cap** from the tenant's explicitly configured static priority (to prevent the dynamic layer from silently overriding a tenant's deliberate business preference, e.g., a negotiated-cost priority — dynamic routing optimizes *within* tenant-set boundaries, not around them). Full statistical design (window size defaults, cap defaults, confidence thresholds) is deferred to an H3 design spike, explicitly flagged as **not required for MVP acceptance** (Part 11).
+Extends 3.2 by re-weighting `candidates` using a rolling window (e.g., trailing 1 hour, tenant-configurable) of authorization-rate statistics per acquirer/scheme/currency, subject to a **minimum-sample-size floor** (to avoid a single recent decline skewing routing for a low-volume combination) and a **maximum deviation cap** from the tenant's explicitly configured static priority (to prevent the dynamic layer from silently overriding a tenant's deliberate business preference, e.g., a negotiated-cost priority — dynamic routing optimizes *within* tenant-set boundaries, not around them). Full statistical design (window size defaults, cap defaults, confidence thresholds) is deferred to an H3 design spike, explicitly flagged as **not required for initial launch acceptance** (Part 11).
 
 ### 3.4 Failover Retry Mechanics
 
@@ -393,9 +393,9 @@ pub struct FeeBreakdown {
 ## 13. Open Items Carried Forward
 
 - **OQ-011**: Finalize default and configurable-range values for RTY-002's hard hop ceiling — placeholder "3" used above pending a latency-budget modeling exercise in Part 11.
-- **OQ-012**: Confirm which MVP acquirer partners support native idempotency tokens (§4.1) vs. require status-check-before-retry — depends on OQ-003 (Part 1) acquirer shortlist; must be resolved before Part 7 finalizes per-connector capability flags.
+- **OQ-012**: Confirm which Phase 1 acquirer partners support native idempotency tokens (§4.1) vs. require status-check-before-retry — depends on OQ-003 (Part 1) acquirer shortlist; must be resolved before Part 7 finalizes per-connector capability flags.
 - **OQ-036**: Finalize the default `PartialAuthorizationPolicy` (§9.1) — "retry next acquirer" is recommended as the default but must be validated against pilot merchant preferences.
-- **OQ-037**: Confirm the maximum number of supported currencies and their minor-unit precisions for MVP (§9.2) — BHD/KWD (3 decimal) support adds validation complexity; consider limiting MVP to 2-decimal currencies.
+- **OQ-037**: Confirm the maximum number of supported currencies and their minor-unit precisions for initial launch (§9.2) — BHD/KWD (3 decimal) support adds validation complexity; consider limiting Phase 1 to 2-decimal currencies.
 - **OQ-038**: Finalize subscription proration calculation method (§9.6 SUB-PAUSE-002) — full-day granularity vs. hour-based vs. calendar-month pro-rata — requires Product sign-off.
 
 ---

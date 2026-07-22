@@ -152,7 +152,7 @@ Total checkout latency budget (target, tenant-perceived)
 ### 6.3 Scalability Targets (Structural, Not Numeric Placeholders)
 
 - **SCALE-001**: Every service in Part 4 §1.1 is independently horizontally scalable (stateless application layer; all state in Postgres/Redis/ClickHouse/OpenSearch/MinIO) — this is a structural guarantee verifiable by architecture review (no in-memory-only state that would break under multi-replica scaling), separate from the specific replica-count numbers which are a capacity-planning exercise against real traffic projections once pilot-merchant volume is known.
-- **SCALE-002**: The event-store partitioning (by `aggregate_type, aggregate_id`) means database scaling can proceed via read replicas for query-heavy projections and, if a single Postgres instance's write throughput becomes the bottleneck at large scale, via sharding across multiple Postgres instances — flagged here as an architecture escape hatch, not an MVP requirement.
+- **SCALE-002**: The event-store partitioning (by `aggregate_type, aggregate_id`) means database scaling can proceed via read replicas for query-heavy projections and, if a single Postgres instance's write throughput becomes the bottleneck at large scale, via sharding across multiple Postgres instances — flagged here as an architecture escape hatch, not an Phase 1 requirement.
 
 ---
 
@@ -604,7 +604,7 @@ All production-affecting changes follow the Maker/Checker pattern (Part 3 MKCK-0
 
 **DR-005**: DR drill schedule: quarterly restoration from backups into an isolated environment, with application-level correctness validation (not just "the restore command succeeded"). A backup that has never been test-restored is not a verified backup.
 
-**DR-006**: Cross-region replication (H2): active-passive with UAE primary, secondary in another GCC country. DNS failover via health checks + weighted routing.
+**DR-006**: Cross-region replication (Phase 2): active-passive with UAE primary, secondary in another GCC country. DNS failover via health checks + weighted routing.
 
 **DR-007**: RTO/RPO targets (minimum for GA):
 - `orchestration-service`: RPO=0, RTO<5 minutes
@@ -728,7 +728,7 @@ All production-affecting changes follow the Maker/Checker pattern (Part 3 MKCK-0
 
 ### 14.17 Capacity Planning Projections
 
-**CAP-001**: Volume projections (sample): 10,000 transactions/day at MVP, 100,000/day at 1 year, 500,000/day at 3 years. Storage requirements calculated for each data store at each milestone. Postgres WAL volume per day estimated for continuous archiving cost.
+**CAP-001**: Volume projections (sample): 10,000 transactions/day at initial launch, 100,000/day at 1 year, 500,000/day at 3 years. Storage requirements calculated for each data store at each milestone. Postgres WAL volume per day estimated for continuous archiving cost.
 
 **CAP-002**: AI inference cost projection: monthly GPU cost at 1,000 / 10,000 / 100,000 queries/day. Cost threshold for AI circuit breaker triggering defined.
 

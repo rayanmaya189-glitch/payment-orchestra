@@ -38,7 +38,7 @@
 
 ### 1.3 Service-to-Service (Internal Mesh)
 
-- **AUTH-006**: mTLS via the service mesh (Part 4 §8) provides service identity; `iam-service`'s `ValidatePermission` call additionally carries the propagated actor context (Part 4 §7) so that internal service identity (mesh certificate) and business-actor identity (the human/API-key principal on whose behalf the call is made) are both verifiable and distinct.
+- **AUTH-006**: mTLS via the API Gateway (Part 4 §8) provides service identity; internal modules use in-process identity propagation (Part 4 §7); `iam-service`'s `ValidatePermission` call additionally carries the propagated actor context (Part 4 §7) so that internal service identity (mesh certificate) and business-actor identity (the human/API-key principal on whose behalf the call is made) are both verifiable and distinct.
 
 ---
 
@@ -570,7 +570,7 @@ This Part is the authoritative home for the *security/compliance framing* of con
 - Acquirer-issued tokens may be classified as cardholder data under PCI-DSS depending on the token format and whether it can be used to reconstruct PAN
 - If tokens = cardholder data: CDE scope expands, TDE required on `payment_method_token` table, access controls tightened
 - If tokens ≠ cardholder data: lighter scope
-- **Platform assumes worst-case (tokens = cardholder data) for MVP** — TDE enabled, RLS enforced, access logged
+- **Platform assumes worst-case (tokens = cardholder data) for initial launch** — TDE enabled, RLS enforced, access logged
 - Final classification requires QSA review before PCI-DSS assessment
 
 **TOK-003**: Token Entity (SeaORM — Rust):
@@ -661,7 +661,7 @@ pub struct AuditEntry {
 | **ClickHouse** | TLS for client connections, per-service read-only users, network policy restricting to `analytics-service` and `ai-assistant-service` |
 | **MinIO** | TLS, access key/secret auth, per-service IAM policies, network policy restricting to `document-service`, `compliance-service`, `reconciliation-service`, `analytics-service` |
 | **NATS** | TLS 1.3 + mTLS (Part 4 §10.1 NATS-ENC-001/002/003) |
-| **PostgreSQL** | TDE (ENC-010), `sslmode=verify-full` (not just `require`), per-service roles, `pg_hba.conf` restricting to service mesh IPs |
+| **PostgreSQL** | TDE (ENC-010), `sslmode=verify-full` (not just `require`), per-service roles, `pg_hba.conf` restricting to authorized service IPs |
 
 **INFRA-SEC-002**: First-boot credential rotation: all infrastructure components (MinIO, OpenSearch, Redis, ClickHouse, PostgreSQL) must have default credentials rotated on first deployment. Default credentials (e.g., MinIO `minioadmin:minioadmin`) must never exist in production.
 
@@ -761,7 +761,7 @@ pub struct AuditEntry {
 
 **K8S-SEC-001**: ResourceQuota per namespace (CPU, memory, pod count). LimitRange per container (min/max resource requests). PodDisruptionBudget for critical services (`orchestration-service`, `connector-gateway`, `iam-service`) with `minAvailable >= 2`.
 
-**K8S-SEC-002**: mTLS certificate lifetime: workload certificates ≤ 24 hours (auto-rotated by service mesh). Root CA offline/air-gapped. Zero-downtime rotation via SDS (Secret Discovery Service).
+**K8S-SEC-002**: mTLS certificate lifetime: workload certificates ≤ 24 hours (auto-rotated via certificate manager). Root CA offline/air-gapped. Zero-downtime rotation via SDS (Secret Discovery Service).
 
 ### 16.17 Supply Chain Enhancements
 
@@ -817,13 +817,13 @@ pub struct AuditEntry {
 
 ### 17.7 East-West Traffic Inspection
 
-**NET-INSPECT-001**: Deploy a service mesh with L7 observability providing: (1) per-service-pair request volume baselines, (2) response size monitoring (detecting unusual data volumes — potential exfiltration), (3) gRPC method-level access logging.
+**NET-INSPECT-001**: Deploy L7 observability providing: (1) per-service-pair request volume baselines, (2) response size monitoring (detecting unusual data volumes — potential exfiltration), (3) gRPC method-level access logging.
 
 **NET-INSPECT-002**: Alert on anomalous patterns: service A suddenly calling service B's methods it never called before, response sizes exceeding 2σ from baseline.
 
 ### 17.8 DDoS Edge Protection
 
-**DDOS-EDGE-001**: Deploy edge-level DDoS protection via CDN/WAF layer with: volumetric DDoS mitigation, rate limiting at the edge (before reaching the API Gateway), IP reputation filtering, bot detection, and geo-blocking for non-UAE traffic (MVP scope).
+**DDOS-EDGE-001**: Deploy edge-level DDoS protection via CDN/WAF layer with: volumetric DDoS mitigation, rate limiting at the edge (before reaching the API Gateway), IP reputation filtering, bot detection, and geo-blocking for non-UAE traffic (scope).
 
 **DDOS-EDGE-002**: API Gateway rate limits (RL-003) serve as defense-in-depth after edge protection, not as the primary DDoS mitigation.
 
@@ -932,7 +932,7 @@ pub struct AuditEntry {
 - **OQ-018**: Confirm exact financial-record retention period (§5.2 AUD-001) with UAE legal counsel.
 - **OQ-019**: Confirm whether PDPL-style data-subject erasure requests are applicable to platform-processed payment/financial records.
 - **OQ-044**: Finalize KEK rotation schedule (§12 SEC-ROT-001, default 90 days) against operational risk assessment — more frequent rotation increases security but adds KMS load.
-- **OQ-045**: Confirm whether API key scoping to acquirer links (§11 AUTHZ-002) is required for MVP or deferred to H2 — depends on pilot merchant integration complexity.
+- **OQ-045**: Confirm whether API key scoping to acquirer links (§11 AUTHZ-002) is required for initial launch or deferred to H2 — depends on pilot merchant integration complexity.
 
 ---
 

@@ -24,7 +24,7 @@
 - **AI-P-001 (Grounding over fluency)**: Every substantive claim in an Assistant answer must be traceable to a specific retrieved record (transaction, event, document, or previously-approved report). If retrieval does not surface sufficient grounding, the Assistant says so explicitly rather than answering from the model's parametric knowledge (BIZ-023, EX-050a).
 - **AI-P-002 (Tenant isolation is structural, not query-time filtering)**: Retrieval indices are physically partitioned per tenant (separate OpenSearch index per tenant, or a tenant-keyed shard routing scheme — Part 9 finalizes which), so that a retrieval bug cannot surface another tenant's data even transiently (BR-050-1).
 - **AI-P-003 (No autonomous money movement)**: The Assistant has no command-side access to any bounded context (Part 3 §1.3). Every action it might "suggest" (e.g., resolving a reconciliation exception) must be executed by a human through the normal command API (BR-041-1).
-- **AI-P-004 (Self-hosted by default)**: Model inference runs on platform-operator-controlled infrastructure via Ollama; no tenant data is sent to third-party model APIs unless a tenant explicitly opts in to a future "bring your own model provider" configuration (not in MVP scope) — this satisfies BIZ-021 and the UAE data-residency assumption (ASSUMP-004, Part 1).
+- **AI-P-004 (Self-hosted by default)**: Model inference runs on platform-operator-controlled infrastructure via Ollama; no tenant data is sent to third-party model APIs unless a tenant explicitly opts in to a future "bring your own model provider" configuration (not in scope) — this satisfies BIZ-021 and the UAE data-residency assumption (ASSUMP-004, Part 1).
 - **AI-P-005 (Not a regulated advice product)**: The Assistant answers operational/informational questions about the tenant's own data; it must not be positioned as, or allowed to produce, regulated financial/legal/tax advice (Part 1 §7.3 scope boundary note).
 
 ---
@@ -195,7 +195,7 @@ Each question in the final list is paired with a **ground-truth answer** (valida
 
 - **PROACT-001**: Building on the same summary-document ingestion path (§3.1 ING-001), an H3 capability continuously compares current-period summary statistics (e.g., trailing-1-hour authorization rate per acquirer/scheme) against a learned/historical baseline and generates a candidate alert narrative when a statistically meaningful deviation is detected.
 - **PROACT-002**: Candidate alerts are still subject to the same grounding/citation guardrails (§5.2) before being surfaced to a user via `notification-service` — an anomaly alert is itself an Assistant-generated artifact and must cite the specific underlying data driving the alert, not just assert "something looks off."
-- This is explicitly **out of MVP scope** (Part 1 §7.1 SCOPE-016) and recorded here only so Part 9's summary-document schema is designed with this future consumer in mind (avoiding a schema that would need to be redesigned to support it later).
+- This is explicitly **out of scope** (Part 1 §7.1 SCOPE-016) and recorded here only so Part 9's summary-document schema is designed with this future consumer in mind (avoiding a schema that would need to be redesigned to support it later).
 
 ---
 
@@ -331,13 +331,13 @@ CREATE TABLE conversation_history (
 
 **AIMON-009**: On drift detection, trigger JOB-005 (re-embedding) to refresh the index. If drift persists after re-embedding, escalate to AI/ML team for investigation.
 
-### 11.5 Fraud Model Feedback Loop (MVP Data Collection)
+### 11.5 Fraud Model Feedback Loop (Phase 1 Data Collection)
 
 **FRAUD-FB-001**: A `FraudModelFeedback` event is emitted when: (a) a chargeback is received (linking back to the original `RiskAssessment`), or (b) a flagged transaction is confirmed legitimate by the merchant.
 
 **FRAUD-FB-002**: A `fraud_feedback` ClickHouse table stores: `transaction_id`, `original_risk_score`, `original_risk_factors`, `outcome` (chargeback/legitimate/disputed), `outcome_date`, `feedback_lag_days`.
 
-**FRAUD-FB-003**: A weekly analytics job computes model precision/recall/F1 from the feedback data. For MVP rule-based models, these metrics are surfaced in the fraud analytics dashboard. For H3 ML models, this table serves as the training data source.
+**FRAUD-FB-003**: A weekly analytics job computes model precision/recall/F1 from the feedback data. For Phase 1 rule-based models, these metrics are surfaced in the fraud analytics dashboard. For H3 ML models, this table serves as the training data source.
 
 ---
 

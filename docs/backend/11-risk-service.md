@@ -30,7 +30,7 @@ pub struct Model {
 
 ---
 
-## 2. Risk Rules (MVP)
+## 2. Risk Rules (Phase 1)
 
 ```rust
 pub struct RiskRule {

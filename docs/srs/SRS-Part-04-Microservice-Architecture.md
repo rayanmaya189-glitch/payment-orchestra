@@ -119,7 +119,7 @@ The AI Gateway exists because AI-Assistant traffic has distinct requirements tha
 
 | Interaction | Style | Protocol | Rationale |
 |---|---|---|---|
-| External API → API Gateway | **RESTful JSON (primary)** or **Protobuf-over-HTTP (secondary)** | HTTP/1.1 or HTTP/2 + JSON or Protobuf binary | Single API: RESTful URL paths with protobuf-encoded request/response bodies. No JSON, no form data. |
+| External API → API Gateway | **RESTful URL paths with protobuf-encoded bodies** | HTTP/2 + protobuf binary | Single API: RESTful URL paths with protobuf-encoded request/response bodies. No JSON, no form data. |
 | API Gateway → domain service (synchronous) | **gRPC** | HTTP/2 + Protobuf | Low latency, strongly-typed contracts (Part 10) |
 | `orchestration-service` → `connector-gateway` (authorize/capture/refund) | **gRPC** (synchronous, in the checkout hot path) | HTTP/2 + Protobuf | Must return a result within the latency budget (BR-020-2) |
 | `orchestration-service` → `risk-service` (pre-authorization risk score) | **gRPC** (synchronous, in the checkout hot path) | HTTP/2 + Protobuf | Risk score needed before routing decision; must be fast |
@@ -202,7 +202,7 @@ Each domain service publishes its own `.proto` service definition (full contract
 - Both call `orchestration-service` (SVC-05) synchronously to create the underlying `PaymentIntent` when the end customer completes checkout, then subscribe to EVT-03/EVT-04/EVT-06/EVT-07/EVT-09 to update their own `Invoice`/`PaymentLink` state asynchronously (avoiding a tight coupling where invoice status update blocks the payment confirmation response to the end customer).
 
 ### 5.6 SVC-08 `subscription-service`
-- Runs its own scheduled renewal trigger (internal cron, not relying on an external scheduler service for MVP — see §6) that calls SVC-05 to create renewal `PaymentIntent`s using stored tokens.
+- Runs its own scheduled renewal trigger (internal cron, not relying on an external scheduler service for initial launch — see §6) that calls SVC-05 to create renewal `PaymentIntent`s using stored tokens.
 - Owns dunning-schedule execution (UC-031 AF-031a).
 
 ### 5.7 SVC-09 `reconciliation-service`
@@ -255,7 +255,7 @@ For initial release, scheduling is implemented as in-process cron-style schedule
 
 ### 6.1 Leader Election
 
-- **LEADER-001**: All scheduled jobs (JOB-001 through JOB-010) use leader election to prevent duplicate execution when multiple service replicas are running. The leader election mechanism is built on Redis (using SETNX-based distributed locks with TTL) — no external coordination service is required for MVP.
+- **LEADER-001**: All scheduled jobs (JOB-001 through JOB-010) use leader election to prevent duplicate execution when multiple service replicas are running. The leader election mechanism is built on Redis (using SETNX-based distributed locks with TTL) — no external coordination service is required for initial launch.
 - **LEADER-002**: Each job type elects exactly one leader across all replicas of the owning service. The leader runs the job on its configured schedule. If the leader dies (detected via lock TTL expiry), another replica acquires leadership within one TTL cycle (default: 30 seconds for subscription renewals, 60 seconds for settlement polling).
 - **LEADER-003**: Leadership is re-acquired on a rolling basis — the same replica doesn't need to stay leader permanently. This distributes job execution across replicas over time.
 

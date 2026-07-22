@@ -73,7 +73,7 @@ export default async function CheckoutPage({ params }) {
   amount={amount}
   currency={currency}
   description={description}
-  paymentMethods={['card']} // MVP: card only
+  paymentMethods={['card']} // Phase 1: card only
   onSubmit={async (paymentData) => {
     // 1. Create payment intent
     const intent = await publicApi.post('/v1/payment-intents', {

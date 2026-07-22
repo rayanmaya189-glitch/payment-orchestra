@@ -175,9 +175,9 @@ pub struct ConnectorRetryConfig {
 
 ---
 
-## 6. Initial MVP Connector Shortlist (Placeholder Pending OQ-003)
+## 6. Initial Phase 1 Connector Shortlist (Placeholder Pending OQ-003)
 
-Per Part 1 OQ-003, the final MVP acquirer/PSP shortlist requires business confirmation. This SRS's connector framework is designed to be provider-agnostic, but for concreteness, the following UAE-relevant categories of provider are anticipated and should be validated against real API documentation once confirmed:
+Per Part 1 OQ-003, the final Phase 1 acquirer/PSP shortlist requires business confirmation. This SRS's connector framework is designed to be provider-agnostic, but for concreteness, the following UAE-relevant categories of provider are anticipated and should be validated against real API documentation once confirmed:
 
 - A regional acquiring bank/processor (e.g., Network International or Magnati-class provider) — likely `Webhook` + `SftpFile` settlement mix.
 - A regional PSP aggregator (e.g., Telr or PayTabs-class provider) — likely `PollingApi` or `Webhook` settlement.
@@ -281,7 +281,7 @@ Per Part 1 OQ-003, the final MVP acquirer/PSP shortlist requires business confir
 
 ## 10. Open Items Carried Forward
 
-- **OQ-016 (= OQ-003 from Part 1, restated here for engineering visibility)**: Final MVP acquirer/PSP shortlist must be confirmed before connector implementation begins in earnest — §6's list is a planning placeholder only.
+- **OQ-016 (= OQ-003 from Part 1, restated here for engineering visibility)**: Final Phase 1 acquirer/PSP shortlist must be confirmed before connector implementation begins in earnest — §6's list is a planning placeholder only.
 - **OQ-017**: Confirm whether webhook endpoints (§4.1) should be per-connector-per-tenant unique URLs (simplifies signature/source attribution) or a shared per-connector URL disambiguated by payload content — a Part 9/Part 10 API design decision affecting the webhook contract.
 - **OQ-043**: Finalize circuit breaker thresholds (§5.1 CB-CONN-001) — error-rate percentage, sliding-window duration, and open-window duration — against real acquirer failure-mode data from pilot merchants.
 

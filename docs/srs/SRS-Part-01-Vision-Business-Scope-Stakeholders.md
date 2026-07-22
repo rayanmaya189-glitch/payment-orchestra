@@ -88,7 +88,7 @@ To keep scope honest, the following are explicitly **out of vision** (see also �
 
 Business goals are grouped into three horizons. Each goal has an associated objective and, where meaningful at this stage, a target metric. Detailed KPI instrumentation is specified in Part 6 (Analytics) — here we record the *business* target, not the *telemetry design*.
 
-### 3.1 Horizon 1 — MVP / Market Entry (UAE)
+### 3.1 Phase 1 — Market Entry (UAE)
 
 | ID | Goal | Objective / Target |
 |---|---|---|
@@ -98,14 +98,14 @@ Business goals are grouped into three horizons. Each goal has an associated obje
 | GOAL-004 | Establish AI Assistant baseline value | AI Assistant answers a defined set of "top 50" operational questions (reconciliation status, decline reason breakdown, settlement ETA, etc.) with accuracy validated against ground truth in QA |
 | GOAL-005 | Achieve compliance-grade auditability | Every money-movement-relevant domain event is immutably recorded with actor, timestamp, and reason from day one (no retrofitting audit later) |
 
-### 3.2 Horizon 2 — GCC Expansion
+### 3.2 Phase 2 — GCC Expansion
 
 | ID | Goal | Objective / Target |
 |---|---|---|
 | GOAL-006 | Add Saudi Arabia support | Support mada scheme routing and SAMA-relevant reporting adapters without modifying core orchestration domain model |
 | GOAL-007 | Multi-currency settlement reporting | Support multi-currency ledgers and FX-aware reconciliation across at least AED, SAR, USD |
 
-### 3.3 Horizon 3 — Platform Maturity
+### 3.3 Phase 3 — Platform Maturity
 
 | ID | Goal | Objective / Target |
 |---|---|---|
@@ -123,57 +123,57 @@ Business goals are grouped into three horizons. Each goal has an associated obje
 
 ## 4. Business Requirements
 
-Business requirements are the "why" that drives functional requirements in later parts. Each is tagged with priority (MoSCoW: Must/Should/Could/Won't for MVP) and the horizon it targets.
+Business requirements are the "why" that drives functional requirements in later parts. Each is tagged with priority (MoSCoW: Must/Should/Could/Won't for initial launch) and the horizon it targets.
 
 ### 4.1 Core Business Requirements — Orchestration & Money Movement
 
 | ID | Requirement | Priority | Horizon |
 |---|---|---|---|
-| BIZ-010 | The platform must allow a tenant to connect multiple acquirers/PSPs and define routing rules (priority order, cost-based, success-rate-based) without any code change — configuration only. | Must | H1 |
-| BIZ-011 | The platform must never take custody of end-customer or merchant funds; all fund movement occurs directly between the acquirer/bank and the merchant's settlement account. | Must | H1 |
-| BIZ-012 | The platform must support automatic failover to a secondary acquirer/PSP when the primary declines, times out, or is in a degraded state, according to tenant-configured rules. | Must | H1 |
-| BIZ-013 | The platform must provide a unified transaction ledger (read model) reconciling data from all connected acquirers against the tenant's internal order/invoice records. | Must | H1 |
-| BIZ-014 | The platform must support invoicing and payment-link generation as first-class products, not just raw transaction processing. | Must | H1 |
-| BIZ-015 | The platform must support recurring billing / subscription orchestration (retry logic for failed renewals, dunning workflows). | Must | H1 |
-| BIZ-016 | The platform must support multi-currency transactions with accurate FX recording for reconciliation (not FX conversion/settlement itself, which remains with licensed providers). | Should | H2 |
+| BIZ-010 | The platform must allow a tenant to connect multiple acquirers/PSPs and define routing rules (priority order, cost-based, success-rate-based) without any code change — configuration only. | Must | Phase 1 |
+| BIZ-011 | The platform must never take custody of end-customer or merchant funds; all fund movement occurs directly between the acquirer/bank and the merchant's settlement account. | Must | Phase 1 |
+| BIZ-012 | The platform must support automatic failover to a secondary acquirer/PSP when the primary declines, times out, or is in a degraded state, according to tenant-configured rules. | Must | Phase 1 |
+| BIZ-013 | The platform must provide a unified transaction ledger (read model) reconciling data from all connected acquirers against the tenant's internal order/invoice records. | Must | Phase 1 |
+| BIZ-014 | The platform must support invoicing and payment-link generation as first-class products, not just raw transaction processing. | Must | Phase 1 |
+| BIZ-015 | The platform must support recurring billing / subscription orchestration (retry logic for failed renewals, dunning workflows). | Must | Phase 1 |
+| BIZ-016 | The platform must support multi-currency transactions with accurate FX recording for reconciliation (not FX conversion/settlement itself, which remains with licensed providers). | Should | Phase 2 |
 
 ### 4.2 AI & Intelligence Business Requirements
 
 | ID | Requirement | Priority | Horizon |
 |---|---|---|---|
-| BIZ-020 | The platform must provide an AI Payment Assistant capable of answering natural-language operational questions grounded in the tenant's own transaction, settlement, and reconciliation data. | Must | H1 |
-| BIZ-021 | The AI Assistant must run on infrastructure the platform operator controls (self-hosted via Ollama), so that sensitive financial data is not sent to third-party model APIs by default. | Must | H1 |
-| BIZ-022 | The AI Assistant must be able to process scanned/photographed documents (e.g., bank settlement advices, merchant-uploaded reconciliation files) via vision-capable models and extract structured data. | Should | H1 |
-| BIZ-023 | The AI Assistant must be able to cite the specific transactions/events it used to produce an answer (auditability of AI output), not present unattributed conclusions. | Must | H1 |
-| BIZ-024 | The platform must support proactive anomaly detection and alerting (e.g., authorization rate drops, unusual decline patterns) as an evolution of the AI Assistant. | Could | H3 |
+| BIZ-020 | The platform must provide an AI Payment Assistant capable of answering natural-language operational questions grounded in the tenant's own transaction, settlement, and reconciliation data. | Must | Phase 1 |
+| BIZ-021 | The AI Assistant must run on infrastructure the platform operator controls (self-hosted via Ollama), so that sensitive financial data is not sent to third-party model APIs by default. | Must | Phase 1 |
+| BIZ-022 | The AI Assistant must be able to process scanned/photographed documents (e.g., bank settlement advices, merchant-uploaded reconciliation files) via vision-capable models and extract structured data. | Should | Phase 1 |
+| BIZ-023 | The AI Assistant must be able to cite the specific transactions/events it used to produce an answer (auditability of AI output), not present unattributed conclusions. | Must | Phase 1 |
+| BIZ-024 | The platform must support proactive anomaly detection and alerting (e.g., authorization rate drops, unusual decline patterns) as an evolution of the AI Assistant. | Could | Phase 3 |
 
 ### 4.3 Security & Operational Requirements
 
 | ID | Requirement | Priority | Horizon |
 |---|---|---|---|
-| BIZ-040 | The platform must maintain immutable audit logs of all configuration changes, routing decisions, and money-movement-relevant events, retained per UAE regulatory retention expectations (see Part 8 for specifics). | Must | H1 |
-| BIZ-041 | The platform must support data residency controls appropriate to UAE data protection expectations (PDPL) and, where applicable, sector-specific guidance for payment data. | Must | H1 |
-| BIZ-042 | The platform must support attribute-based access control so that sensitive operations (e.g., changing settlement bank details) require elevated permissions and produce audit trail entries. | Must | H1 |
-| BIZ-043 | The platform must support KYC/KYB evidence storage and status tracking for merchants (evidence storage and workflow only; the platform does not perform its own regulated KYC/KYB decisioning — this is delegated to a licensed partner or the tenant's own compliance process, unless/until the platform itself is licensed). | Must | H1 |
-| BIZ-044 | The platform must comply with OWASP Top 10 (2021) security controls and be assessed against PCI-DSS 4.0 requirements appropriate to its scope (SAQ-A or SAQ-A-EP). | Must | H1 |
-| BIZ-045 | The platform must implement AML/CFT transaction monitoring with rule-based suspicious activity detection and SAR generation capability. | Must | H1 |
-| BIZ-046 | The platform must implement fraud scoring integration with real-time risk assessment before authorization attempts. | Must | H1 |
-| BIZ-047 | The platform must generate regulatory reports required by UAE Central Bank (transaction volumes, chargeback rates, system availability). | Must | H1 |
-| BIZ-048 | The platform must implement defense-in-depth security: database-level row-level security, container hardening, network policies, and security headers. | Must | H1 |
-| BIZ-049 | The platform must implement supply chain security: SBOM generation, dependency pinning, container image signing, and CVE response SLAs. | Must | H1 |
-| BIZ-050 | The platform must implement privileged access management: just-in-time access, session recording, and no standing production access. | Should | H1 |
+| BIZ-040 | The platform must maintain immutable audit logs of all configuration changes, routing decisions, and money-movement-relevant events, retained per UAE regulatory retention expectations (see Part 8 for specifics). | Must | Phase 1 |
+| BIZ-041 | The platform must support data residency controls appropriate to UAE data protection expectations (PDPL) and, where applicable, sector-specific guidance for payment data. | Must | Phase 1 |
+| BIZ-042 | The platform must support attribute-based access control so that sensitive operations (e.g., changing settlement bank details) require elevated permissions and produce audit trail entries. | Must | Phase 1 |
+| BIZ-043 | The platform must support KYC/KYB evidence storage and status tracking for merchants (evidence storage and workflow only; the platform does not perform its own regulated KYC/KYB decisioning — this is delegated to a licensed partner or the tenant's own compliance process, unless/until the platform itself is licensed). | Must | Phase 1 |
+| BIZ-044 | The platform must comply with OWASP Top 10 (2021) security controls and be assessed against PCI-DSS 4.0 requirements appropriate to its scope (SAQ-A or SAQ-A-EP). | Must | Phase 1 |
+| BIZ-045 | The platform must implement AML/CFT transaction monitoring with rule-based suspicious activity detection and SAR generation capability. | Must | Phase 1 |
+| BIZ-046 | The platform must implement fraud scoring integration with real-time risk assessment before authorization attempts. | Must | Phase 1 |
+| BIZ-047 | The platform must generate regulatory reports required by UAE Central Bank (transaction volumes, chargeback rates, system availability). | Must | Phase 1 |
+| BIZ-048 | The platform must implement defense-in-depth security: database-level row-level security, container hardening, network policies, and security headers. | Must | Phase 1 |
+| BIZ-049 | The platform must implement supply chain security: SBOM generation, dependency pinning, container image signing, and CVE response SLAs. | Must | Phase 1 |
+| BIZ-050 | The platform must implement privileged access management: just-in-time access, session recording, and no standing production access. | Should | Phase 1 |
 
 ### 4.4 Compliance & Trust Requirements
 
 | ID | Requirement | Priority | Horizon |
 |---|---|---|---|
-| BIZ-051 | The platform must support data retention automation: scheduled jobs to archive/purge data exceeding configured retention periods, with audit logging of all retention actions. | Must | H1 |
-| BIZ-052 | The platform must support graceful shutdown for all services: stop accepting new requests, complete in-flight requests, flush event store writes, and deregister from service discovery before termination. | Must | H1 |
-| BIZ-053 | The platform must support health check endpoints for all services: liveness, readiness, startup, and deep health checks for Kubernetes orchestration. | Must | H1 |
-| BIZ-054 | The platform must support leader election for scheduled jobs to prevent duplicate execution when multiple service replicas are running. | Must | H1 |
-| BIZ-055 | The platform must support event replay capability: ability to replay events for a specific aggregate, rebuild read models from scratch, and handle event store corruption recovery. | Must | H1 |
-| BIZ-056 | The platform must support webhook delivery status tracking: record delivery attempts, successes, failures, and provide a dashboard for manual replay of failed deliveries. | Must | H1 |
-| BIZ-057 | The platform must support model version pinning: hash verification of AI model weights, version tracking, and rollback procedure for bad model updates. | Must | H1 |
+| BIZ-051 | The platform must support data retention automation: scheduled jobs to archive/purge data exceeding configured retention periods, with audit logging of all retention actions. | Must | Phase 1 |
+| BIZ-052 | The platform must support graceful shutdown for all services: stop accepting new requests, complete in-flight requests, flush event store writes, and deregister from service discovery before termination. | Must | Phase 1 |
+| BIZ-053 | The platform must support health check endpoints for all services: liveness, readiness, startup, and deep health checks for Kubernetes orchestration. | Must | Phase 1 |
+| BIZ-054 | The platform must support leader election for scheduled jobs to prevent duplicate execution when multiple service replicas are running. | Must | Phase 1 |
+| BIZ-055 | The platform must support event replay capability: ability to replay events for a specific aggregate, rebuild read models from scratch, and handle event store corruption recovery. | Must | Phase 1 |
+| BIZ-056 | The platform must support webhook delivery status tracking: record delivery attempts, successes, failures, and provide a dashboard for manual replay of failed deliveries. | Must | Phase 1 |
+| BIZ-057 | The platform must support model version pinning: hash verification of AI model weights, version tracking, and rollback procedure for bad model updates. | Must | Phase 1 |
 
 ### 4.5 Business Requirements Traceability Note
 
@@ -225,7 +225,7 @@ Because of BIZ-011/CUST-001–003:
 
 ## 7. Scope
 
-### 7.1 In Scope (MVP / Horizon 1 unless marked H2/H3)
+### 7.1 In Scope in Phase 1 (unless marked Phase 2/Phase 3)
 
 - **SCOPE-001**: Merchant onboarding, KYC/KYB evidence workflow (not decisioning), operator configuration.
 - **SCOPE-002**: Connector framework for acquirer/PSP integration (initially 3+ UAE-relevant providers) — see Part 7.
@@ -238,8 +238,8 @@ Because of BIZ-011/CUST-001–003:
 - **SCOPE-009**: Document management for compliance evidence, settlement advices, and merchant-uploaded files (MinIO-backed object storage) with OCR pipeline.
 - **SCOPE-010**: Identity & Access Management: authentication, ABAC, audit logging — see Part 8.
 - **SCOPE-011**: Webhooks and SDKs for merchant/platform integration — see Part 10.
-- **SCOPE-012**: Fraud/risk scoring signals surfaced to merchants (initially rule-based/heuristic; ML-based risk scoring is H2/H3) — see Part 5/6.
-- **SCOPE-013 (H2)**: Multi-currency reconciliation, GCC expansion adapters (Saudi Arabia first).
+- **SCOPE-012**: Fraud/risk scoring signals surfaced to merchants (initially rule-based/heuristic; ML-based risk scoring is Phase 2/Phase 3) — see Part 5/6.
+- **SCOPE-013 (Phase 2)**: Multi-currency reconciliation, GCC expansion adapters (Saudi Arabia first).
 
 ### 7.2 Out of Scope (explicitly, for this SRS and the foreseeable roadmap)
 
@@ -249,11 +249,11 @@ Because of BIZ-011/CUST-001–003:
 - **OOS-004**: Credit underwriting or BNPL risk decisioning as a core product.
 - **OOS-005**: Building a competing card scheme or domestic switch — the platform integrates with existing rails (card schemes, AANI, UAEFTS) rather than replacing them.
 - **OOS-006**: General-purpose consumer chatbot functionality unrelated to payment operations.
-- **OOS-007**: On-premises deployment into merchant-owned data centers (the platform is delivered as SaaS; a private-cloud/dedicated-tenant deployment model may be considered later but is not designed for in this SRS's MVP scope).
+- **OOS-007**: On-premises deployment into merchant-owned data centers (the platform is delivered as SaaS; a private-cloud/dedicated-tenant deployment model may be considered later but is not designed for in this SRS's initial scope).
 
 ### 7.3 Scope Boundary Notes
 
-- Where a capability is "Should" or "Could" priority for H1 (see §4 tables) but full design is deferred, Parts 3–11 will still model the domain so that adding the capability later does not require breaking changes to core aggregates (this is an explicit non-functional requirement — see Part 8, "Extensibility").
+- Where a capability is "Should" or "Could" priority for Phase 1 (see §4 tables) but full design is deferred, Parts 3–11 will still model the domain so that adding the capability later does not require breaking changes to core aggregates (this is an explicit non-functional requirement — see Part 8, "Extensibility").
 - AI Assistant scope (SCOPE-008) is grounded strictly in **the tenant's own operational data plus platform documentation**; it is not a general financial advisory product and must not be positioned as providing regulated financial advice (see Part 6, AI Assistant guardrails, and Part 8, compliance framing).
 
 ---
@@ -318,12 +318,12 @@ Brief personas are introduced here because they justify business requirements; f
 
 - **ASSUMP-001**: See §6.4 (custody/licensing legal confirmation, per tenant business model).
 - **ASSUMP-002**: The operator will hold their own merchant acquiring relationships; the platform does not need to become a party to card scheme rules directly.
-- **ASSUMP-003**: Self-hosted model inference (Ollama + Qwen3 32B / Qwen3-VL 8B) is assumed to provide acceptable latency and quality for the AI Assistant's operational use cases at MVP scale; a fallback/upgrade path (larger models, additional GPU capacity) is assumed to be available if quality benchmarks (Part 6) are not met.
+- **ASSUMP-003**: Self-hosted model inference (Ollama + Qwen3 32B / Qwen3-VL 8B) is assumed to provide acceptable latency and quality for the AI Assistant's operational use cases at initial launch scale; a fallback/upgrade path (larger models, additional GPU capacity) is assumed to be available if quality benchmarks (Part 6) are not met.
 - **ASSUMP-004**: UAE data residency expectations can be satisfied by hosting the full stack (Postgres, Redis, ClickHouse, OpenSearch, MinIO, Ollama) within UAE-region cloud/data-center infrastructure; specific provider selection is a Part 9/Part 11 concern.
 
 ### 10.2 Dependencies
 
-- **DEP-001**: Availability and API stability of at least 3 UAE acquirer/PSP partners for MVP connector development (Part 7).
+- **DEP-001**: Availability and API stability of at least 3 UAE acquirer/PSP partners for initial launch connector development (Part 7).
 - **DEP-002**: Legal/compliance sign-off per §6.4 before GA launch.
 - **DEP-003**: GPU/inference infrastructure capacity for Ollama-hosted models (Qwen3 32B, Qwen3-VL 8B) sized per Part 11 performance/scalability targets.
 - **DEP-004**: Bank/acquirer settlement file formats and delivery mechanisms (SFTP, API, webhook) must be documented per partner for the Reconciliation Engine (Part 5/9).
@@ -366,30 +366,30 @@ High-level program success criteria (detailed, measurable acceptance criteria pe
 
 ### 13.1 Domestic Payment Schemes (AANI/UAEFTS)
 
-**DOM-001**: AANI (Advance Automated Network Infrastructure) and UAEFTS (UAE Funds Transfer System) integration is **not in scope for MVP** (card-based acquiring only). However, the data model and event schema must accommodate AANI-specific transaction types for H2 expansion.
+**DOM-001**: AANI (Advance Automated Network Infrastructure) and UAEFTS (UAE Funds Transfer System) integration is **not in scope for Phase 1** (card-based acquiring only). However, the data model and event schema must accommodate AANI-specific transaction types for Phase 2 expansion.
 
-**DOM-002**: Required data model extensions for AANI/UAEFTS support (H2): (1) transaction type enum extension for instant payments and direct debit, (2) AANI-specific settlement cycle fields, (3) UAE Central Bank reporting fields referencing AANI/UAEFTS transactions.
+**DOM-002**: Required data model extensions for AANI/UAEFTS support (Phase 2): (1) transaction type enum extension for instant payments and direct debit, (2) AANI-specific settlement cycle fields, (3) UAE Central Bank reporting fields referencing AANI/UAEFTS transactions.
 
-**DOM-003**: Add to roadmap as H2 item aligned with Saudi Arabia adapter (GOAL-006).
+**DOM-003**: Align with Phase 2 Saudi Arabia adapter (GOAL-006).
 
 ### 13.2 PCI-DSS 4.0 Compliance
 
 **PCI-4-001**: Platform uses PCI-DSS 4.0 **Defined Approach** (not Customized Approach) for compliance.
 
-**PCI-4-002**: Targeted Risk Analysis (Requirement 12.3.1) template documenting frequency rationale for each periodic control (log reviews, segmentation testing, vulnerability scans). Include in M7 deliverables.
+**PCI-4-002**: Targeted Risk Analysis (Requirement 12.3.1) template documenting frequency rationale for each periodic control (log reviews, segmentation testing, vulnerability scans).
 
 **PCI-4-003**: Mapping of encryption controls (ENC-010/ENC-011) to Requirement 3.5.1.2 with cloud KMS documentation.
 
 ### 13.3 Card Scheme Operating Regulations
 
-**SCHEME-REG-001**: Map against Visa Core Rules and Mastercard Standards at rule level for MVP:
+**SCHEME-REG-001**: Map against Visa Core Rules and Mastercard Standards at rule level for initial launch:
 - Visa dispute reason code categories and representment time limits (30-day window for most codes)
 - Mastercard chargeback representment deadlines and documentation requirements
 - Visa VFMP (Fraud Monitoring Program) enrollment thresholds
 - Mastercard EFMP (Excessive Fraud Merchant) program thresholds
 - Card scheme mandated data retention (Visa: 13 months accessible)
 
-**SCHEME-REG-002**: For MVP, map top 10 dispute reason codes by frequency. Include specific scheme document version references.
+**SCHEME-REG-002**: Map top 10 dispute reason codes by frequency. Include specific scheme document version references.
 
 ### 13.4 UAE Regulatory Reporting Format
 
@@ -401,8 +401,8 @@ High-level program success criteria (detailed, measurable acceptance criteria pe
 
 These must be resolved (or explicitly deferred with owner and date) before the Payment Orchestration Engine domain model (Part 5) is finalized, since they affect aggregate boundaries:
 
-1. **OQ-001**: Confirm with UAE legal counsel whether the base "orchestration only, no custody" model requires any platform-operator license for the MVP. Owner: STK-014. 
-2. **OQ-003**: Confirm final list of MVP acquirer/PSP partners (DEP-001) so Part 7 (Gateway Connector Framework) can be scoped against real API documentation rather than generic assumptions.
+1. **OQ-001**: Confirm with UAE legal counsel whether the base "orchestration only, no custody" model requires any platform-operator license for the initial launch. Owner: STK-014. 
+2. **OQ-003**: Confirm final list of initial acquirer/PSP partners (DEP-001) so Part 7 (Gateway Connector Framework) can be scoped against real API documentation rather than generic assumptions.
 3. **OQ-004**: Confirm target GPU/inference infrastructure budget and availability (DEP-003), since this materially affects which Qwen3 model variants/quantizations are feasible at target latency (to be finalized in Part 6 and Part 11).
 
 ---
