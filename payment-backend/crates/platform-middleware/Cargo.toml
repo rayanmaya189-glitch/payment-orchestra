@@ -1,0 +1,19 @@
+[package]
+name = "platform-middleware"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+tokio.workspace = true
+tonic.workspace = true
+tracing.workspace = true
+serde.workspace = true
+uuid.workspace = true
+chrono.workspace = true
+jsonwebtoken.workspace = true
+redis.workspace = true
+argon2.workspace = true
+sea-orm.workspace = true
+platform-error.workspace = true
+platform-config.workspace = true

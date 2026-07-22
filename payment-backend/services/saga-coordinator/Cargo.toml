@@ -1,0 +1,23 @@
+[package]
+name = "saga-coordinator"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+tokio.workspace = true
+sea-orm.workspace = true
+tracing.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+uuid.workspace = true
+chrono.workspace = true
+thiserror.workspace = true
+futures.workspace = true
+platform-proto.workspace = true
+platform-logging.workspace = true
+platform-error.workspace = true
+platform-messaging.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true

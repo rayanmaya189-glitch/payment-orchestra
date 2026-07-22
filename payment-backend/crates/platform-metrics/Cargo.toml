@@ -1,0 +1,10 @@
+[package]
+name = "platform-metrics"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+metrics.workspace = true
+tokio.workspace = true
+tracing.workspace = true

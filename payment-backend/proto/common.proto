@@ -1,0 +1,6 @@
+// common.proto — Protobuf service definition
+// AI-Native Payment Orchestration Platform
+// Auto-generated scaffold — fill in service and message definitions per SRS Part 10
+
+syntax = "proto3";
+package common.v1;

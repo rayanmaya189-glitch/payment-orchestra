@@ -1,0 +1,16 @@
+[package]
+name = "platform-outbox"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+sea-orm.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+serde.workspace = true
+uuid.workspace = true
+chrono.workspace = true
+platform-error.workspace = true
+platform-proto.workspace = true
+platform-messaging.workspace = true

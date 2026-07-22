@@ -1,0 +1,20 @@
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    tonic_build::compile_protos("../../proto/common.proto")?;
+    tonic_build::compile_protos("../../proto/operator.proto")?;
+    tonic_build::compile_protos("../../proto/iam.proto")?;
+    tonic_build::compile_protos("../../proto/compliance.proto")?;
+    tonic_build::compile_protos("../../proto/connector.proto")?;
+    tonic_build::compile_protos("../../proto/orchestration.proto")?;
+    tonic_build::compile_protos("../../proto/invoice.proto")?;
+    tonic_build::compile_protos("../../proto/subscription.proto")?;
+    tonic_build::compile_protos("../../proto/payment-link.proto")?;
+    tonic_build::compile_protos("../../proto/reconciliation.proto")?;
+    tonic_build::compile_protos("../../proto/dispute.proto")?;
+    tonic_build::compile_protos("../../proto/risk.proto")?;
+    tonic_build::compile_protos("../../proto/ai_assistant.proto")?;
+    tonic_build::compile_protos("../../proto/document.proto")?;
+    tonic_build::compile_protos("../../proto/notification.proto")?;
+    tonic_build::compile_protos("../../proto/analytics.proto")?;
+    tonic_build::compile_protos("../../proto/saga.proto")?;
+    Ok(())
+}

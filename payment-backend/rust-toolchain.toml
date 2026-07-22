@@ -1,0 +1,4 @@
+[toolchain]
+channel = "stable"  # Requires rustc >= 1.86; current: 1.97.1
+targets = ["x86_64-unknown-linux-gnu"]
+profile = "default"

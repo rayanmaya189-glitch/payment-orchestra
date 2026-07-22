@@ -1,0 +1,15 @@
+[package]
+name = "platform-proto"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+build = "build.rs"
+
+[dependencies]
+prost.workspace = true
+tonic.workspace = true
+serde.workspace = true
+
+[build-dependencies]
+prost-build = "0.13"
+tonic-build = "0.12"

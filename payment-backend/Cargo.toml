@@ -1,0 +1,147 @@
+[workspace]
+resolver = "2"
+members = [
+    # Shared crates
+    "crates/platform-error",
+    "crates/shared-types",
+    "crates/platform-middleware",
+    "crates/platform-logging",
+    "crates/platform-proto",
+    "crates/platform-config",
+    "crates/platform-db",
+    "crates/platform-api",
+    "crates/platform-messaging",
+    "crates/platform-vault",
+    "crates/platform-kms",
+    "crates/platform-event-store",
+    "crates/platform-outbox",
+    "crates/platform-health",
+    "crates/platform-metrics",
+
+    # Database migrations
+    "migrations",
+
+    # Domain services (22 services)
+    "services/operator-service",
+    "services/iam-service",
+    "services/compliance-service",
+    "services/connector-gateway",
+    "services/orchestration-service",
+    "services/invoice-service",
+    "services/payment-link-service",
+    "services/subscription-service",
+    "services/reconciliation-service",
+    "services/dispute-service",
+    "services/risk-service",
+    "services/ai-assistant-service",
+    "services/document-service",
+    "services/notification-service",
+    "services/analytics-service",
+    "services/saga-coordinator",
+    "services/scheduler",
+    "services/merchant-acquirer-link-service",
+    "services/outbox-relay",
+    "services/api-gateway",
+    "services/ai-gateway",
+    "services/merchant-connector-onboarding",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+license = "MIT"
+
+[workspace.dependencies]
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+# gRPC framework
+tonic = "0.12"
+prost = "0.13"
+# ORM
+sea-orm = { version = "1", features = ["sqlx-postgres", "runtime-tokio-rustls", "macros"] }
+# Redis
+redis = { version = "0.27", features = ["tokio-comp", "connection-manager"] }
+# Message bus (in-process NATS-compatible API)
+tokio-stream = "0.1"
+# JWT
+jsonwebtoken = "9"
+# Argon2 for password hashing
+argon2 = "0.5"
+# Encryption
+aes-gcm = "0.10"
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# Error handling
+thiserror = "2"
+# UUIDs (UUIDv7)
+uuid = { version = "1", features = ["v7", "serde"] }
+# Chrono (timestamps with 3-digit ms precision)
+chrono = { version = "0.4", features = ["serde"] }
+# Observability
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["json"] }
+metrics = "0.24"
+# Proptest (property-based testing)
+proptest = "1"
+# Test containers
+testcontainers = "0.23"
+# Async stream
+futures = "0.3"
+# HTTP client
+reqwest = { version = "0.12", features = ["json"] }
+# OpenTelemetry
+opentelemetry = "0.27"
+opentelemetry-otlp = "0.27"
+
+[workspace.dependencies.platform-proto]
+path = "crates/platform-proto"
+
+[workspace.dependencies.platform-logging]
+path = "crates/platform-logging"
+
+[workspace.dependencies.platform-middleware]
+path = "crates/platform-middleware"
+
+[workspace.dependencies.platform-error]
+path = "crates/platform-error"
+
+[workspace.dependencies.platform-config]
+path = "crates/platform-config"
+
+[workspace.dependencies.platform-db]
+path = "crates/platform-db"
+
+[workspace.dependencies.platform-api]
+path = "crates/platform-api"
+
+[workspace.dependencies.platform-messaging]
+path = "crates/platform-messaging"
+
+[workspace.dependencies.platform-vault]
+path = "crates/platform-vault"
+
+[workspace.dependencies.platform-kms]
+path = "crates/platform-kms"
+
+[workspace.dependencies.platform-event-store]
+path = "crates/platform-event-store"
+
+[workspace.dependencies.platform-outbox]
+path = "crates/platform-outbox"
+
+[workspace.dependencies.platform-health]
+path = "crates/platform-health"
+
+[workspace.dependencies.platform-metrics]
+path = "crates/platform-metrics"
+
+[profile.release]
+lto = "fat"
+codegen-units = 1
+opt-level = 3
+
+[profile.dev]
+opt-level = 0
+debug = true

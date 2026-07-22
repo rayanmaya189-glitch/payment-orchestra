@@ -1,0 +1,17 @@
+[package]
+name = "migrations"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+sea-orm.workspace = true
+tokio.workspace = true
+uuid.workspace = true
+chrono.workspace = true
+tracing.workspace = true
+futures.workspace = true
+
+[[bin]]
+name = "migrations"
+path = "src/main.rs"
