@@ -1,5 +1,3 @@
-use serde::{Deserialize, Serialize};
-
 pub struct VaultClient {
     pub addr: String,
     pub token: String,

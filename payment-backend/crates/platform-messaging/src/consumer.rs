@@ -1,5 +1,3 @@
-use tracing::{info, error};
-
 pub struct EventConsumer {
     pub name: String,
     pub stream_name: String,

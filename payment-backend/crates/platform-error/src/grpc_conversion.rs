@@ -1,5 +1,5 @@
-use tonic::{Code, Status};
-use crate::{error_types::PlatformError, error_code::InternalErrorCode};
+use tonic::Status;
+use crate::error_types::PlatformError;
 
 impl From<PlatformError> for Status {
     fn from(err: PlatformError) -> Self {

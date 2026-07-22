@@ -1,4 +1,4 @@
-use tracing::{info, error};
+use tracing::info;
 use std::time::Duration;
 
 pub struct OutboxRelay {

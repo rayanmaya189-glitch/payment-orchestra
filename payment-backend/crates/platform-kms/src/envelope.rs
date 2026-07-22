@@ -1,5 +1,5 @@
 use aes_gcm::{
-    aead::{Aead, KeyInit, OsRng},
+    aead::{Aead, KeyInit},
     Aes256Gcm, Nonce,
 };
 use uuid::Uuid;
@@ -18,6 +18,7 @@ pub struct EncryptedCredential {
 
 /// Envelope encryption service (ADR-014).
 pub struct EnvelopeEncryptionService {
+    #[allow(dead_code)]
     kek: Arc<RwLock<Vec<u8>>>,
     dek_cache: Arc<RwLock<HashMap<Uuid, Vec<u8>>>>,
     kek_version: String,
@@ -37,7 +38,7 @@ impl EnvelopeEncryptionService {
         let cipher = Aes256Gcm::new_from_slice(&dek).map_err(|e| e.to_string())?;
         let nonce_bytes: [u8; 12] = rand::random();
         let nonce = Nonce::from_slice(&nonce_bytes);
-        let aad = link_id.as_bytes().to_vec();
+        let _aad = link_id.as_bytes().to_vec();
         let ciphertext = cipher.encrypt(nonce, plaintext)
             .map_err(|e| format!("Encryption failed: {}", e))?;
         Ok(EncryptedCredential {
@@ -52,7 +53,7 @@ impl EnvelopeEncryptionService {
         let dek = self.get_or_generate_dek(encrypted.link_id).await?;
         let cipher = Aes256Gcm::new_from_slice(&dek).map_err(|e| e.to_string())?;
         let nonce = Nonce::from_slice(&encrypted.nonce);
-        let aad = encrypted.link_id.as_bytes().to_vec();
+        let _aad = encrypted.link_id.as_bytes().to_vec();
         cipher.decrypt(nonce, encrypted.ciphertext.as_ref())
             .map_err(|e| format!("Decryption failed: {}", e))
     }

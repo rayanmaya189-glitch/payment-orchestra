@@ -1,4 +1,4 @@
-use sea_orm::{DatabaseConnection, EntityTrait, IntoActiveModel, Set};
+use sea_orm::DatabaseConnection;
 use uuid::Uuid;
 use chrono::{DateTime, Utc};
 use serde::{Serialize, Deserialize};
@@ -20,6 +20,7 @@ pub struct StoredEvent {
 }
 
 pub struct EventStore {
+    #[allow(dead_code)]
     db: DatabaseConnection,
 }
 
@@ -28,17 +29,17 @@ impl EventStore {
         Self { db }
     }
 
-    pub async fn append_events(&self, events: Vec<StoredEvent>) -> Result<(), String> {
+    pub async fn append_events(&self, _events: Vec<StoredEvent>) -> Result<(), String> {
         // TODO: Implement event store append
         Ok(())
     }
 
-    pub async fn read_events(&self, aggregate_id: Uuid, from_sequence: i64) -> Result<Vec<StoredEvent>, String> {
+    pub async fn read_events(&self, _aggregate_id: Uuid, _from_sequence: i64) -> Result<Vec<StoredEvent>, String> {
         // TODO: Implement event store read
         Ok(vec![])
     }
 
-    pub async fn read_all_events(&self, aggregate_type: &str, aggregate_id: Uuid) -> Result<Vec<StoredEvent>, String> {
+    pub async fn read_all_events(&self, _aggregate_type: &str, _aggregate_id: Uuid) -> Result<Vec<StoredEvent>, String> {
         Ok(vec![])
     }
 }
