@@ -5,6 +5,7 @@ edition.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+async-trait.workspace = true
 tokio.workspace = true
 sea-orm.workspace = true
 tracing.workspace = true
