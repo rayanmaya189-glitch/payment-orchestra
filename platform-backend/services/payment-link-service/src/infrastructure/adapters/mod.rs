@@ -1,2 +1,0 @@
-pub mod postgres_payment_link_repository;
-pub use postgres_payment_link_repository::PostgresPaymentLinkRepository;

@@ -1,7 +1,0 @@
-pub mod postgres_principal_repository;
-pub mod postgres_api_key_repository;
-pub mod postgres_refresh_token_repository;
-
-pub use postgres_principal_repository::PostgresPrincipalRepository;
-pub use postgres_api_key_repository::PostgresApiKeyRepository;
-pub use postgres_refresh_token_repository::PostgresRefreshTokenRepository;

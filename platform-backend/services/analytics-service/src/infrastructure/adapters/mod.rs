@@ -1,2 +1,0 @@
-pub mod postgres_analytics_repository;
-pub use postgres_analytics_repository::PostgresAnalyticsRepository;

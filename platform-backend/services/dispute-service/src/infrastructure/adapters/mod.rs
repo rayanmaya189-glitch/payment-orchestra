@@ -1,2 +1,0 @@
-pub mod postgres_dispute_repository;
-pub use postgres_dispute_repository::PostgresDisputeRepository;

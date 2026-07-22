@@ -1,9 +1,0 @@
-[package]
-name = "migrations"
-version.workspace = true
-edition.workspace = true
-
-[dependencies]
-sea-orm-migration.workspace = true
-tokio.workspace = true
-async-trait.workspace = true

@@ -1,8 +1,0 @@
-[package]
-name = "platform-error"
-version.workspace = true
-edition.workspace = true
-
-[dependencies]
-thiserror.workspace = true
-uuid.workspace = true
