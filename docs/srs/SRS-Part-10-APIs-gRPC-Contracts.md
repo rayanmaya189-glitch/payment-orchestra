@@ -19,15 +19,15 @@
 
 ---
 
-## 1. API Design Conventions — Strict Protobuf (No REST)
+## 1. API Design Conventions — Dual API (REST JSON + Protobuf)
 
 ### 1.1 Core Principle
 
-**PROTO-001**: All external API requests and responses use Protocol Buffers (protobuf) as the serialization format. **No REST conventions** — no GET/PUT/PATCH/DELETE, no path variables, no query strings. Every operation is a `POST` with a protobuf request body.
+**PROTO-001**: All external API requests and responses use protobuf binary encoding. RESTful URL paths are used for resource identification. HTTP methods: POST, PATCH, DELETE only. No GET, no JSON, no form data.
 
-**PROTO-002**: Endpoints follow the pattern: `POST /{package}.{ServiceName}/{MethodName}`
+**PROTO-002: URL patterns follow REST conventions: POST /v1/{resource} (create), PATCH /v1/{resource}/:id (partial update), DELETE /v1/{resource}/:id (remove). Resource actions use POST /v1/{resource}/:id/{action}.
 
-**PROTO-003**: The API Gateway translates external protobuf-over-HTTP to internal gRPC (same protobuf schema, native gRPC transport between services).
+**PROTO-003: List/search operations use POST /v1/{resource}/search with filter/cursor/limit in the protobuf body. Never GET with query parameters.
 
 ### 1.2 Why Protobuf-Only
 

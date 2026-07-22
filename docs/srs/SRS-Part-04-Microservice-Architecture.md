@@ -85,11 +85,11 @@
 The API Gateway now routes BYOK-related endpoints:
 
 ```
-GET    /v1/connectors                    # List available connectors
-GET    /v1/connectors/:id/schema         # Get credential schema for connector
+POST   /v1/connectors                    # List available connectors
+POST   /v1/connectors/:id/schema         # Get credential schema for connector
 POST   /v1/merchant-links                # Create MerchantAcquirerLink
-GET    /v1/merchant-links                # List MerchantAcquirerLinks
-GET    /v1/merchant-links/:id            # Get MerchantAcquirerLink
+POST   /v1/merchant-links/search                # List MerchantAcquirerLinks
+POST   /v1/merchant-links/search/:id            # Get MerchantAcquirerLink
 POST   /v1/merchant-links/:id/test       # Test connection
 POST   /v1/merchant-links/:id/rotate     # Rotate credentials
 DELETE /v1/merchant-links/:id            # Disable MerchantAcquirerLink
@@ -139,9 +139,8 @@ The AI Gateway exists because AI-Assistant traffic has distinct requirements tha
 - **RULE-004**: Never use NATS for the checkout hot path (Create/Authorize/Capture) — the latency of NATS publish-ack is unnecessary overhead when a direct gRPC call is more appropriate.
 - **RULE-005**: Never use gRPC for fan-out event distribution — the publisher would need to know and manage all consumers, defeating the decoupling benefit of event-driven architecture.
 - **RULE-006**: All service-to-service calls use gRPC with Protobuf — SeaORM services generate clients from `.proto` files for type-safe inter-service communication.
-- **RULE-007**: External API supports **dual protocol**: RESTful JSON (primary for merchant adoption) and Protobuf-over-HTTP (secondary for performance). Internal service-to-service communication uses gRPC exclusively. See Part 10 and `docs/backend/17-api-gateway.md` for full endpoint specifications.
-- **RULE-008**: REST JSON follows conventional patterns: `GET /v1/resource/:id`, `POST /v1/resource`, etc. Protobuf uses `POST /proto/{package}.{Service}/{Method}`. Both routes terminate at the same gateway which translates to internal gRPC.
-- **RULE-009**: All IDs use prefix conventions (inspired by Stripe): `pi_` for payment intents, `li_` for merchant links, `sub_` for subscriptions, `evt_` for events.
+- **RULE-007: External API uses RESTful URL paths with protobuf-encoded request/response bodies. HTTP methods: POST (create/search/action), PATCH (update), DELETE (remove). NO GET, no JSON, no form data.
+- **RULE-008: Internal service-to-service communication uses native gRPC with the same protobuf schemas as the external API.
 
 ### 4.3 NATS JetStream Subject Taxonomy (Versioned)
 

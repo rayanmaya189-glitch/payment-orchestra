@@ -20,7 +20,7 @@ The BYOK onboarding flow spans four services:
 
 ## 2. Flow: List Available Connectors
 
-**Endpoint:** `GET /v1/connectors`  
+**Endpoint: POST /v1/connectors (protobuf body with optional filters, returns list of available connectors)
 **Auth:** Bearer JWT (merchant admin)
 
 **Response:**
@@ -58,7 +58,7 @@ The BYOK onboarding flow spans four services:
 
 ## 3. Flow: Get Connector Schema
 
-**Endpoint:** `GET /v1/connectors/{connector_id}/schema`  
+**Endpoint: POST /v1/connectors/{connector_id}/schema (protobuf body: empty, returns OnboardingSchema protobuf)
 **Auth:** Bearer JWT (merchant admin)
 
 Returns the credential fields the merchant needs to fill in. The frontend renders a dynamic form from this schema.
@@ -270,7 +270,7 @@ After connecting at least one gateway, the merchant configures routing:
 
 ## 7. Flow: View Connected Gateways
 
-**Endpoint:** `GET /v1/merchant-links`  
+**Endpoint: POST /v1/merchant-links/search (protobuf body with optional filters)
 **Auth:** Bearer JWT (merchant admin)
 
 **Response:**

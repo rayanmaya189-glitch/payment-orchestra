@@ -920,7 +920,7 @@ pub fn verify_webhook_signature(secret: &[u8], payload: &[u8], signature: &str) 
 
 ## 30. Complete Rate Limiting Table (Part 10 §11)
 
-All endpoints are protobuf-over-HTTP POST. No REST GET/PUT/PATCH/DELETE.
+All endpoints support REST JSON (primary) and Protobuf-over-HTTP (secondary).
 
 | Service.Method | Limit | Window | Per |
 |---|---|---|---|

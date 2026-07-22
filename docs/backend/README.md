@@ -105,7 +105,7 @@ Every service follows:
 - **BYOK (Bring Your Own Key)**: Merchants connect their own gateway credentials. Platform is a routing layer, NOT a payment gateway or payment facilitator.
 - **Event Sourcing**: Orchestration, reconciliation, subscriptions, and invoices use event sourcing for audit trail.
 - **3D Secure**: Mandatory for UAE/Europe card payments. Integrated into authorization flow with frictionless and challenge flows.
-- **Dual API**: RESTful JSON for merchant adoption + Protobuf-over-HTTP for performance-sensitive use cases. Internal gRPC for service-to-service.
+- **REST paths + protobuf bodies**: RESTful URL paths (POST/PATCH/DELETE) with protobuf-encoded request/response bodies. Internal gRPC for service-to-service. No GET, no JSON, no form data.
 - **Idempotency**: `IdempotencyKey` on ALL mutating commands (not just CreatePaymentIntent). Redis fast-path + event store correctness.
 - **Circuit Breaker**: Per-acquirer connection with automatic failover. Closed → Open → Half-Open states.
 - **Optimistic Concurrency**: Event store append with expected sequence check.

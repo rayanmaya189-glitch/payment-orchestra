@@ -1,6 +1,6 @@
 # 11 — risk-service (BC-11 Fraud & Risk Scoring)
 
-MVP: Rule-based scoring. H3: ML-based scoring.
+Initial release: Rule-based scoring. Future: ML-based scoring.
 
 ---
 

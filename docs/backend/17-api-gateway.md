@@ -1,148 +1,263 @@
 # 17 — api-gateway (Cross-Cutting)
 
-Single ingress for all external traffic. **Dual API**: RESTful JSON for merchant adoption + Protobuf-over-HTTP for performance-sensitive use cases. Internal gRPC for service-to-service.
+Single ingress for all external traffic. **REST paths + protobuf bodies**. Internal gRPC for service-to-service.
 
 ---
 
-## 1. API Design Philosophy — Dual API Strategy
+## 1. API Design Philosophy
 
-The platform exposes two API styles for merchants:
+The platform exposes a unified external API with RESTful URL patterns and protobuf-encoded request/response bodies. Internal service-to-service communication uses native gRPC.
 
-| API Style | Content Type | Audience | Priority |
+| Aspect | External API | Internal |
+|---|---|---|
+| **URL Style** | RESTful paths (`/v1/payment-intents/:id`) | gRPC service methods |
+| **HTTP Methods** | `POST`, `PATCH`, `DELETE` only | gRPC (HTTP/2) |
+| **Content-Type** | `application/protobuf` (binary) | `application/grpc` |
+| **Schema** | Protobuf messages | Same protobuf messages |
+
+### Why REST Paths + Protobuf Bodies
+
+- **Developer familiarity**: RESTful paths are intuitive and consistent across the industry. `/v1/payment-intents/:id` is immediately understood without reading documentation.
+- **Type safety at wire level**: Protobuf binary encoding enforces schema validation, field types, and required fields at the protocol level — no runtime JSON parsing errors.
+- **SDK code generation**: Protobuf definitions generate typed SDKs for all major languages automatically.
+- **Performance**: Binary protobuf is smaller and faster to serialize/deserialize than JSON.
+- **Single true schema**: The `.proto` file is the single source of truth for both external API and internal gRPC — no duplication between a REST JSON spec and protobuf definitions.
+
+---
+
+## 2. Endpoint Conventions
+
+### 2.1 URL Structure
+
+```
+POST   /v1/{resource}              # Create resource
+POST   /v1/{resource}/search       # List/Search resources (filters in protobuf body)
+POST   /v1/{resource}/:id/{action} # Perform action on resource
+PATCH  /v1/{resource}/:id          # Update resource
+DELETE /v1/{resource}/:id          # Delete/disable resource
+```
+
+### 2.2 HTTP Methods
+
+| Method | Purpose | Body | Idempotent |
 |---|---|---|---|
-| **RESTful JSON** | `application/json` | Primary merchant integration | Primary |
-| **Protobuf-over-HTTP** | `application/protobuf` | Performance-sensitive/high-volume | Secondary |
-| **gRPC** (internal) | `application/grpc` | Service-to-service only | Internal |
+| `POST` | Create, List/Search, Actions | Required (protobuf) | Yes (via Idempotency-Key header) |
+| `PATCH` | Partial update | Required (protobuf) | Yes (via Idempotency-Key header) |
+| `DELETE` | Delete/Disable | Optional (protobuf with reason) | Yes |
+| `GET` | **NOT SUPPORTED** | — | — |
 
-### Why REST + Protobuf (Not Protobuf-Only)
+**GET is deliberately not supported.** All read operations use `POST` with the search/filter criteria in the protobuf body. This ensures:
+- Consistent request/response format (always protobuf)
+- Filter criteria can be complex nested protobuf messages (not limited by URL query string length)
+- No ambiguity between query parameters and body parameters
+- All operations can use the same authentication, rate limiting, and audit middleware
 
-Every major payment gateway uses RESTful JSON as their primary API (Stripe, Adyen, Checkout.com, PayPal). The decision to support both is driven by:
+### 2.3 Core Payment Endpoints
 
-- **Merchant adoption**: REST JSON has zero compilation requirements, works with any HTTP client (curl, Postman), is human-readable, and doesn't require protobuf tooling
-- **Developer experience**: JSON is familiar to ALL developers across all languages and frameworks
-- **SDK simplicity**: Language SDKs are significantly simpler to build and maintain for JSON APIs
-- **Performance option**: Protobuf is available as an opt-in for high-volume merchants who need the binary serialization performance
+```
+POST   /v1/payment-intents                  # CreatePaymentIntent
+POST   /v1/payment-intents/search           # ListPaymentIntents (cursor+filter in body)
+PATCH  /v1/payment-intents/:id              # UpdatePaymentIntent (metadata, descriptor)
+DELETE /v1/payment-intents/:id              # VoidPaymentIntent (delete = void)
 
-**REST JSON is the recommended default. Protobuf is the power-user option.**
+# Sub-actions on a payment intent (POST because they create side effects)
+POST   /v1/payment-intents/:id/authorize    # AuthorizePaymentIntent
+POST   /v1/payment-intents/:id/capture      # CapturePaymentIntent
+POST   /v1/payment-intents/:id/refund       # RefundPaymentIntent
+POST   /v1/payment-intents/:id/void         # VoidPaymentIntent (alternative to DELETE)
+
+# NEW: 3DS actions
+POST   /v1/payment-intents/:id/check-3ds    # Check3DSEnrollment
+POST   /v1/payment-intents/:id/authenticate-3ds # Authenticate3DS
+```
+
+### 2.4 BYOK Merchant Link Endpoints
+
+```
+POST   /v1/connectors                       # List available connectors (filters in body)
+POST   /v1/connectors/search                # Search connectors
+POST   /v1/connectors/:id/schema            # Get credential schema for connector
+POST   /v1/merchant-links                   # Create MerchantAcquirerLink
+POST   /v1/merchant-links/search            # List MerchantAcquirerLinks (cursor+filter in body)
+PATCH  /v1/merchant-links/:id               # Update MerchantAcquirerLink metadata
+DELETE /v1/merchant-links/:id               # Disable MerchantAcquirerLink
+POST   /v1/merchant-links/:id/test          # Test connection
+POST   /v1/merchant-links/:id/rotate        # Rotate credentials
+```
+
+### 2.5 Routing Endpoints
+
+```
+POST   /v1/routing-policies                 # Create RoutingPolicy
+POST   /v1/routing-policies/search          # List RoutingPolicies
+PATCH  /v1/routing-policies/:id             # Update RoutingPolicy
+DELETE /v1/routing-policies/:id             # Delete RoutingPolicy
+POST   /v1/routing-policies/:id/activate    # Activate RoutingPolicy
+```
+
+### 2.6 Webhook Endpoints
+
+```
+POST   /v1/webhook-endpoints                # Create WebhookEndpoint
+POST   /v1/webhook-endpoints/search         # List WebhookEndpoints
+PATCH  /v1/webhook-endpoints/:id            # Update WebhookEndpoint
+DELETE /v1/webhook-endpoints/:id            # Delete WebhookEndpoint
+POST   /v1/webhook-endpoints/:id/test       # Send test webhook event
+POST   /v1/webhook-endpoints/:id/deliveries/search # List delivery history
+POST   /v1/webhook-endpoints/:id/retry/:delivery_id # Retry failed delivery
+```
+
+### 2.7 Analytics & Reporting Endpoints
+
+```
+POST   /v1/analytics/transactions/search    # Transaction analytics (date range in body)
+POST   /v1/analytics/fees/search            # Fee analysis
+POST   /v1/analytics/settlements/search     # Settlement reports
+POST   /v1/analytics/chargebacks/search     # Chargeback analytics
+POST   /v1/reports/generate                 # Generate report (async, returns report_id)
+POST   /v1/reports/:id/download             # Download generated report
+```
 
 ---
 
-## 2. Endpoint Structure
+## 3. Request/Response Format
 
-### 2.1 RESTful JSON Endpoints (Primary)
+All requests and responses use `Content-Type: application/protobuf` with protobuf binary encoding.
 
-Conventional RESTful paths with path variables and JSON bodies:
-
-```
-POST   /v1/payment-intents              # CreatePaymentIntent
-POST   /v1/payment-intents/:id/authorize # AuthorizePaymentIntent
-POST   /v1/payment-intents/:id/capture  # CapturePaymentIntent
-POST   /v1/payment-intents/:id/void     # VoidPaymentIntent
-POST   /v1/payment-intents/:id/refund   # RefundPaymentIntent
-GET    /v1/payment-intents/:id          # GetPaymentIntent
-GET    /v1/payment-intents              # ListPaymentIntents (with query params)
-```
-
-**Example Request:**
-```bash
-curl -X POST https://api.paymentorchestra.com/v1/payment-intents \
-  -H "Authorization: Bearer sk_live_abc123" \
-  -H "Content-Type: application/json" \
-  -H "Idempotency-Key: unique-key-001" \
-  -d '{
-    "amount": 10000,
-    "currency": "AED",
-    "payment_method": {
-      "type": "card",
-      "card": {
-        "number": "4242424242424242",
-        "exp_month": 12,
-        "exp_year": 2028,
-        "cvc": "123"
-      }
-    }
-  }'
-```
-
-### 2.2 Protobuf-over-HTTP Endpoints (Secondary)
-
-Same gRPC-style POST for protobuf clients:
+### Request
 
 ```
-POST /proto/{package}.{ServiceName}/{MethodName}
+POST /v1/payment-intents
 Content-Type: application/protobuf
+Authorization: Bearer sk_live_abc123def456
+Idempotency-Key: unique-key-001
 
-<protobuf binary request body>
+<CreatePaymentIntentRequest protobuf binary>
 ```
 
-**Example:**
+### Response (Success)
+
 ```
-POST /proto/orchestration.v1.OrchestrationService/CreatePaymentIntent
+HTTP/1.1 200 OK
 Content-Type: application/protobuf
-Authorization: Bearer eyJ...
+Request-Id: req_abc123
 
-<CreatePaymentIntentRequest protobuf>
+<PaymentIntent protobuf binary>
 ```
 
-### 2.3 API Versioning
+### Response (List/Search)
 
-- **API-GW-VERSION-001**: REST endpoints are versioned by URL prefix (`/v1/`, `/v2/`)
-- **API-GW-VERSION-002**: Protobuf endpoints are versioned by package name (`orchestration.v1`, `orchestration.v2`)
-- **API-GW-VERSION-003**: During version transition, both versions are supported for a deprecation window (default: 12 months)
-- **API-GW-VERSION-004**: Deprecated versions receive `Sunset` header (RFC 8594) indicating removal date
+```
+HTTP/1.1 200 OK
+Content-Type: application/protobuf
+Request-Id: req_abc123
+
+<SearchPaymentIntentsResponse protobuf binary>
+```
+
+**Protobuf response for search:**
+
+```protobuf
+message SearchPaymentIntentsResponse {
+  repeated PaymentIntent data = 1;
+  bool has_more = 2;
+  string next_cursor = 3;     // AES-256-GCM encrypted cursor
+  int64 total_count = 4;      // approximate total (capped at 10,000)
+  int64 as_of_unix_ms = 5;    // freshness timestamp
+}
+```
+
+### Response (Error)
+
+```
+HTTP/1.1 200 OK (business errors)
+HTTP/1.1 401/403/404/429/500 (transport errors)
+Content-Type: application/protobuf
+Request-Id: req_abc123
+
+<ErrorDetail protobuf binary>
+```
 
 ---
 
-## 3. Responsibilities
+## 4. Example Flow: Create and Authorize Payment
 
-- **GW-001**: Single ingress point for all external REST JSON + Protobuf traffic
+```
+// Step 1: Create PaymentIntent
+POST /v1/payment-intents
+Content-Type: application/protobuf
+Authorization: Bearer sk_live_abc123
+Idempotency-Key: create-pi-001
+
+<CreatePaymentIntentRequest: amount=10000, currency="AED">
+
+→ Response:
+<PaymentIntent: id=pi_abc123, status=created>
+
+// Step 2: Authorize PaymentIntent
+POST /v1/payment-intents/pi_abc123/authorize
+Content-Type: application/protobuf
+Authorization: Bearer sk_live_abc123
+
+<AuthorizePaymentIntentRequest: payment_method_token="tok_xyz">
+
+→ Response:
+<PaymentIntent: id=pi_abc123, status=authorized, acquirer_reference="ref_001">
+
+// Step 3: Capture PaymentIntent
+POST /v1/payment-intents/pi_abc123/capture
+Content-Type: application/protobuf
+Authorization: Bearer sk_live_abc123
+Idempotency-Key: capture-pi-001
+
+<CapturePaymentIntentRequest: amount=10000>
+
+→ Response:
+<PaymentIntent: id=pi_abc123, status=captured, captured_amount=10000>
+```
+
+---
+
+## 5. Responsibilities
+
+- **GW-001**: Single ingress point for all external protobuf-over-HTTP traffic
 - **GW-002**: TLS termination, JWT/API-key validation, actor context extraction
 - **GW-003**: Per-endpoint rate limiting (Redis sliding window)
-- **GW-004**: Request routing — REST JSON → internal domain logic; Protobuf → internal gRPC
-- **GW-005**: Webhook signature verification NOT here (per-connector, Part 7)
-- **GW-006**: Input validation at gateway level (schema, format, length)
-- **GW-007**: Request/response logging for audit trail (BIZ-040)
-- **GW-008**: Content negotiation — detect Content-Type and route to appropriate handler
-- **GW-009**: Input sanitization and XSS prevention for all request data
+- **GW-004**: Request routing: REST path + protobuf body → internal gRPC
+- **GW-005**: Webhook signature verification NOT here (per-connector, see connector-gateway)
+- **GW-006**: Protobuf schema validation before forwarding to backend services
+- **GW-007**: Request/response logging for audit trail
+- **GW-008**: URL parameter extraction (path variables → gRPC metadata)
+- **GW-009**: Input sanitization and security header enforcement
 - **GW-010**: CORS enforcement with configurable allowed origins
 
 ---
 
-## 4. Authentication Flow
+## 6. Authentication & Rate Limiting
+
+### Authentication Flow
 
 ```
 Request → TLS termination → Extract auth header
-  → If JWT: validate signature, expiry, aud claim → extract principal_id
-  → If API key: hash with Argon2id → lookup in DB → extract scopes
-  → Determine content type (JSON or Protobuf)
-  → For REST JSON: parse JSON body, validate against schema
-  → For Protobuf: decode protobuf, validate field constraints
-  → Set actor_context in request metadata
-  → Forward to backend service
+  → If JWT: validate signature, expiry, aud → extract principal_id
+  → If API key: hash with Argon2id → lookup → extract scopes
+  → Decode protobuf body, validate field constraints
+  → Set actor_context in gRPC metadata
+  → Forward to backend service via native gRPC
 ```
 
-### API Key Conventions
+### API Key Prefix Convention
 
 ```
-# REST JSON: Bearer token or X-Api-Key header
-Authorization: Bearer sk_live_abc123def456
-# or
-X-Api-Key: sk_live_abc123def456
-
-# API Key Prefix Convention
 sk_live_*   = Secret key (live, full access)
-pk_live_*   = Publishable key (live, restricted)
-sk_test_*   = Secret key (sandbox, full access)
-pk_test_*   = Publishable key (sandbox, restricted)
+sk_test_*   = Secret key (sandbox, full access) 
 ```
 
----
-
-## 5. Rate Limiting
+### Rate Limiting
 
 ```rust
 pub struct RateLimitConfig {
-    pub route: String,              // e.g., "POST /v1/payment-intents" or "orchestration.v1.OrchestrationService"
+    pub route: String,              // e.g., "POST /v1/payment-intents"
     pub window_seconds: u32,
     pub max_requests: u32,
     pub per: RateLimitPer,          // Ip | ApiKey | Tenant
@@ -155,25 +270,24 @@ pub struct RateLimitConfig {
 | `POST /v1/payment-intents/:id/authorize` | 1000 | 60s | ApiKey |
 | `POST /v1/payment-intents/:id/capture` | 500 | 60s | ApiKey |
 | `POST /v1/payment-intents/:id/refund` | 200 | 60s | ApiKey |
-| `GET /v1/payment-intents` | 500 | 60s | ApiKey |
-| `post /v1/invoices` | 50 | 60s | ApiKey |
-| `POST /v1/subscriptions` | 50 | 60s | ApiKey |
+| `POST /v1/payment-intents/search` | 500 | 60s | ApiKey |
+| `PATCH /v1/payment-intents/:id` | 500 | 60s | ApiKey |
 | `POST /v1/merchant-links` | 20 | 60s | ApiKey |
-| `POST /v1/authenticate` | 10 | 60s | IP |
-| `POST /v1/ai/ask` | 30 | 60s | ApiKey |
-| `POST /v1/compliance/kyb` | 10 | 60s | ApiKey |
+| `POST /v1/routing-policies` | 10 | 60s | ApiKey |
 | `POST /v1/webhook-endpoints` | 10 | 60s | ApiKey |
-| `GET /v1/analytics/*` | 100 | 60s | ApiKey |
+| `POST /v1/authenticate` | 10 | 60s | IP |
+| `POST /v1/analytics/transactions/search` | 100 | 60s | ApiKey |
+| `POST /v1/reports/generate` | 10 | 60s | ApiKey |
 
 ---
 
-## 6. CORS Policy (CORS-001)
+## 7. CORS Policy (CORS-001)
 
 ```rust
 pub fn cors_middleware(allowed_origins: &[String]) -> CorsLayer {
     CorsLayer::new()
         .allow_origin(AllowedOrigins::list(allowed_origins))
-        .allow_methods([GET, POST, DELETE, PATCH, OPTIONS]) // All REST methods
+        .allow_methods([POST, PATCH, DELETE, OPTIONS])   // No GET
         .allow_headers([
             CONTENT_TYPE, AUTHORIZATION, X_API_KEY, X_IDEMPOTENCY_KEY,
             X_REQUEST_ID, X_CSRF_TOKEN, X_WEBHOOK_SIGNATURE
@@ -186,60 +300,55 @@ pub fn cors_middleware(allowed_origins: &[String]) -> CorsLayer {
 
 ---
 
-## 7. REST JSON → Internal Translation
+## 8. URL → Internal Translation
 
-The api-gateway translates REST JSON requests to internal operations:
+The api-gateway translates REST path + protobuf body to internal gRPC calls:
 
 ```rust
-/// Translation registry: REST route → internal handler
-pub struct RestRouter {
-    routes: HashMap<RoutePattern, Box<dyn RestHandler>>,
+pub struct RouteTranslator {
+    routes: HashMap<String, TranslationRule>,
 }
 
-impl RestRouter {
-    pub fn register_routes(&mut self) {
-        // Payment Intents
-        self.register(RoutePattern { method: "POST", path: "/v1/payment-intents" }, PaymentIntentCreateHandler);
-        self.register(RoutePattern { method: "GET", path: "/v1/payment-intents/:id" }, PaymentIntentGetHandler);
-        self.register(RoutePattern { method: "GET", path: "/v1/payment-intents" }, PaymentIntentListHandler);
+struct TranslationRule {
+    http_method: String,       // POST, PATCH, DELETE
+    url_pattern: String,       // e.g., "/v1/payment-intents/:id/capture"
+    grpc_service: String,      // e.g., "orchestration.v1.OrchestrationService"
+    grpc_method: String,       // e.g., "CapturePaymentIntent"
+    path_params: Vec<String>,  // e.g., ["id"]
+}
 
-        // Merchant Links (BYOK)
-        self.register(RoutePattern { method: "POST", path: "/v1/merchant-links" }, MerchantLinkCreateHandler);
-        self.register(RoutePattern { method: "GET", path: "/v1/merchant-links" }, MerchantLinkListHandler);
-        self.register(RoutePattern { method: "GET", path: "/v1/merchant-links/:id" }, MerchantLinkGetHandler);
-        self.register(RoutePattern { method: "POST", path: "/v1/merchant-links/:id/test" }, MerchantLinkTestHandler);
-        self.register(RoutePattern { method: "DELETE", path: "/v1/merchant-links/:id" }, MerchantLinkDisableHandler);
-
-        // Connectors (BYOK discovery)
-        self.register(RoutePattern { method: "GET", path: "/v1/connectors" }, ConnectorListHandler);
-        self.register(RoutePattern { method: "GET", path: "/v1/connectors/:id/schema" }, ConnectorSchemaHandler);
-
-        // Routing
-        self.register(RoutePattern { method: "POST", path: "/v1/routing-policies" }, RoutingPolicyCreateHandler);
-        self.register(RoutePattern { method: "GET", path: "/v1/routing-policies" }, RoutingPolicyListHandler);
-
-        // Webhooks (outbound)
-        self.register(RoutePattern { method: "POST", path: "/v1/webhook-endpoints" }, WebhookEndpointCreateHandler);
-        self.register(RoutePattern { method: "GET", path: "/v1/webhook-endpoints" }, WebhookEndpointListHandler);
-        self.register(RoutePattern { method: "POST", path: "/v1/webhook-endpoints/:id/test" }, WebhookEndpointTestHandler);
-
-        // Analytics
-        self.register(RoutePattern { method: "GET", path: "/v1/analytics/transactions" }, AnalyticsTransactionsHandler);
-        self.register(RoutePattern { method: "GET", path: "/v1/analytics/fees" }, AnalyticsFeesHandler);
-        self.register(RoutePattern { method: "GET", path: "/v1/analytics/settlements" }, AnalyticsSettlementsHandler);
+impl RouteTranslator {
+    pub fn translate(&self, method: &str, path: &str, body: &[u8]) 
+        -> Result<GrpcRequest, GatewayError> 
+    {
+        // 1. Match URL pattern (with path variable extraction)
+        let rule = self.match_route(method, path)?;
+        
+        // 2. Extract path variables (e.g., :id → pi_abc123)
+        let path_params = self.extract_path_variables(&rule.url_pattern, path)?;
+        
+        // 3. Validate protobuf body
+        let validated_body = self.validate_protobuf(&rule, body)?;
+        
+        // 4. Build gRPC request with path params as metadata
+        Ok(GrpcRequest {
+            service: rule.grpc_service,
+            method: rule.grpc_method,
+            body: validated_body,
+            metadata: path_params,
+        })
     }
 }
 ```
 
 ---
 
-## 8. Request Size & Timeout Limits
+## 9. Request Size & Timeout Limits
 
 ```rust
 pub struct RequestLimits {
-    pub max_json_body: usize,           // 1MB (standard REST requests)
-    pub max_protobuf_body: usize,       // 1MB (standard protobuf requests)
-    pub max_document_upload: usize,     // 10MB (document upload)
+    pub max_protobuf_body: usize,       // 1MB (standard requests)
+    pub max_document_upload: usize,     // 10MB (document upload via streaming)
     pub max_payment_creation: usize,    // 100KB
     pub general_timeout: Duration,      // 30s
     pub checkout_timeout: Duration,     // 10s
@@ -249,16 +358,15 @@ pub struct RequestLimits {
 
 ---
 
-## 9. Input Validation
+## 10. Input Validation
 
 Two-level validation:
 
-### Level 1: Schema/Format Validation (at Gateway)
+### Level 1: Protobuf Schema Validation (at Gateway)
 
-- **REST JSON**: JSON schema validation against OpenAPI 3.1 spec. Reject malformed JSON before forwarding
-- **Protobuf**: Protobuf decode validation (field types, required fields, enum values)
-- **Common**: UUIDv7 format, ISO 4217 currency codes, ISO 8601 timestamps
-- **Security**: SQL injection pattern check, XSS sanitization, JSON depth limit (max 20 levels)
+- Protobuf decode validates field types, required fields, enum values
+- UUIDv7 format, ISO 4217 currency codes, ISO 8601 timestamps
+- Field-level range constraints (min, max, length)
 
 ### Level 2: Semantic Validation (at Domain Service)
 
@@ -268,76 +376,24 @@ Two-level validation:
 
 ---
 
-## 10. Error Response Format
+## 11. Error Response Format
 
-### REST JSON Error Response
-
-```json
-{
-  "error": {
-    "type": "invalid_request_error",
-    "code": "INSUFFICIENT_REFUNDABLE_BALANCE",
-    "message": "Refund amount (6000 AED) exceeds remaining refundable balance (5000 AED)",
-    "request_id": "req_abc123",
-    "details": {
-      "payment_intent_id": "pi_def456",
-      "captured_amount": "5000",
-      "refunded_amount": "0",
-      "requested_amount": "6000"
-    }
-  }
-}
-```
-
-### Protobuf Error Response
+All errors return a protobuf-encoded `ErrorDetail`:
 
 ```protobuf
 message ErrorDetail {
-  string code = 1;
-  string message = 2;
-  string request_id = 3;
-  map<string, string> details = 4;
+  string code = 1;              // "INSUFFICIENT_REFUNDABLE_BALANCE"
+  string message = 2;           // Human-readable description
+  string request_id = 3;        // Correlation ID: req_abc123
+  map<string, string> details = 4; // Additional context: payment_intent_id, amount, etc.
 }
 ```
 
 **Error Response Rules**:
-- **API-ERR-001**: Business errors return HTTP 200 with error detail in body (like Stripe)
-- **API-ERR-002**: Transport-level errors use appropriate HTTP status codes (401, 403, 404, 429, 500, 503)
-- **API-ERR-003**: Error codes are stable, documented enums — never free-text strings
-- **API-ERR-004**: Every error response includes `request_id` for correlation
-
----
-
-## 11. Response Envelope / Pagination
-
-### REST JSON List Response
-
-```json
-{
-  "data": [
-    { "id": "pi_001", "amount": 10000, "status": "authorized", ... },
-    { "id": "pi_002", "amount": 5000, "status": "captured", ... }
-  ],
-  "has_more": true,
-  "next_cursor": "cursor_abc123",
-  "total_count": 42
-}
-```
-
-### REST JSON Single Resource Response
-
-Direct JSON object — no wrapping envelope:
-
-```json
-{
-  "id": "pi_001",
-  "amount": 10000,
-  "currency": "AED",
-  "status": "authorized",
-  "created_at": "2026-07-22T10:30:00Z",
-  "metadata": { "order_id": "ORD-12345" }
-}
-```
+- **ERR-001**: Business errors (invalid state, validation) → HTTP 200 with `ErrorDetail` in body
+- **ERR-002**: Transport errors (auth, rate limit, not found) → appropriate HTTP status (401, 403, 404, 429, 500, 503) with `ErrorDetail`
+- **ERR-003**: Error codes are stable, documented enums — never free-text
+- **ERR-004**: Every response includes `Request-Id` header for correlation
 
 ---
 
@@ -359,80 +415,138 @@ X-XSS-Protection: 0
 
 | Convention | Rule |
 |---|---|
-| **Naming** | `snake_case` for fields, `kebab-case` for URLs |
-| **Timestamps** | ISO 8601 with millisecond precision: `2026-07-22T10:30:00.123Z` |
-| **IDs** | Prefixed UUIDs: `pi_`, `li_`, `sub_`, `evt_`, `req_` (inspired by Stripe) |
-| **Amounts** | Always in minor units (cents, fils): `10000` = `100.00 AED` |
+| **HTTP Methods** | `POST` (create/search/action), `PATCH` (update), `DELETE` (remove) |
+| **URL Style** | `kebab-case`, plural resources: `/v1/payment-intents` |
+| **Content-Type** | Always `application/protobuf` — no JSON, no form data |
+| **ID Format** | Prefixed: `pi_`, `li_`, `sub_`, `evt_`, `req_` |
+| **Amounts** | Always in minor units: `10000` = `100.00 AED` |
 | **Currencies** | ISO 4217 uppercase: `AED`, `USD`, `EUR` |
-| **Pagination** | Cursor-based: `cursor` + `limit` (max 100) |
-| **Idempotency** | `Idempotency-Key` header on all POST/PATCH requests |
+| **Timestamps** | ISO 8601 milliseconds: `2026-07-22T10:30:00.123Z` |
+| **Pagination** | Cursor-based in protobuf body: `cursor` + `limit` (max 100) |
+| **Idempotency** | `Idempotency-Key` header on all `POST`/`PATCH` requests |
 | **Rate Limits** | Return `X-RateLimit-Remaining` and `X-RateLimit-Reset` headers |
+| **Correlation** | Return `Request-Id` header on all responses |
 
 ---
 
-## 14. TDD Tests
+## 14. API Versioning
+
+- **VER-001**: API versioned by URL prefix: `/v1/`, `/v2/`
+- **VER-002**: Backward-compatible changes (new fields, new endpoints) within the same version
+- **VER-003**: Breaking changes increment the version number and create a new URL prefix
+- **VER-004**: During deprecation, old version receives `Sunset` header (RFC 8594) with removal date
+- **VER-005**: Deprecation window: minimum 12 months for breaking changes
+
+---
+
+## 15. Protobuf Schema Evolution
+
+- **EVOLVE-001**: New fields are additive (backward-compatible within a major version)
+- **EVOLVE-002**: Breaking changes increment package version: `payment_intent.v2`
+- **EVOLVE-003**: Deprecated fields marked with `deprecated = true` option, never removed
+- **EVOLVE-004**: All `.proto` files live in the shared protobuf workspace crate
+
+---
+
+## 16. TDD Tests
 
 ```rust
 #[tokio::test]
-async fn test_rest_json_create_payment_intent() {
-    let request = json!({
-        "amount": 10000,
-        "currency": "AED",
-        "idempotency_key": "key-001"
-    });
-    let response = gateway.handle_rest_json(
+async fn test_create_payment_intent() {
+    let body = CreatePaymentIntentRequest {
+        amount: Some(Money { amount_minor_units: 10000, currency_code: "AED".into() }),
+        idempotency_key: "key-001".into(),
+        ..Default::default()
+    };
+    let response = gateway.handle_protobuf(
         "POST",
         "/v1/payment-intents",
-        request.to_string(),
+        body.encode_to_vec(),
         Some(valid_jwt),
     ).await;
     assert_eq!(response.status, 200);
-    let body: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
-    assert_eq!(body["status"], "created");
-    assert!(body["id"].as_str().unwrap().starts_with("pi_"));
+    let payment_intent: PaymentIntent = Message::decode(response.body.as_slice()).unwrap();
+    assert_eq!(payment_intent.status, "created");
+    assert!(payment_intent.id.starts_with("pi_"));
 }
 
 #[tokio::test]
-async fn test_rest_json_get_payment_intent() {
-    let response = gateway.handle_rest_json(
+async fn test_search_payment_intents() {
+    let body = SearchPaymentIntentsRequest {
+        status: Some("authorized".into()),
+        currency: Some("AED".into()),
+        limit: 10,
+        ..Default::default()
+    };
+    let response = gateway.handle_protobuf(
+        "POST",
+        "/v1/payment-intents/search",
+        body.encode_to_vec(),
+        Some(valid_jwt),
+    ).await;
+    assert_eq!(response.status, 200);
+    let result: SearchPaymentIntentsResponse = Message::decode(response.body.as_slice()).unwrap();
+    assert!(result.has_more == true || result.data.len() > 0);
+}
+
+#[tokio::test]
+async fn test_capture_payment_intent() {
+    let body = CapturePaymentIntentRequest {
+        amount: None, // full capture
+        ..Default::default()
+    };
+    let response = gateway.handle_protobuf(
+        "POST",
+        "/v1/payment-intents/pi_abc123/capture",
+        body.encode_to_vec(),
+        Some(valid_jwt),
+    ).await;
+    assert_eq!(response.status, 200);
+}
+
+#[tokio::test]
+async fn test_patch_update_payment_intent() {
+    let body = UpdatePaymentIntentRequest {
+        metadata: Some(HashMap::from([("order_id".into(), "ORD-123".into())])),
+        ..Default::default()
+    };
+    let response = gateway.handle_protobuf(
+        "PATCH",
+        "/v1/payment-intents/pi_abc123",
+        body.encode_to_vec(),
+        Some(valid_jwt),
+    ).await;
+    assert_eq!(response.status, 200);
+}
+
+#[tokio::test]
+async fn test_delete_void() {
+    let response = gateway.handle_protobuf(
+        "DELETE",
+        "/v1/payment-intents/pi_abc123",
+        vec![], // no body needed
+        Some(valid_jwt),
+    ).await;
+    assert_eq!(response.status, 200);
+}
+
+#[tokio::test]
+async fn test_get_not_supported() {
+    let response = gateway.handle_raw(
         "GET",
         "/v1/payment-intents/pi_abc123",
-        String::new(),
+        vec![],
         Some(valid_jwt),
     ).await;
-    assert_eq!(response.status, 200);
+    assert_eq!(response.status, 405); // Method Not Allowed
 }
 
 #[tokio::test]
-async fn test_rest_json_list_with_filters() {
-    let response = gateway.handle_rest_json(
-        "GET",
-        "/v1/payment-intents?status=authorized&limit=10&currency=AED",
-        String::new(),
-        Some(valid_jwt),
-    ).await;
-    assert_eq!(response.status, 200);
-    let body: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
-    assert!(body["data"].is_array());
-    assert!(body["has_more"].is_boolean());
-}
-
-#[tokio::test]
-async fn test_protobuf_request_also_accepted() {
+async fn test_malformed_protobuf_rejected() {
     let response = gateway.handle_protobuf(
-        "/proto/orchestration.v1.OrchestrationService/CreatePaymentIntent",
-        request_protobuf_bytes,
-        Some(valid_jwt),
-    ).await;
-    assert_eq!(response.status, 200);
-}
-
-#[tokio::test]
-async fn test_rest_json_invalid_body_rejected() {
-    let response = gateway.handle_rest_json(
         "POST",
         "/v1/payment-intents",
-        "not json".into(),
+        b"not protobuf".to_vec(),
         Some(valid_jwt),
     ).await;
     assert_eq!(response.status, 400);
@@ -440,50 +554,42 @@ async fn test_rest_json_invalid_body_rejected() {
 
 #[tokio::test]
 async fn test_expired_jwt_rejected() {
-    let response = gateway.handle_rest_json(
+    let body = CreatePaymentIntentRequest { ..Default::default() };
+    let response = gateway.handle_protobuf(
         "POST",
         "/v1/payment-intents",
-        json_request,
+        body.encode_to_vec(),
         Some(expired_jwt),
     ).await;
     assert_eq!(response.status, 401);
 }
 
 #[tokio::test]
-async fn test_rate_limit_enforced() {
-    // Send exceeding requests in 60 seconds
-    // Should get 429
+async fn test_idempotency_key_respected() {
+    let body = CreatePaymentIntentRequest {
+        idempotency_key: "idem-001".into(),
+        ..Default::default()
+    };
+    let body_bytes = body.encode_to_vec();
+    // First request succeeds
+    let r1 = gateway.handle_protobuf("POST", "/v1/payment-intents", body_bytes.clone(), Some(valid_jwt)).await;
+    // Second with same key returns same result
+    let r2 = gateway.handle_protobuf("POST", "/v1/payment-intents", body_bytes, Some(valid_jwt)).await;
+    assert_eq!(r1.status, 200);
+    assert_eq!(r2.status, 200);
+    assert_eq!(r1.body, r2.body);
 }
 
 #[tokio::test]
-async fn test_idempotency_key_respected() {
-    let request = json_request.clone();
-    // First request succeeds
-    let r1 = gateway.handle_rest_json("POST", "/v1/payment-intents", request.clone(), Some(valid_jwt)).await;
-    // Second with same key returns same result (not error)
-    let r2 = gateway.handle_rest_json("POST", "/v1/payment-intents", request, Some(valid_jwt)).await;
-    assert_eq!(r1.status, 200);
-    assert_eq!(r2.status, 200);
-    assert_eq!(r1.body, r2.body); // idempotent replay
+async fn test_rate_limit_enforced() {
+    // Send exceeding requests in 60 seconds → 429
 }
 
 #[tokio::test]
 async fn test_security_headers_present() {
-    let response = gateway.handle_rest_json("GET", "/v1/payment-intents/pi_001", String::new(), Some(valid_jwt)).await;
+    let response = gateway.handle_protobuf("POST", "/v1/payment-intents/search", vec![], Some(valid_jwt)).await;
     assert!(response.headers.contains_key("strict-transport-security"));
     assert!(response.headers.contains_key("x-content-type-options"));
     assert!(response.headers.contains_key("x-frame-options"));
-}
-
-#[tokio::test]
-async fn test_id_format_validated() {
-    // IDs must follow prefix convention: pi_, li_, sub_, etc.
-    let response = gateway.handle_rest_json(
-        "GET",
-        "/v1/payment-intents/invalid-id",
-        String::new(),
-        Some(valid_jwt),
-    ).await;
-    assert_eq!(response.status, 400);
 }
 ```

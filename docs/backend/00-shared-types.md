@@ -246,7 +246,7 @@ message EventEnvelope {
 
 ## 8. gRPC Shared Types — Dual API (REST JSON + Protobuf)
 
-All external and internal API contracts support protobuf. REST JSON is the primary external API for merchant adoption. Protobuf is the secondary option for performance-sensitive use cases.
+All external APIs use RESTful paths with protobuf-encoded request/response bodies (Content-Type: application/protobuf). HTTP methods: POST, PATCH, DELETE. Internal service-to-service communication uses native gRPC with the same protobuf schemas.
 
 ```protobuf
 syntax = "proto3";
