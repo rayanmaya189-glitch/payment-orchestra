@@ -238,7 +238,7 @@ message EventEnvelope {
   string actor_id = 8;
   string causation_id = 9;       // UUIDv7 — command that caused this event
   string correlation_id = 10;    // UUIDv7 — ties full business transaction
-  bytes payload = 11;            // event-type-specific protobuf message
+  bytes payload = 11;            // protobuf-encoded event payload
   string trace_context = 12;     // W3C Trace Context (optional)
   bytes signature = 13;          // HMAC-SHA256 (optional, for event signing)
 }

@@ -21,7 +21,7 @@ pub struct Model {
     pub aggregate_id: Uuid,
     pub event_type: String,
     pub event_version: i16,
-    pub payload: Vec<u8>,
+    pub payload: Vec<u8>,            // protobuf-encoded event payload
     pub created_at: DateTimeWithTimeZone,
     pub published_at: Option<DateTimeWithTimeZone>,
 }
