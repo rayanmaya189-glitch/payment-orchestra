@@ -1,5 +1,7 @@
 # 05 — orchestration-service (BC-05 Payment Orchestration)
 
+> ⚡ **Pure Router**: The platform is a routing and orchestration layer only. Funds flow directly between the customer, the payment gateway, and the merchant bank account. The platform never holds, touches, or controls funds.
+
 n> **Architecture Context**: This module runs within the modular monolith alongside all other modules. All inter-module communication uses in-process gRPC (synchronous) or in-process NATS channels (asynchronous). The module boundaries defined here can be extracted into separate microservices in a future architecture evolution if scaling requires it.
 The core domain service. Event-sourced. Owns `PaymentIntent` and `RoutingPolicy` aggregates.
 
@@ -879,3 +881,5 @@ pub enum IdempotencyResult {
 | `ALL_ACQUIRERS_DECLINED` | 402 | FAILED_PRECONDITION | All hops failed |
 | `DUPLICATE_IDEMPOTENCY_KEY` | 409 | ALREADY_EXISTS | Key with different payload |
 | `CONCURRENCY_VIOLATION` | 409 | ABORTED | Optimistic concurrency failed |
+
+

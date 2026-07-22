@@ -41,8 +41,8 @@ const features = [
   },
   {
     icon: 'globe',
-    title: 'No Custody',
-    description: 'Your funds flow directly between acquirers and your bank. We never hold them.',
+    title: 'Pure Router - No Custody',
+    description: 'Your customers pay your payment gateways directly; your gateways settle to your bank account. We route the instructions only - we never hold or touch your money.',
     color: 'orange',
   },
 ];

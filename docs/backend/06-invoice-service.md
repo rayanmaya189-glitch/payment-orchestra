@@ -1,5 +1,7 @@
 # 06 — invoice-service (BC-06 Invoice Service)
 
+> ⚡ **Pure Router**: The platform is a routing and orchestration layer only. Funds flow directly between the customer, the payment gateway, and the merchant bank account. The platform never holds, touches, or controls funds.
+
 n> **Architecture Context**: This module runs within the modular monolith alongside all other modules. All inter-module communication uses in-process gRPC (synchronous) or in-process NATS channels (asynchronous). The module boundaries defined here can be extracted into separate microservices in a future architecture evolution if scaling requires it.
 CRUD + events. References PaymentIntent by ID (never duplicates payment state).
 
@@ -141,3 +143,5 @@ async fn test_invoice_overdue_transition() {
     // JOB-004 should transition to 'Overdue'
 }
 ```
+
+

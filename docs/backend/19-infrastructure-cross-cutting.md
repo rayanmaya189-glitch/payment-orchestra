@@ -1,5 +1,7 @@
 # 19 — Infrastructure & Cross-Cutting Concerns
 
+> ⚡ **Pure Router**: The platform is a routing and orchestration layer only. Funds flow directly between the customer, the payment gateway, and the merchant bank account. The platform never holds, touches, or controls funds.
+
 n> **Architecture Context**: This module runs within the modular monolith alongside all other modules. All inter-module communication uses in-process gRPC (synchronous) or in-process NATS channels (asynchronous). The module boundaries defined here can be extracted into separate microservices in a future architecture evolution if scaling requires it.
 Missing from all service-specific backend docs. Covers: outbox, health checks, graceful shutdown, leader election, feature flags, logging, connection pools, degraded modes, secrets, encryption, audit, SSRF, and operational hardening.
 
@@ -1202,3 +1204,5 @@ The following items from the original specification have been simplified per the
 - ClickHouse at launch: Deferred to Phase 2, PostgreSQL analytics initially
 - Event Schema Registry as Git repo: Simplified to shared protobuf workspace crate
 See docs/analysis/001-comprehensive-gap-design-overengineering-analysis.md §4 for full rationale.
+
+

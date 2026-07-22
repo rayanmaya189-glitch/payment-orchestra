@@ -1,5 +1,7 @@
 # 08 — subscription-service (BC-08 Subscription Billing)
 
+> ⚡ **Pure Router**: The platform is a routing and orchestration layer only. Funds flow directly between the customer, the payment gateway, and the merchant bank account. The platform never holds, touches, or controls funds.
+
 n> **Architecture Context**: This module runs within the modular monolith alongside all other modules. All inter-module communication uses in-process gRPC (synchronous) or in-process NATS channels (asynchronous). The module boundaries defined here can be extracted into separate microservices in a future architecture evolution if scaling requires it.
 Event-sourced. Owns Subscription aggregate. Handles renewal, dunning, pause/resume.
 
@@ -121,3 +123,5 @@ async fn test_dunning_retry_schedule() {
     // After max retries → PastDue → Cancelled
 }
 ```
+
+

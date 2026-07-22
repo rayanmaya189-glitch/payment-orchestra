@@ -36,8 +36,8 @@ const securityFeatures = [
   },
   {
     icon: 'eye',
-    title: 'No Custody',
-    description: 'Your funds flow directly between acquirers and your bank. We never hold or touch them.',
+    title: 'Pure Router — No Custody',
+    description: 'We are a routing layer only. Your customers pay your payment gateways directly; your gateways settle to your bank account. We route the instructions — we never hold, touch, or control your money.',
   },
 ];
 

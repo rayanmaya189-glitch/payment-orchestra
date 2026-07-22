@@ -10,7 +10,7 @@ A single-tenant, API-first payment orchestration platform that enables merchants
 4. **AI-powered operations**: Natural-language assistant grounded in the merchant's own data
 5. **Compliance-grade audit**: Immutable event-sourced audit trail from day one
 
-**No custody**: The platform never holds merchant or customer funds. All settlement occurs directly between acquirers/banks and the merchant.
+**Pure Router, No Custody**: The platform is a routing and orchestration layer — it never holds, touches, or controls merchant or customer funds. Money flows directly between the merchant's payment gateways and their bank account. The platform routes transaction instructions between the customer, the merchant's chosen payment gateway, and the merchant's systems — but the actual money never passes through the platform.
 
 ## 2. Complete Feature Catalog
 

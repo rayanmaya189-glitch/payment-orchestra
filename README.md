@@ -24,7 +24,38 @@
 
 ## 1. What — The Product
 
-**Payment Orchestra** is a single-tenant, API-first payment orchestration platform. It enables merchants and platforms in the UAE (and expanding to GCC/MENA) to:
+**Payment Orchestra** is a **pure routing and orchestration layer** — a single-tenant, API-first platform that connects merchants to their existing payment gateways and acquirers. It sits between the merchant, their payment gateways, and their customers — routing transaction instructions, never touching the money.
+
+### How the Money Flows
+
+```
+                    Payment Orchestra
+                    (Router / Orchestrator)
+                          │
+            ┌─────────────┼─────────────┐
+            │             │             │
+            ▼             ▼             ▼
+    ┌────────────┐  ┌────────────┐  ┌────────────┐
+    │ Payment    │  │ Payment    │  │ Payment    │
+    │ Gateway A  │  │ Gateway B  │  │ Gateway C  │
+    │ (Stripe,   │  │ (Checkout, │  │ (Network   │
+    │  Adyen...) │  │  Telr...)  │  │  Intl...)  │
+    └─────┬──────┘  └─────┬──────┘  └─────┬──────┘
+          │               │               │
+          └───────┬───────┴───────┬───────┘
+                  │               │
+          ╔═══════╧═══════════════╧═══════════╗
+          ║       💰 FUNDS FLOW DIRECTLY       ║
+          ║                                     ║
+          ║  Customer ──pay──> Payment Gateway  ║
+          ║  Payment Gateway ──settle──> Merchant║
+          ║                                     ║
+          ║  Platform NEVER holds or touches    ║
+          ║  the money at any point.            ║
+          ╚═════════════════════════════════════╝
+```
+
+The platform enables merchants and platforms in the UAE (and expanding to GCC/MENA) to:
 
 - **Connect multiple acquirers/PSPs** through a single integration — one API, one dashboard, one reconciliation view.
 - **Route payments intelligently** across providers based on cost, success rate, card scheme, currency, and failover rules.

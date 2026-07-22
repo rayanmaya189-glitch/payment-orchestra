@@ -2,6 +2,8 @@
 
 > **Architecture Context**: This document describes the overall backend architecture of the platform — a modular monolith with domain boundaries, organized as a Rust workspace with clearly defined module interfaces via protobuf contracts.
 
+> ⚡ **Pure Router, No Custody**: The platform is a **routing and orchestration layer only**. It never holds, touches, or controls funds. Money flows directly between the customer, the merchant's payment gateway, and the merchant's bank account. The platform routes transaction *instructions* between these parties but the actual money never passes through the platform.
+
 ---
 
 ## 1. Architecture at a Glance

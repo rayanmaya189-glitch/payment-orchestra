@@ -1,5 +1,7 @@
 # 17 — api-gateway (Cross-Cutting)
 
+> ⚡ **Pure Router**: The platform is a routing and orchestration layer only. Funds flow directly between the customer, the payment gateway, and the merchant bank account. The platform never holds, touches, or controls funds.
+
 > **Architecture Context**: This module runs within the modular monolith alongside all other modules. All inter-module communication uses in-process gRPC (synchronous) or in-process NATS channels (asynchronous). The module boundaries defined here can be extracted into separate microservices in a future architecture evolution if scaling requires it.
 Single ingress for all external traffic. **REST paths + protobuf bodies**. Internal gRPC for service-to-service.
 
@@ -594,3 +596,5 @@ async fn test_security_headers_present() {
     assert!(response.headers.contains_key("x-frame-options"));
 }
 ```
+
+

@@ -422,13 +422,13 @@ The platform can operate in one of two models:
 - **Regulatory landscape**: UAE Central Bank regulations favor the BYOK model for payment orchestration platforms. Multiple acquirer relationships per merchant are common.
 - **Merchant needs**: Enterprise merchants in the UAE already have established relationships with acquirers (Checkout.com, Adyen, Moyasar, etc.). They want a single integration point to manage multiple acquirers, not another payment gateway.
 - **Differentiation**: The market needs a routing layer, not another payment gateway. BYOK enables value-added services (smart routing, failover, reconciliation, analytics) on top of existing merchant accounts.
-- **Single-tenant, no-custody**: The platform never holds funds. It orchestrates payment flows through the merchant's own accounts. This shapes every domain decision.
+- **Single-tenant, no-custody**: The platform is a pure routing layer — it never holds, touches, or controls funds. Money flows directly between the customer, the merchant's payment gateway, and the merchant's bank account. The platform orchestrates and routes transaction *instructions* between these parties. This shapes every domain decision.
 
 ### Decision
 
 Adopt the **BYOK (Bring Your Own Key)** model:
 
-- The platform is a routing layer, NOT a payment gateway or payment facilitator
+- The platform is a pure routing layer, NOT a payment gateway, payment facilitator, or funds holder. Money flows directly between the customer, the merchant's payment gateway, and the merchant's bank account. The platform routes transaction instructions only and never touches the actual funds.
 - Merchants bring their existing gateway credentials and manage their own merchant accounts
 - The `merchant-acquirer-link-service` (SVC-21) manages the credential lifecycle
 - Credentials are encrypted at rest via envelope encryption (KMS-managed KEK + per-link DEK)

@@ -20,7 +20,7 @@ const faqs = [
   },
   {
     question: 'Do you hold my funds?',
-    answer: 'No. We never hold merchant or customer funds. All settlement occurs directly between your acquirers/banks and your bank account. We only orchestrate the payment flow.',
+    answer: 'No. We are a pure routing layer — we never hold, touch, or control funds. Money flows directly between your customer, your payment gateway (Stripe, Checkout.com, etc.), and your bank account. We only route the transaction instructions between them.',
   },
   {
     question: 'Is the platform PCI-DSS compliant?',

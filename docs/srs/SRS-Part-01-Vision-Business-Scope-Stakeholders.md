@@ -196,11 +196,46 @@ Each `BIZ-xxx` ID above will be referenced from: Part 2 (which use cases satisfy
 
 Because this single business requirement (BIZ-011) shapes almost every later architectural decision, it is elevated to its own section rather than left as a single table row.
 
-### 6.1 Definition
+### 6.1 Definition — The Platform is a Pure Router
 
-"No payment custody" means: **at no point does the platform's own bank account, e-money balance, or ledger become the legal holder of funds belonging to a merchant or an end customer.** The platform:
+"No payment custody" means: **the platform is a pure routing and orchestration layer — it never holds, touches, or controls funds belonging to a merchant or an end customer.** Money flows directly between the parties without the platform ever becoming a party to the funds transfer.
 
-- Initiates and orchestrates payment instructions (authorize, capture, refund, void, settle-triggering) via APIs to licensed acquirers/PSPs/banks.
+**How the money actually flows:**
+
+```
+                    ┌─────────────────────┐
+                    │    Payment Orchestra  │
+                    │   (Router / Router)   │
+                    │   Routes transaction  │
+                    │   instructions ONLY   │
+                    └──────┬──────────────┘
+                           │
+          ┌────────────────┼────────────────┐
+          │                │                │
+          ▼                ▼                ▼
+   ┌────────────┐   ┌────────────┐   ┌────────────┐
+   │  Stripe    │   │Checkout.com│   │  Network   │
+   │(Acquirer A)│   │(Acquirer B)│   │  Intl (C)  │
+   └──────┬─────┘   └──────┬─────┘   └──────┬─────┘
+          │                │                │
+          └────────────────┼────────────────┘
+                           │
+          ╔════════════════╧══════════════════╗
+          ║     💰 FUNDS FLOW DIRECTLY         ║
+          ║                                     ║
+          ║  Customer pays → Payment Gateway   ║
+          ║  Payment Gateway settles → Merchant║
+          ║  Bank Account                      ║
+          ║                                     ║
+          ║  The platform NEVER touches,        ║
+          ║  holds, or controls the money.      ║
+          ║  It only routes the instructions.   ║
+          ╚═════════════════════════════════════╝
+```
+
+The platform:
+
+- Initiates and orchestrates payment *instructions* (authorize, capture, refund, void) via APIs to licensed acquirers/PSPs/banks — but the actual money never passes through the platform.
 - Records what happened (a ledger of *record of orchestration and reconciliation*, not a ledger of *fund ownership*).
 - Never nets, pools, or commingles merchant funds in an account it controls.
 

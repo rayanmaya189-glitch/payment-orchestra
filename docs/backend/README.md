@@ -2,7 +2,11 @@
 
 ## Overview
 
-This directory contains implementation-ready DDD + TDD specifications for all microservices plus cross-cutting infrastructure and gRPC contracts of the AI-Native Payment Orchestration Platform. Each file provides:
+This directory contains implementation-ready DDD + TDD specifications for all microservices plus cross-cutting infrastructure and gRPC contracts of the AI-Native Payment Orchestration Platform.
+
+> ⚡ **Pure Router — Never Holds Funds**: This platform is a **routing and orchestration layer only**. It routes payment *instructions* between merchants, their payment gateways, and their customers — but the actual money **never passes through the platform**. Funds flow directly between the customer, the merchant's payment gateway, and the merchant's bank account. The platform never holds, touches, or controls funds at any point. See [Business Model — No Custody, BYOK](../README.md#5-business-model--no-custody-byok) for details.
+
+Each file provides:
 
 - **Domain Model**: Aggregates, entities, value objects, invariants
 - **Commands**: Every mutating operation with preconditions and postconditions

@@ -1,5 +1,7 @@
 # 04 — connector-gateway (BC-04 Gateway Connector Framework)
 
+> ⚡ **Pure Router**: The platform is a routing and orchestration layer only. Funds flow directly between the customer, the payment gateway, and the merchant bank account. The platform never holds, touches, or controls funds.
+
 n> **Architecture Context**: This module runs within the modular monolith alongside all other modules. All inter-module communication uses in-process gRPC (synchronous) or in-process NATS channels (asynchronous). The module boundaries defined here can be extracted into separate microservices in a future architecture evolution if scaling requires it.
 Anti-Corruption Layer. Translates N acquirer APIs into one normalized internal protocol.
 
@@ -1317,3 +1319,5 @@ async fn test_webhook_signature_tampered_rejected() {
     assert!(connector.verify_webhook_signature(&headers, body).is_err());
 }
 ```
+
+

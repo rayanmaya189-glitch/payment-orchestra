@@ -1,5 +1,7 @@
 # 16 — Saga Coordinator (BC-17)
 
+> ⚡ **Pure Router**: The platform is a routing and orchestration layer only. Funds flow directly between the customer, the payment gateway, and the merchant bank account. The platform never holds, touches, or controls funds.
+
 n> **Architecture Context**: This module runs within the modular monolith alongside all other modules. All inter-module communication uses in-process gRPC (synchronous) or in-process NATS channels (asynchronous). The module boundaries defined here can be extracted into separate microservices in a future architecture evolution if scaling requires it.
 Cross-cutting infrastructure. Durable state machine for multi-step, cross-aggregate workflows.
 
@@ -112,3 +114,5 @@ async fn test_saga_timeout_triggers_compensation() {
     // Step exceeds timeout → saga transitions to compensating
 }
 ```
+
+

@@ -1,5 +1,7 @@
 # 20 — gRPC Proto Definitions
 
+> ⚡ **Pure Router**: The platform is a routing and orchestration layer only. Funds flow directly between the customer, the payment gateway, and the merchant bank account. The platform never holds, touches, or controls funds.
+
 All service gRPC contracts. Generated from `.proto` files. Each service owns its own proto package.
 
 ---
@@ -653,3 +655,5 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 ```
+
+

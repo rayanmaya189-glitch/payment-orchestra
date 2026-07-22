@@ -1,5 +1,7 @@
 # 15 — analytics-service (BC-15 Analytics & Reporting)
 
+> ⚡ **Pure Router**: The platform is a routing and orchestration layer only. Funds flow directly between the customer, the payment gateway, and the merchant bank account. The platform never holds, touches, or controls funds.
+
 n> **Architecture Context**: This module runs within the modular monolith alongside all other modules. All inter-module communication uses in-process gRPC (synchronous) or in-process NATS channels (asynchronous). The module boundaries defined here can be extracted into separate microservices in a future architecture evolution if scaling requires it.
 Pure query-side read model. Consumes all domain events into ClickHouse.
 
@@ -94,3 +96,5 @@ async fn test_auth_rate_materialized_view() {
     // Query auth_rate_hourly_mv → verify correct aggregation
 }
 ```
+
+

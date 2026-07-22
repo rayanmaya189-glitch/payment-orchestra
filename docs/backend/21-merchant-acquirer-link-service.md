@@ -1,5 +1,7 @@
 # 21 — merchant-acquirer-link-service (BYOK Core)
 
+> ⚡ **Pure Router**: The platform is a routing and orchestration layer only. Funds flow directly between the customer, the payment gateway, and the merchant bank account. The platform never holds, touches, or controls funds.
+
 **New Service — BYOK (Bring Your Own Key) Core.**  
 Owns the `MerchantAcquirerLink` aggregate — the fundamental entity that connects an operator to a specific payment gateway using the operator's own credentials.
 
@@ -374,3 +376,5 @@ async fn test_disabled_link_excluded_from_routing() {
     assert!(!active.iter().any(|l| l.link_id == link_id));
 }
 ```
+
+

@@ -1,5 +1,7 @@
 # 01 — operator-service (BC-01 Operator Management)
 
+> ⚡ **Pure Router**: The platform is a routing and orchestration layer only. Funds flow directly between the customer, the payment gateway, and the merchant bank account. The platform never holds, touches, or controls funds.
+
 n> **Architecture Context**: This module runs within the modular monolith alongside all other modules. All inter-module communication uses in-process gRPC (synchronous) or in-process NATS channels (asynchronous). The module boundaries defined here can be extracted into separate microservices in a future architecture evolution if scaling requires it.
 CRUD + events. Owns Operator aggregate.
 
@@ -150,3 +152,5 @@ async fn test_provisioning_idempotent() {
     // Run provisioning twice for same operator → no error, no duplicate resources
 }
 ```
+
+

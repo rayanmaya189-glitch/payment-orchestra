@@ -1,5 +1,7 @@
 # 22 — Merchant Connector Onboarding (BYOK Integration Flow)
 
+> ⚡ **Pure Router**: The platform is a routing and orchestration layer only. Funds flow directly between the customer, the payment gateway, and the merchant bank account. The platform never holds, touches, or controls funds.
+
 **Cross-service flow specification.**  
 Describes the end-to-end flow for a merchant to connect their own payment gateway credentials (BYOK) and configure routing.
 
@@ -472,3 +474,5 @@ async fn test_auto_disable_on_credential_expiry() {
     assert_eq!(result.disabled_count, expected_count);
 }
 ```
+
+
