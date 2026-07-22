@@ -1,1 +1,115 @@
-//! Auto-generated module — fill in implementation.
+//! API Gateway repository
+
+use async_trait::async_trait;
+use std::collections::HashMap;
+use std::sync::Arc;
+use tokio::sync::RwLock;
+use uuid::Uuid;
+
+use crate::domain::*;
+
+#[async_trait]
+pub trait GatewayRepository: Send + Sync {
+    async fn get_route(&self, method: &str, path: &str) -> Result<Option<RouteDefinition>, GatewayError>;
+    async fn list_routes(&self) -> Result<Vec<RouteDefinition>, GatewayError>;
+    async fn check_rate_limit(&self, key: &str, config: &RateLimitConfig) -> Result<bool, GatewayError>;
+    async fn validate_api_key(&self, api_key: &str) -> Result<AuthResult, GatewayError>;
+    async fn log_request(&self, request: &ProcessedRequest) -> Result<(), GatewayError>;
+    async fn get_request_log(&self, request_id: Uuid) -> Result<Option<ProcessedRequest>, GatewayError>;
+}
+
+#[derive(Clone)]
+pub struct InMemoryGatewayRepository {
+    routes: Arc<Vec<RouteDefinition>>,
+    rate_limit_counters: Arc<RwLock<HashMap<String, (u32, std::time::Instant)>>>,
+    api_keys: Arc<RwLock<HashMap<String, Uuid>>>,
+    request_log: Arc<RwLock<HashMap<Uuid, ProcessedRequest>>>,
+}
+
+impl InMemoryGatewayRepository {
+    pub fn new() -> Self {
+        let mut keys = HashMap::new();
+        keys.insert("sk_live_test_key_12345".into(), Uuid::now_v7());
+        keys.insert("sk_test_test_key_67890".into(), Uuid::now_v7());
+        Self {
+            routes: Arc::new(default_routes()),
+            rate_limit_counters: Arc::new(RwLock::new(HashMap::new())),
+            api_keys: Arc::new(RwLock::new(keys)),
+            request_log: Arc::new(RwLock::new(HashMap::new())),
+        }
+    }
+}
+
+#[async_trait]
+impl GatewayRepository for InMemoryGatewayRepository {
+    async fn get_route(&self, method: &str, path: &str) -> Result<Option<RouteDefinition>, GatewayError> {
+        // Simple pattern matching: split by segments, match wildcards (*)
+        Ok(self.routes.iter().find(|r| {
+            if r.http_method != method {
+                return false;
+            }
+            let route_segments: Vec<&str> = r.url_pattern.split('/').collect();
+            let path_segments: Vec<&str> = path.split('/').collect();
+            if route_segments.len() != path_segments.len() {
+                return false;
+            }
+            route_segments.iter().zip(path_segments.iter()).all(|(r, p)| {
+                *r == *p || *r == "*"
+            })
+        }).cloned())
+    }
+
+    async fn list_routes(&self) -> Result<Vec<RouteDefinition>, GatewayError> {
+        Ok(self.routes.to_vec())
+    }
+
+    async fn check_rate_limit(&self, key: &str, config: &RateLimitConfig) -> Result<bool, GatewayError> {
+        let mut counters = self.rate_limit_counters.write().await;
+        let now = std::time::Instant::now();
+
+        let entry = counters.entry(key.into()).or_insert((0, now));
+        let elapsed = now.duration_since(entry.1);
+
+        // Reset if window has passed
+        if elapsed.as_secs() >= config.window_seconds as u64 {
+            *entry = (1, now);
+            return Ok(true);
+        }
+
+        if entry.0 >= config.max_requests {
+            return Ok(false); // rate limited
+        }
+
+        entry.0 += 1;
+        Ok(true)
+    }
+
+    async fn validate_api_key(&self, api_key: &str) -> Result<AuthResult, GatewayError> {
+        let keys = self.api_keys.read().await;
+        match keys.get(api_key) {
+            Some(actor_id) => Ok(AuthResult {
+                authenticated: true,
+                actor_id: Some(*actor_id),
+                actor_type: Some(ActorType::ApiKey),
+                scopes: vec!["full_access".into()],
+                error: None,
+            }),
+            None => Ok(AuthResult {
+                authenticated: false,
+                actor_id: None,
+                actor_type: None,
+                scopes: vec![],
+                error: Some("Invalid API key".into()),
+            }),
+        }
+    }
+
+    async fn log_request(&self, request: &ProcessedRequest) -> Result<(), GatewayError> {
+        self.request_log.write().await.insert(request.request_id, request.clone());
+        Ok(())
+    }
+
+    async fn get_request_log(&self, request_id: Uuid) -> Result<Option<ProcessedRequest>, GatewayError> {
+        Ok(self.request_log.read().await.get(&request_id).cloned())
+    }
+}
