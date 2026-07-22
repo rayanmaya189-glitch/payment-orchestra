@@ -1,6 +1,3 @@
-//! Middleware crates for the API Gateway and service pipeline.
-//! Includes auth, ABAC, rate limiting, CORS, request ID, metrics, etc.
-
 pub mod auth;
 pub mod abac;
 pub mod rate_limit;

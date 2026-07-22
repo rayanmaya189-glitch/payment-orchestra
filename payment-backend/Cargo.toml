@@ -70,6 +70,13 @@ jsonwebtoken = "9"
 argon2 = "0.5"
 # Encryption
 aes-gcm = "0.10"
+# HMAC for token signing
+hmac = "0.12"
+sha2 = "0.10"
+# Hex encoding
+hex = "0.4"
+# Crypto primitives
+ring = "0.17"
 # Serialization
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -81,8 +88,10 @@ uuid = { version = "1", features = ["v7", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
 # Observability
 tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["json"] }
+tracing-subscriber = { version = "0.3", features = ["json", "env-filter"] }
 metrics = "0.24"
+# Async trait
+async-trait = "0.1"
 # Proptest (property-based testing)
 proptest = "1"
 # Test containers

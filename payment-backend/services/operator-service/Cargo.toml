@@ -19,11 +19,14 @@ futures.workspace = true
 platform-proto.workspace = true
 platform-logging.workspace = true
 platform-error.workspace = true
+async-trait.workspace = true
 platform-config.workspace = true
 platform-messaging.workspace = true
 platform-db.workspace = true
 platform-health.workspace = true
 platform-metrics.workspace = true
+ring = "0.17"
+hex = "0.4"
 
 [dev-dependencies]
 proptest.workspace = true

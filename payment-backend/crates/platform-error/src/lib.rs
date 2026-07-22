@@ -5,3 +5,6 @@
 pub mod error_code;
 pub mod error_types;
 pub mod grpc_conversion;
+
+pub use error_code::InternalErrorCode;
+pub use error_types::{PlatformError, ValidationError, ConflictError, Result};

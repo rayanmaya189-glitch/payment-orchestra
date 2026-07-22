@@ -3,4 +3,4 @@
 // Auto-generated scaffold — fill in service and message definitions per SRS Part 10
 
 syntax = "proto3";
-package payment-link.v1;
+package payment_link.v1;
