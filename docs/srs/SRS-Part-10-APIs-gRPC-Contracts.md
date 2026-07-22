@@ -19,7 +19,7 @@
 
 ---
 
-## 1. API Design Conventions — Dual API (REST JSON + Protobuf)
+## 1. API Design Conventions — REST Paths + Protobuf Bodies
 
 ### 1.1 Core Principle
 
@@ -310,7 +310,7 @@ pub struct WebhookDeliveryLogModel {
 }
 ```
 
-- **WH-TRACK-002**: Merchants can query their webhook delivery history via `GET /v1/webhook-deliveries` with filters for event type, status, and date range. The response includes delivery status, attempt count, and failure reasons.
+- **WH-TRACK-002**: Merchants can query their webhook delivery history via `POST /v1/webhook-deliveries/search` with filters for event type, status, and date range. The response includes delivery status, attempt count, and failure reasons.
 - **WH-TRACK-003**: Failed deliveries in the dead-letter state can be manually replayed via `POST /v1/webhook-deliveries/{delivery_id}/replay` (Admin role, Maker/Checker pattern). Replay is idempotent — replaying an already-successful delivery is a no-op.
 - **WH-TRACK-004**: Webhook delivery metrics are exported: delivery success rate, average delivery latency, retry count distribution, dead-letter depth. These metrics feed into the operator dashboard (UC-070).
 

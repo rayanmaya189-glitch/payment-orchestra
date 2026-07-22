@@ -244,7 +244,7 @@ message EventEnvelope {
 }
 ```
 
-## 8. gRPC Shared Types — Dual API (REST JSON + Protobuf)
+## 8. gRPC Shared Types — REST Paths + Protobuf Bodies
 
 All external APIs use RESTful paths with protobuf-encoded request/response bodies (Content-Type: application/protobuf). HTTP methods: POST, PATCH, DELETE. Internal service-to-service communication uses native gRPC with the same protobuf schemas.
 

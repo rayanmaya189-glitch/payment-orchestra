@@ -455,7 +455,7 @@ impl ApiKeyLifecycleManager {
 pub fn cors_middleware(allowed_origins: &[String]) -> CorsLayer {
     CorsLayer::new()
         .allow_origin(AllowedOrigins::list(allowed_origins)) // exact match only
-        .allow_methods([POST, OPTIONS])        // Only POST — no GET/PUT/PATCH/DELETE (strict protobuf)
+        .allow_methods([POST, PATCH, DELETE, OPTIONS])        // Only POST — no GET/PUT/PATCH/DELETE (strict protobuf)
         .allow_headers([CONTENT_TYPE, AUTHORIZATION, X_API_KEY, X_IDEMPOTENCY_KEY, X_REQUEST_ID, X_CSRF_TOKEN])
         .allow_credentials(true)
         .max_age(Duration::from_secs(3600)) // 1 hour (not 24h for auth endpoints)
@@ -921,21 +921,21 @@ pub fn verify_webhook_signature(secret: &[u8], payload: &[u8], signature: &str) 
 
 ## 30. Complete Rate Limiting Table (Part 10 §11)
 
-All endpoints support REST JSON (primary) and Protobuf-over-HTTP (secondary).
+All endpoints use RESTful URL paths with protobuf-encoded bodies.
 
 | Service.Method | Limit | Window | Per |
 |---|---|---|---|
-| `OrchestrationService/CreatePaymentIntent` | 1000 | 60s | ApiKey |
+| `POST /v1/payment-intents` | 1000 | 60s | ApiKey |
 | `OrchestrationService/AuthorizePaymentIntent` | 1000 | 60s | ApiKey |
-| `OrchestrationService/CapturePaymentIntent` | 500 | 60s | ApiKey |
+| `POST /v1/payment-intents/:id/capture` | 500 | 60s | ApiKey |
 | `OrchestrationService/VoidPaymentIntent` | 500 | 60s | ApiKey |
-| `OrchestrationService/RefundPaymentIntent` | 200 | 60s | ApiKey |
+| `POST /v1/payment-intents/:id/refund` | 200 | 60s | ApiKey |
 | `OrchestrationService/GetPaymentIntent` | 500 | 60s | ApiKey |
-| `OrchestrationService/ListPaymentIntents` | 100 | 60s | ApiKey |
-| `InvoiceService/CreateInvoice` | 50 | 60s | ApiKey |
-| `InvoiceService/ListInvoices` | 100 | 60s | ApiKey |
+| `POST /v1/payment-intents/search` | 100 | 60s | ApiKey |
+| `POST /v1/invoices` | 50 | 60s | ApiKey |
+| `POST /v1/invoices/search` | 100 | 60s | ApiKey |
 | `SubscriptionService/CreateSubscription` | 50 | 60s | ApiKey |
-| `SubscriptionService/ListSubscriptions` | 100 | 60s | ApiKey |
+| `POST /v1/subscriptions/search` | 100 | 60s | ApiKey |
 | `RoutingPolicyService/ActivateRoutingPolicy` | 10 | 60s | ApiKey |
 | `IAMService/Authenticate` | 10 | 60s | IP |
 | `AIAssistantService/AskQuestion` | 30 | 60s | ApiKey |

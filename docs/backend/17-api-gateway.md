@@ -1,6 +1,6 @@
 # 17 — api-gateway (Cross-Cutting)
 
-n> **Architecture Context**: This module runs within the modular monolith alongside all other modules. All inter-module communication uses in-process gRPC (synchronous) or in-process NATS channels (asynchronous). The module boundaries defined here can be extracted into separate microservices in a future architecture evolution if scaling requires it.
+> **Architecture Context**: This module runs within the modular monolith alongside all other modules. All inter-module communication uses in-process gRPC (synchronous) or in-process NATS channels (asynchronous). The module boundaries defined here can be extracted into separate microservices in a future architecture evolution if scaling requires it.
 Single ingress for all external traffic. **REST paths + protobuf bodies**. Internal gRPC for service-to-service.
 
 ---
@@ -22,7 +22,7 @@ The platform exposes a unified external API with RESTful URL patterns and protob
 - **Type safety at wire level**: Protobuf binary encoding enforces schema validation, field types, and required fields at the protocol level — no runtime JSON parsing errors.
 - **SDK code generation**: Protobuf definitions generate typed SDKs for all major languages automatically.
 - **Performance**: Binary protobuf is smaller and faster to serialize/deserialize than JSON.
-- **Single true schema**: The `.proto` file is the single source of truth for both external API and internal gRPC — no duplication between a REST JSON spec and protobuf definitions.
+- **Single true schema**: The `.proto` file is the single source of truth for both external API and internal gRPC — no duplication between multiple API specifications.
 
 ---
 

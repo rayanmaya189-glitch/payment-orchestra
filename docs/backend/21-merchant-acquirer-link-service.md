@@ -303,9 +303,9 @@ This service works with `connector-gateway` for the onboarding flow:
 ├─────────────────────────────────────────────────────────────┤
 │                                                             │
 │  1. Merchant navigates to "Connect Gateway" in dashboard    │
-│  2. Frontend calls GET /v1/connectors → list available      │
+│  2. Frontend calls POST /v1/connectors (protobuf body, filters optional) → list available      │
 │  3. Merchant selects "Checkout.com"                         │
-│  4. Frontend calls GET /v1/connectors/checkout_com/schema   │
+│  4. Frontend calls POST /v1/connectors/checkout_com/schema (empty protobuf body)   │
 │     → returns OnboardingSchema (fields, validation, help)   │
 │  5. Merchant fills in credentials in dynamic form           │
 │  6. Frontend calls POST /v1/merchant-links                  │

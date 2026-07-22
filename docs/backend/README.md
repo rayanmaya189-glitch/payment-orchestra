@@ -15,7 +15,7 @@ This directory contains implementation-ready DDD + TDD specifications for all mi
 ## Architecture
 
 ```
-BYOK-First, Protobuf-Native, Dual API (REST JSON + Protobuf)
+BYOK-First, Protobuf-Native, REST Paths + Protobuf Bodies
 Rust + SeaORM + In-process NATS (async channels) + PostgreSQL + Redis + Ollama
 ```
 
@@ -40,7 +40,7 @@ Rust + SeaORM + In-process NATS (async channels) + PostgreSQL + Redis + Ollama
 | `14-notification-service.md` | `notification-service` | BC-14 | Email/SMS + **webhook delivery** |
 | `15-analytics-service.md` | `analytics-service` | BC-15 | PostgreSQL analytics (ClickHouse H2) |
 | `16-saga-coordinator.md` | Saga Coordinator | BC-17 | Cross-cutting sagas (library pattern) |
-| `17-api-gateway.md` | `api-gateway` | Cross-cutting | REST JSON + Protobuf dual ingress |
+| `17-api-gateway.md` | `api-gateway` | Cross-cutting | REST paths + protobuf bodies |
 | `18-ai-gateway.md` | `ai-gateway` | Cross-cutting | AI guardrails (middleware in api-gateway) |
 | `19-infrastructure-cross-cutting.md` | Cross-cutting | Infrastructure | Outbox, health, shutdown, leader election, feature flags, logging, pools, degraded modes, secrets, encryption, audit, SSRF |
 | `20-grpc-proto-definitions.md` | Cross-cutting | gRPC Contracts | All service proto definitions, shared types, compilation config |
@@ -85,7 +85,7 @@ Every service file follows this structure:
 17. `13-document-service.md`
 18. `15-analytics-service.md` (PostgreSQL initially, ClickHouse roadmap)
 19. `16-saga-coordinator.md` (library pattern, not separate service)
-20. `17-api-gateway.md` (REST JSON + Protobuf dual API)
+20. `17-api-gateway.md` (REST paths + protobuf bodies)
 21. `18-ai-gateway.md` (middleware within api-gateway)
 22. `19-infrastructure-cross-cutting.md` (simplified — no hash-linked audit, no separate MinIO requirement)
 23. `20-grpc-proto-definitions.md` (all new protos)

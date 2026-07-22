@@ -6,12 +6,12 @@
 
 | Card | Data Source | Refresh |
 |------|-------------|---------|
-| Total Transactions (today) | `GET /v1/analytics/authorization-rates` | 30s |
-| Authorization Rate | `GET /v1/analytics/authorization-rates` | 30s |
-| Revenue Recovered (failover) | `GET /v1/analytics/revenue-recovery` | 60s |
-| Pending Settlements | `GET /v1/analytics/settlement-status` | 60s |
-| Open Exceptions | `GET /v1/reconciliation/exceptions?status=unmatched` | 30s |
-| Active Subscriptions | `GET /v1/subscriptions?status=active` | 5min |
+| Total Transactions (today) | `POST /v1/analytics/authorization-rates/search` | 30s |
+| Authorization Rate | `POST /v1/analytics/authorization-rates/search` | 30s |
+| Revenue Recovered (failover) | `POST /v1/analytics/revenue-recovery/search` | 60s |
+| Pending Settlements | `POST /v1/analytics/settlement-status/search` | 60s |
+| Open Exceptions | `POST /v1/reconciliation/exceptions/search` | 30s |
+| Active Subscriptions | `POST /v1/subscriptions/search` | 5min |
 
 ### Components
 

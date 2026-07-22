@@ -46,10 +46,10 @@ GROUP BY acquirer_id, card_scheme, hour;
 
 ## 3. Read Endpoints
 
-- `GET /v1/analytics/authorization-rates` — hourly rates per acquirer/scheme
-- `GET /v1/analytics/decline-reasons` — decline reason breakdown
-- `GET /v1/analytics/settlement-status` — matched/unmatched counts
-- `GET /v1/analytics/fee-analysis` — fees per acquirer (from ledger_entry)
+- `POST /v1/analytics/authorization-rates/search` — hourly rates per acquirer/scheme
+- `POST /v1/analytics/decline-reasons/search` — decline reason breakdown
+- `POST /v1/analytics/settlement-status/search` — matched/unmatched counts
+- `POST /v1/analytics/fee-analysis/search` — fees per acquirer (from ledger_entry)
 
 ---
 

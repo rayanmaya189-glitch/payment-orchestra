@@ -915,7 +915,7 @@ pub struct AuditEntry {
 
 ### 17.25 Data Portability Export
 
-**UC-080**: Data Portability Export — `GET /v1/operator/data-export` produces a structured archive (JSONL for events, CSV for settlements, original files for MinIO objects) with a 7-day download window. Satisfies potential PDPL Article 17 portability requirements. Include in M7 deliverables.
+**UC-080**: Data Portability Export — `POST /v1/operator/data-export` produces a structured archive (JSONL for events, CSV for settlements, original files for MinIO objects) with a 7-day download window. Satisfies potential PDPL Article 17 portability requirements. Include in M7 deliverables.
 
 ### 17.26 Break-Glass Support Access
 

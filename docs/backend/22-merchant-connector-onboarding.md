@@ -11,7 +11,7 @@ The BYOK onboarding flow spans four services:
 
 | Service | Role |
 |---|---|
-| `api-gateway` | Merchant-facing REST JSON endpoints for connector management |
+| `api-gateway` | Merchant-facing REST+protobuf endpoints for connector management |
 | `connector-gateway` | Provides `OnboardingSchema` per connector; validates credentials |
 | `merchant-acquirer-link-service` | Owns `MerchantAcquirerLink` lifecycle; encrypts credentials |
 | `orchestration-service` | Consumes link state changes for routing |

@@ -6,11 +6,11 @@
 
 | Card | Data Source |
 |------|-------------|
-| Total Matched | `GET /v1/analytics/settlement-status?status=matched` |
-| Total Unmatched | `GET /v1/analytics/settlement-status?status=unmatched` |
+| Total Matched | `POST /v1/analytics/settlement-status/search` |
+| Total Unmatched | `POST /v1/analytics/settlement-status/search` |
 | Total Amount Matched | Calculated from matched records |
 | Match Rate | Calculated percentage |
-| Exceptions Pending Review | `GET /v1/reconciliation/exceptions?status=unmatched` |
+| Exceptions Pending Review | `POST /v1/reconciliation/exceptions/search` |
 
 ### Charts
 

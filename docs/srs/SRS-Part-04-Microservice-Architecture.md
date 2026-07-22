@@ -70,13 +70,13 @@
 
 - No business logic, no domain validation beyond authentication/authorization gating — keeping its full responsibility set prevents it from becoming a second, undocumented home for domain rules that should live in Part 3's aggregates.
 
-### 2.3 Revised Responsibilities (with Dual API Support)
+### 2.3 Gateway Responsibilities (Revised)
 
-- **GW-001**: Single ingress point for all external REST JSON + Protobov traffic
+- **GW-001**: Single ingress point for all external REST+protobuf traffic
 - **GW-002**: TLS termination, JWT/API-key validation, actor context extraction
 - **GW-003**: Per-endpoint rate limiting (Redis sliding window)
 - **GW-004**: Content-type negotiation (JSON vs Protobuf) and route to correct handler
-- **GW-005**: REST JSON → internal domain logic translation; Protobuf → internal gRPC translation
+- **GW-005**: Protobuf → internal gRPC translation (external bodies are always protobuf)
 - **GW-006**: Input validation at gateway level (JSON schema / protobuf decode, format enforcement)
 - **GW-007**: CORS enforcement, security headers, request correlation
 
@@ -119,7 +119,7 @@ The AI Gateway exists because AI-Assistant traffic has distinct requirements tha
 
 | Interaction | Style | Protocol | Rationale |
 |---|---|---|---|
-| External API → API Gateway | **RESTful JSON (primary)** or **Protobuf-over-HTTP (secondary)** | HTTP/1.1 or HTTP/2 + JSON or Protobuf binary | Dual API: REST JSON for merchant adoption (Stripe-like), Protobuf for performance-sensitive use cases |
+| External API → API Gateway | **RESTful JSON (primary)** or **Protobuf-over-HTTP (secondary)** | HTTP/1.1 or HTTP/2 + JSON or Protobuf binary | Single API: RESTful URL paths with protobuf-encoded request/response bodies. No JSON, no form data. |
 | API Gateway → domain service (synchronous) | **gRPC** | HTTP/2 + Protobuf | Low latency, strongly-typed contracts (Part 10) |
 | `orchestration-service` → `connector-gateway` (authorize/capture/refund) | **gRPC** (synchronous, in the checkout hot path) | HTTP/2 + Protobuf | Must return a result within the latency budget (BR-020-2) |
 | `orchestration-service` → `risk-service` (pre-authorization risk score) | **gRPC** (synchronous, in the checkout hot path) | HTTP/2 + Protobuf | Risk score needed before routing decision; must be fast |
@@ -262,7 +262,7 @@ For initial release, scheduling is implemented as in-process cron-style schedule
 ### 6.2 Graceful Shutdown
 
 - **SHUTDOWN-001**: Every service implements the following graceful shutdown sequence on SIGTERM:
-  1. **Stop accepting new requests** (deregister from service mesh/load balancer)
+  1. **Stop accepting new requests** (deregister from load balancer)
   2. **Complete in-flight requests** (wait up to a configurable drain timeout, default: 30 seconds)
   3. **Flush event store writes** (ensure all pending outbox entries are committed)
   4. **Release leader election locks** (so another replica can immediately acquire leadership)
@@ -379,7 +379,7 @@ pub struct DlqEventModel {
 
 - The entire platform is deployed as a single deployable unit (modular monolith). All modules run within the same process, communicating via in-process gRPC (synchronous) or in-process NATS channels (asynchronous). Horizontal scaling is achieved by running multiple replicas of the unit behind a load balancer. Critical-path modules (orchestration, connector-gateway) share process resources and scale together.
 - `ai-assistant-service` and its Ollama inference backend are deployed on GPU-backed infrastructure, with the `ai-gateway` mediating so that a spike in AI usage cannot starve GPU resources needed for anything else (there is nothing else GPU-bound at launch, but this isolation is kept as a forward-looking discipline).
-- Internal module communication uses in-process calls within a single process. No service mesh is needed. mTLS is used only for external API connections and database connections — this is what makes the "trust only the propagated gateway context" claim enforceable rather than aspirational: services physically cannot be reached except through authenticated mesh identities.
+- Internal module communication uses in-process calls within a single process. No service mesh is needed. mTLS is used only for external API connections and database connections — this is what makes the "trust only the propagated gateway context" claim enforceable rather than aspirational: services physically cannot be reached except through authenticated service identities.
 
 ---
 
