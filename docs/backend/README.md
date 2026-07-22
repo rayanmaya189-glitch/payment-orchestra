@@ -38,7 +38,7 @@ Rust + SeaORM + In-process NATS (async channels) + PostgreSQL + Redis + Ollama
 | `12-ai-assistant-service.md` | `ai-assistant-service` | BC-12 | RAG pipeline (GPU-backed) |
 | `13-document-service.md` | `document-service` | BC-13 | OCR + document storage |
 | `14-notification-service.md` | `notification-service` | BC-14 | Email/SMS + **webhook delivery** |
-| `15-analytics-service.md` | `analytics-service` | BC-15 | PostgreSQL analytics (ClickHouse H2) |
+| `15-analytics-service.md` | `analytics-service` | BC-15 | PostgreSQL analytics (ClickHouse Phase 2) |
 | `16-saga-coordinator.md` | Saga Coordinator | BC-17 | Cross-cutting sagas (library pattern) |
 | `17-api-gateway.md` | `api-gateway` | Cross-cutting | REST paths + protobuf bodies |
 | `18-ai-gateway.md` | `ai-gateway` | Cross-cutting | AI guardrails (middleware in api-gateway) |

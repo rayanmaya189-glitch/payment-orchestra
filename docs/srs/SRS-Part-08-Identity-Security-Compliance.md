@@ -932,7 +932,7 @@ pub struct AuditEntry {
 - **OQ-018**: Confirm exact financial-record retention period (§5.2 AUD-001) with UAE legal counsel.
 - **OQ-019**: Confirm whether PDPL-style data-subject erasure requests are applicable to platform-processed payment/financial records.
 - **OQ-044**: Finalize KEK rotation schedule (§12 SEC-ROT-001, default 90 days) against operational risk assessment — more frequent rotation increases security but adds KMS load.
-- **OQ-045**: Confirm whether API key scoping to acquirer links (§11 AUTHZ-002) is required for initial launch or deferred to H2 — depends on pilot merchant integration complexity.
+- **OQ-045**: Confirm whether API key scoping to acquirer links (§11 AUTHZ-002) is required for initial launch or deferred to Phase 2 — depends on pilot merchant integration complexity.
 
 ---
 

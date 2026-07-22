@@ -300,7 +300,7 @@ FROM payment_events
 GROUP BY acquirer_id, card_scheme, hour;
 ```
 
-This same `auth_rate_hourly_mv`-style rollup is exactly the "summary document" source referenced in Part 6 §3.1 ING-001 for the AI Assistant's ingestion path, and (H3) the baseline data source for GOAL-010's anomaly detection (Part 6 §7).
+This same `auth_rate_hourly_mv`-style rollup is exactly the "summary document" source referenced in Part 6 §3.1 ING-001 for the AI Assistant's ingestion path, and (Phase 3) the baseline data source for GOAL-010's anomaly detection (Part 6 §7).
 
 ---
 

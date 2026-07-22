@@ -103,7 +103,7 @@ At `AuthorizePaymentIntent` time, the engine gathers:
 1. The tenant's currently `Active` `RoutingPolicy` version (Part 3 INV-05 — always the version active *at this moment*, and that exact version ID is recorded on the `PaymentAuthorizationAttempted` event for later audit).
 2. The set of `Active` `MerchantAcquirerLink`s.
 3. Transaction attributes relevant to routing conditions: card scheme (Visa/Mastercard/Amex/mada, as reported at tokenization/entry time), currency, amount, and (if `risk-service`, SVC-11, is enabled for the tenant per OQ-009) a risk score.
-4. (H3 only, GOAL-009) Historical authorization-rate statistics per acquirer/card-scheme/currency combination, sourced from `analytics-service` read models, for success-rate-weighted dynamic routing.
+4. (Phase 3 only, GOAL-009) Historical authorization-rate statistics per acquirer/card-scheme/currency combination, sourced from `analytics-service` read models, for success-rate-weighted dynamic routing.
 
 ### 3.2 Algorithm (Phase 1 — Static/Rule-Based)
 
@@ -122,9 +122,9 @@ function select_route(intent, policy, links, attempted_hops):
     return candidates.first()
 ```
 
-### 3.3 Algorithm (H3 — Success-Rate-Weighted Dynamic Routing, GOAL-009)
+### 3.3 Algorithm (Phase 3 — Success-Rate-Weighted Dynamic Routing, GOAL-009)
 
-Extends 3.2 by re-weighting `candidates` using a rolling window (e.g., trailing 1 hour, tenant-configurable) of authorization-rate statistics per acquirer/scheme/currency, subject to a **minimum-sample-size floor** (to avoid a single recent decline skewing routing for a low-volume combination) and a **maximum deviation cap** from the tenant's explicitly configured static priority (to prevent the dynamic layer from silently overriding a tenant's deliberate business preference, e.g., a negotiated-cost priority — dynamic routing optimizes *within* tenant-set boundaries, not around them). Full statistical design (window size defaults, cap defaults, confidence thresholds) is deferred to an H3 design spike, explicitly flagged as **not required for initial launch acceptance** (Part 11).
+Extends 3.2 by re-weighting `candidates` using a rolling window (e.g., trailing 1 hour, tenant-configurable) of authorization-rate statistics per acquirer/scheme/currency, subject to a **minimum-sample-size floor** (to avoid a single recent decline skewing routing for a low-volume combination) and a **maximum deviation cap** from the tenant's explicitly configured static priority (to prevent the dynamic layer from silently overriding a tenant's deliberate business preference, e.g., a negotiated-cost priority — dynamic routing optimizes *within* tenant-set boundaries, not around them). Full statistical design (window size defaults, cap defaults, confidence thresholds) is deferred to an Phase 3 design spike, explicitly flagged as **not required for initial launch acceptance** (Part 11).
 
 ### 3.4 Failover Retry Mechanics
 
@@ -237,7 +237,7 @@ When an acquirer returns a partial authorization (approved for less than the req
 | BR-020-2 (latency budget) | §3.4 RTY-002, §8 NFR-ORC-001 |
 | EX-020b (double-auth on network partition) | §4.1 acquirer-facing idempotency, §7 JOB-008 |
 | BR-022-1 / INV-03 (refund same acquirer) | §1 `RefundPaymentIntent` guard |
-| GOAL-009 (H3 smart routing) | §3.3 |
+| GOAL-009 (Phase 3 smart routing) | §3.3 |
 | Partial authorization handling | §9.1 PARTIAL-AUTH-001, PARTIAL-AUTH-002 |
 | Currency precision (multi-decimal) | §9.2 CURRENCY-001 through CURRENCY-003 |
 | Refund to disabled acquirer (edge case) | §9.3 REFUND-EDGE-001, REFUND-EDGE-002 |
@@ -268,7 +268,7 @@ pub struct FeeBreakdown {
 
 **FEE-003**: Fee data feeds into:
 - Merchant fee analytics dashboard (UC-070) — "how much did we pay in acquirer fees last month, broken down by acquirer?"
-- H3 cost-based routing (GOAL-009) — routing algorithm can weight by total cost (authorization rate × fee)
+- Phase 3 cost-based routing (GOAL-009) — routing algorithm can weight by total cost (authorization rate × fee)
 - Scheme compliance monitoring (Part 7 §9.2) — fee anomalies may indicate acquirer billing errors
 
 ### 11.2 Settlement Reconciliation Enhancements

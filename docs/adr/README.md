@@ -665,7 +665,7 @@ Options:
 
 1. **Global circuit breaker**: Single circuit breaker per connector type (e.g., one for all Checkout.com connections)
 2. **Per-merchant-acquirer-link circuit breaker**: Each merchant's connection to each acquirer has its own circuit breaker
-3. **Adaptive routing**: Dynamically adjust traffic distribution based on real-time success rates (H3 goal)
+3. **Adaptive routing**: Dynamically adjust traffic distribution based on real-time success rates (Phase 3 goal)
 
 ### Decision
 

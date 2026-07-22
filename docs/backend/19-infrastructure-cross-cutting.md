@@ -1196,9 +1196,9 @@ Steps:
 The following items from the original specification have been simplified per the comprehensive gap analysis:
 - Hash-linked audit chain: REPLACED with append-only audit tables + WAL archival
 - Concurrent request counting: REPLACED with standard Redis sliding window rate limiting
-- WebAuthn MFA as only option: REPLACED with TOTP (primary) + WebAuthn (H1 upgrade)
+- WebAuthn MFA as only option: REPLACED with TOTP (primary) + WebAuthn (Phase 1 upgrade)
 - Event Store Integrity Checker: Simplified to periodic sequence gap check
 - Separate MinIO: REPLACED with direct S3-compatible API calls
-- ClickHouse at launch: Deferred to H2, PostgreSQL analytics initially
+- ClickHouse at launch: Deferred to Phase 2, PostgreSQL analytics initially
 - Event Schema Registry as Git repo: Simplified to shared protobuf workspace crate
 See docs/analysis/001-comprehensive-gap-design-overengineering-analysis.md §4 for full rationale.

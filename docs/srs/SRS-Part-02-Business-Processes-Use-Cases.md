@@ -154,7 +154,7 @@ A new operator (merchant or platform operator) signs up, provides business and K
 - **Primary Actor**: ACT-01 (Admin) or ACT-02 (Finance Operator, if delegated permission)
 - **Preconditions**: At least one `Active` `MerchantAcquirerLink` (UC-010).
 - **Main Flow**:
-  1. Actor defines a routing policy: static priority order (e.g., Acquirer A first, Acquirer B fallback), or rule-based (e.g., "route Visa/Mastercard UAE-issued cards to Acquirer A; route Amex to Acquirer B"; H3: success-rate-weighted dynamic routing per GOAL-009).
+  1. Actor defines a routing policy: static priority order (e.g., Acquirer A first, Acquirer B fallback), or rule-based (e.g., "route Visa/Mastercard UAE-issued cards to Acquirer A; route Amex to Acquirer B"; Phase 3: success-rate-weighted dynamic routing per GOAL-009).
   2. Actor defines failover conditions: which decline codes/timeouts trigger a retry on the next acquirer in priority order, and the maximum number of retry hops per transaction (to bound latency and avoid excessive retries perceived as fraud probing).
   3. System validates the policy (e.g., no circular references, at least one terminal acquirer in every branch) and activates it.
 - **Alternate Flows**:
@@ -303,7 +303,7 @@ A new operator (merchant or platform operator) signs up, provides business and K
   3. ACT-02 reviews evidence requirements (per acquirer/scheme) and submits representment evidence (if disputing) via the platform, which forwards it to ACT-08's dispute API where supported.
   4. `ChargebackCase` resolves to `Won`, `Lost`, or `Accepted` (merchant chose not to dispute) based on ACT-08's final determination, recorded when received.
 - **Postconditions**: Chargeback outcome is reflected in reconciliation (funds impact is reported by the acquirer/scheme, not custodied by the platform — Part 1 §6) and in analytics (chargeback-rate monitoring, relevant to scheme compliance thresholds).
-- **Business Rules**: BR-060-1: Chargeback-rate analytics must be available per acquirer/card scheme because sustained high chargeback ratios can trigger scheme monitoring programs — this is a merchant risk the platform must help surface proactively (ties to GOAL-010 proactive AI operations, H3).
+- **Business Rules**: BR-060-1: Chargeback-rate analytics must be available per acquirer/card scheme because sustained high chargeback ratios can trigger scheme monitoring programs — this is a merchant risk the platform must help surface proactively (ties to GOAL-010 proactive AI operations, Phase 3).
 
 ---
 

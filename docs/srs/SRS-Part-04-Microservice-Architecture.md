@@ -39,7 +39,7 @@
 | SVC-12 | `ai-assistant-service` | BC-12 AI Payment Assistant | Rust (SeaORM) | SeaORM | PostgreSQL (pgvector for embeddings) + Postgres (conversation metadata) |
 | SVC-13 | `document-service` | BC-13 Document Management | Rust (SeaORM) | SeaORM | PostgreSQL (metadata) + S3-compatible storage |
 | SVC-14 | `notification-service` | BC-14 Notification Service | Rust (SeaORM) | SeaORM | PostgreSQL + Redis (delivery dedup) |
-| SVC-15 | `analytics-service` | BC-15 Analytics & Reporting | Rust | PostgreSQL (initially) → ClickHouse (H2) | PostgreSQL → ClickHouse |
+| SVC-15 | `analytics-service` | BC-15 Analytics & Reporting | Rust | PostgreSQL (initially) → ClickHouse (Phase 2) | PostgreSQL → ClickHouse |
 | SVC-17 | `api-gateway` | Cross-cutting (not a bounded context) | Rust (Axum) | SeaORM | Redis (rate-limit counters only) |
 | SVC-18 | `ai-gateway` | Cross-cutting (middleware within api-gateway) | Rust | — | Redis (rate limits), Postgres (guardrail audit log) |
 | SVC-19 | `notification-service` | Cross-cutting (merged with SVC-14) | Rust (SeaORM) | SeaORM | PostgreSQL (subscriptions, delivery logs) |
@@ -213,7 +213,7 @@ Each domain service publishes its own `.proto` service definition (full contract
 - Subscribes to chargeback webhooks via `connector-gateway` → NATS; exposes `SubmitRepresentment`, `GetChargebackCase`.
 
 ### 5.9 SVC-11 `risk-service`
-- Initial release: synchronous rule-based scoring call from `orchestration-service` before authorization (low-latency requirement, Redis-cached rule set). H3: asynchronous ML scoring feeding back into routing decisions (GOAL-009 adjacent) — architecture must not preclude this evolution (extensibility NFR, Part 8).
+- Initial release: synchronous rule-based scoring call from `orchestration-service` before authorization (low-latency requirement, Redis-cached rule set). Phase 3: asynchronous ML scoring feeding back into routing decisions (GOAL-009 adjacent) — architecture must not preclude this evolution (extensibility NFR, Part 8).
 
 ### 5.10 SVC-13 `document-service`
 - Owns MinIO-backed blob storage abstraction and metadata; triggers OCR pipeline (Qwen3-VL 8B, via `ai-gateway`/`ai-assistant-service`) asynchronously on upload, publishes `DocumentOcrCompleted` with extracted structured fields for the calling context (e.g., `compliance-service`) to consume.
@@ -251,7 +251,7 @@ Each domain service publishes its own `.proto` service definition (full contract
 - **JOB-009**: Data retention enforcement — scheduled archival/purge of data exceeding configured retention periods (Part 8 AUD-001, Part 1 BIZ-051).
 - **JOB-010**: Outbox relay health monitoring — checks relay lag and alerts if relay falls behind (Part 3 §9.2 OUTBOX-001).
 
-For initial release, scheduling is implemented as in-process cron-style schedulers within the owning service; if job volume/complexity grows past H1, a dedicated scheduling service is a candidate future extraction.
+For initial release, scheduling is implemented as in-process cron-style schedulers within the owning service; if job volume/complexity grows past Phase 1, a dedicated scheduling service is a candidate future extraction.
 
 ### 6.1 Leader Election
 

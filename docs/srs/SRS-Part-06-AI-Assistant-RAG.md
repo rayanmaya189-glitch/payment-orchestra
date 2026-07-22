@@ -191,9 +191,9 @@ Each question in the final list is paired with a **ground-truth answer** (valida
 
 ---
 
-## 7. Proactive Anomaly Detection (H3, GOAL-010)
+## 7. Proactive Anomaly Detection (Phase 3, GOAL-010)
 
-- **PROACT-001**: Building on the same summary-document ingestion path (§3.1 ING-001), an H3 capability continuously compares current-period summary statistics (e.g., trailing-1-hour authorization rate per acquirer/scheme) against a learned/historical baseline and generates a candidate alert narrative when a statistically meaningful deviation is detected.
+- **PROACT-001**: Building on the same summary-document ingestion path (§3.1 ING-001), an Phase 3 capability continuously compares current-period summary statistics (e.g., trailing-1-hour authorization rate per acquirer/scheme) against a learned/historical baseline and generates a candidate alert narrative when a statistically meaningful deviation is detected.
 - **PROACT-002**: Candidate alerts are still subject to the same grounding/citation guardrails (§5.2) before being surfaced to a user via `notification-service` — an anomaly alert is itself an Assistant-generated artifact and must cite the specific underlying data driving the alert, not just assert "something looks off."
 - This is explicitly **out of scope** (Part 1 §7.1 SCOPE-016) and recorded here only so Part 9's summary-document schema is designed with this future consumer in mind (avoiding a schema that would need to be redesigned to support it later).
 
@@ -239,7 +239,7 @@ CREATE TABLE conversation_history (
 
 - **AISESS-002**: The bounded prompt window (SESS-001) is a *prompt-construction* concern only — the full history is always stored, but only the most recent N messages are included in the LLM prompt.
 
-### 9.4 Tool Use / Function Calling (H2 Enhancement)
+### 9.4 Tool Use / Function Calling (Phase 2 Enhancement)
 
 - **AITOOL-001**: The Assistant is extended with tool-use capability so it can invoke read-only API endpoints of other services to answer questions requiring fresh data:
   - `GetReconciliationExceptions(date_range)`
@@ -250,7 +250,7 @@ CREATE TABLE conversation_history (
 - **AITOOL-003**: Tool call results are included in the RAG context and cited like any other retrieved source.
 - **AITOOL-004**: Tool calls are gated by the same ABAC rules as direct API calls.
 
-### 9.5 Multi-Step Reasoning Chains (H2 Enhancement)
+### 9.5 Multi-Step Reasoning Chains (Phase 2 Enhancement)
 
 - **AICHAIN-001**: For complex questions requiring multiple retrieval rounds, the Assistant supports a multi-step reasoning chain: initial retrieval → self-evaluation → refined retrieval → final answer assembly.
 - **AICHAIN-002**: The maximum number of reasoning steps is bounded (default: 3) to prevent unbounded latency growth. Each step's latency is tracked for NFR-AI-001 budget compliance.
@@ -275,13 +275,13 @@ CREATE TABLE conversation_history (
 | BIZ-023 (citable answers) | §3.2 step 5, §5.2 GRD-OUT-001 |
 | BR-041-1 / BR-050-1 (human-in-the-loop, tenant isolation) | §1 AI-P-002/AI-P-003, §5.2 GRD-OUT-003 |
 | GOAL-004 (top-50 baseline) | §6.1 |
-| GOAL-010 / SCOPE-016 (proactive anomaly, H3) | §7 |
+| GOAL-010 / SCOPE-016 (proactive anomaly, Phase 3) | §7 |
 | Part 1 §7.3 scope boundary (not financial advice) | §1 AI-P-005, §5.2 GRD-OUT-002 |
 | Production model quality monitoring | §9.1 AIMON-001 through AIMON-003 |
 | Prompt A/B testing | §9.2 AIPROMPT-001, AIPROMPT-002 |
 | Conversation history persistence/export | §9.3 AISESS-001, AISESS-002 |
-| Tool use / function calling (H2) | §9.4 AITOOL-001 through AITOOL-004 |
-| Multi-step reasoning chains (H2) | §9.5 AICHAIN-001, AICHAIN-002 |
+| Tool use / function calling (Phase 2) | §9.4 AITOOL-001 through AITOOL-004 |
+| Multi-step reasoning chains (Phase 2) | §9.5 AICHAIN-001, AICHAIN-002 |
 | Enhanced prompt injection mitigation | §9.6 GRD-IN-003 (layers 1–4) |
 
 ---
@@ -337,7 +337,7 @@ CREATE TABLE conversation_history (
 
 **FRAUD-FB-002**: A `fraud_feedback` ClickHouse table stores: `transaction_id`, `original_risk_score`, `original_risk_factors`, `outcome` (chargeback/legitimate/disputed), `outcome_date`, `feedback_lag_days`.
 
-**FRAUD-FB-003**: A weekly analytics job computes model precision/recall/F1 from the feedback data. For Phase 1 rule-based models, these metrics are surfaced in the fraud analytics dashboard. For H3 ML models, this table serves as the training data source.
+**FRAUD-FB-003**: A weekly analytics job computes model precision/recall/F1 from the feedback data. For Phase 1 rule-based models, these metrics are surfaced in the fraud analytics dashboard. For Phase 3 ML models, this table serves as the training data source.
 
 ---
 
@@ -347,7 +347,7 @@ CREATE TABLE conversation_history (
 - **OQ-014**: Confirm GPU hardware specification/quantity (ties to Part 1 DEP-003 and Part 4 §8) before Part 11 finalizes NFR-AI-001 numeric latency targets.
 - **OQ-015**: Decide the bounded conversation-history window size (§3.3 SESS-001).
 - **OQ-039**: Finalize the feedback-loop UX design (§9.1 AIMON-001) — simple thumbs-up/down vs. structured feedback categories — affects quality dashboard granularity.
-- **OQ-040**: Confirm tool-use API surface for H2 (§9.4 AITOOL-001) — which read-only endpoints to expose, and whether tool results should be cached.
+- **OQ-040**: Confirm tool-use API surface for Phase 2 (§9.4 AITOOL-001) — which read-only endpoints to expose, and whether tool results should be cached.
 - **OQ-041**: Finalize multi-step reasoning step limit (§9.5 AICHAIN-002, default 3) based on latency benchmarks.
 - **OQ-042**: Evaluate the trade-off between per-tenant OpenSearch indices (Part 9 OS-001) and a shared index with strong tenant-scoped query filtering — per-tenant provides stronger isolation but creates operational overhead at scale.
 
