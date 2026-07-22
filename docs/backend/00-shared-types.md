@@ -244,9 +244,9 @@ message EventEnvelope {
 }
 ```
 
-## 8. gRPC Shared Types — Strict Protobuf (No REST)
+## 8. gRPC Shared Types — Dual API (REST JSON + Protobuf)
 
-All external and internal API contracts use protobuf. No REST JSON.
+All external and internal API contracts support protobuf. REST JSON is the primary external API for merchant adoption. Protobuf is the secondary option for performance-sensitive use cases.
 
 ```protobuf
 syntax = "proto3";

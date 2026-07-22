@@ -24,7 +24,7 @@ The core domain service. Event-sourced. Owns `PaymentIntent` and `RoutingPolicy`
 
 **State Machine**:
 ```
-Created → Authorizing → Authorized → Capturing → Captured
+Created → Authorizing → [3DS Required → 3DS Authenticating →] Authorized → Capturing → Captured
                                             ↓
                                     PartiallyCaptured → (more captures) → Captured
                                             ↓

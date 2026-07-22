@@ -28,21 +28,26 @@
 | SVC-01 | `operator-service` | BC-01 Operator Management | Rust (SeaORM) | SeaORM | PostgreSQL |
 | SVC-02 | `iam-service` | BC-02 Identity & Access | Rust (SeaORM) | SeaORM | PostgreSQL + Redis (session/token cache) |
 | SVC-03 | `compliance-service` | BC-03 Merchant Compliance (KYB) | Rust (SeaORM) | SeaORM | PostgreSQL |
-| SVC-04 | `connector-gateway` | BC-04 Gateway Connector Framework | Rust (SeaORM) | SeaORM | PostgreSQL (connector config only; no transaction data) |
+| SVC-04 | `connector-gateway` | BC-04 Gateway Connector Framework | Rust (SeaORM) | SeaORM | PostgreSQL (connector config, decline mappings) |
 | SVC-05 | `orchestration-service` | BC-05 Payment Orchestration | Rust (SeaORM) | SeaORM | PostgreSQL (event store) + Redis (idempotency cache, hot routing config) |
-| SVC-06 | `invoice-service` | BC-06 Invoice Service | Rust (SeaORM) | SeaORM | PostgreSQL |
+| SVC-06 | `invoice-service` | BC-06 Invoice Service | Rust (SeaORM) | SeaORM | PostgreSQL (event store — revised from CRUD) |
 | SVC-07 | `payment-link-service` | BC-07 Payment Link Service | Rust (SeaORM) | SeaORM | PostgreSQL |
 | SVC-08 | `subscription-service` | BC-08 Subscription Billing | Rust (SeaORM) | SeaORM | PostgreSQL (event store) |
 | SVC-09 | `reconciliation-service` | BC-09 Settlement & Reconciliation | Rust (SeaORM) | SeaORM | PostgreSQL (event store) |
-| SVC-10 | `dispute-service` | BC-10 Dispute Management | Rust (SeaORM) | SeaORM | PostgreSQL (event store) |
+| SVC-10 | `dispute-service` | BC-10 Dispute Management | Rust (SeaORM) | SeaORM | PostgreSQL |
 | SVC-11 | `risk-service` | BC-11 Fraud & Risk Scoring | Rust (SeaORM) | SeaORM | PostgreSQL + Redis (hot scoring cache) |
-| SVC-12 | `ai-assistant-service` | BC-12 AI Payment Assistant | Rust (SeaORM) | SeaORM | OpenSearch (vectors) + Postgres (conversation/citation metadata) |
-| SVC-13 | `document-service` | BC-13 Document Management | Rust (SeaORM) | SeaORM | PostgreSQL (metadata) + MinIO (blobs) |
+| SVC-12 | `ai-assistant-service` | BC-12 AI Payment Assistant | Rust (SeaORM) | SeaORM | PostgreSQL (pgvector for embeddings) + Postgres (conversation metadata) |
+| SVC-13 | `document-service` | BC-13 Document Management | Rust (SeaORM) | SeaORM | PostgreSQL (metadata) + S3-compatible storage |
 | SVC-14 | `notification-service` | BC-14 Notification Service | Rust (SeaORM) | SeaORM | PostgreSQL + Redis (delivery dedup) |
-| SVC-15 | `analytics-service` | BC-15 Analytics & Reporting | Rust | ClickHouse driver | ClickHouse |
+| SVC-15 | `analytics-service` | BC-15 Analytics & Reporting | Rust | PostgreSQL (initially) → ClickHouse (H2) | PostgreSQL → ClickHouse |
 | SVC-17 | `api-gateway` | Cross-cutting (not a bounded context) | Rust (Axum) | SeaORM | Redis (rate-limit counters only) |
-| SVC-18 | `ai-gateway` | Cross-cutting routing/guardrail layer in front of SVC-12 | Rust (Axum) | SeaORM | Redis (rate limits), Postgres (guardrail audit log) |
-| SVC-19 | `webhook-delivery-service` | Cross-cutting outbound webhook delivery | Rust (SeaORM) | SeaORM | PostgreSQL (subscriptions, delivery logs) |
+| SVC-18 | `ai-gateway` | Cross-cutting (middleware within api-gateway) | Rust | — | Redis (rate limits), Postgres (guardrail audit log) |
+| SVC-19 | `notification-service` | Cross-cutting (merged with SVC-14) | Rust (SeaORM) | SeaORM | PostgreSQL (subscriptions, delivery logs) |
+| **SVC-21** | **`merchant-acquirer-link-service`** | **BYOK Core (NEW)** | **Rust (SeaORM)** | **SeaORM** | **PostgreSQL** |
+
+**NEW SVC-21**: `merchant-acquirer-link-service` — BYOK (Bring Your Own Key) core service. Owns the `MerchantAcquirerLink` aggregate that connects a merchant to a specific payment gateway using the merchant's own credentials. This is the foundational BYOK entity. See `docs/backend/21-merchant-acquirer-link-service.md` for full specification.
+
+**SVC-19 Merged**: `webhook-delivery-service` is merged into `notification-service` (SVC-14). Both are outbound delivery mechanisms with different destinations (email/SMS vs webhook). Merging them reduces operational complexity while keeping delivery auditing centralized.
 
 ### 1.2 Deliberate Deviations from Strict 1:1 Mapping
 
@@ -63,7 +68,32 @@
 
 ### 2.2 What the API Gateway Deliberately Does NOT Do
 
-- No business logic, no domain validation beyond authentication/authorization gating — keeping GW-001–004 as its full responsibility set prevents it from becoming a second, undocumented home for domain rules that should live in Part 3's aggregates.
+- No business logic, no domain validation beyond authentication/authorization gating — keeping its full responsibility set prevents it from becoming a second, undocumented home for domain rules that should live in Part 3's aggregates.
+
+### 2.3 Revised Responsibilities (with Dual API Support)
+
+- **GW-001**: Single ingress point for all external REST JSON + Protobov traffic
+- **GW-002**: TLS termination, JWT/API-key validation, actor context extraction
+- **GW-003**: Per-endpoint rate limiting (Redis sliding window)
+- **GW-004**: Content-type negotiation (JSON vs Protobuf) and route to correct handler
+- **GW-005**: REST JSON → internal domain logic translation; Protobuf → internal gRPC translation
+- **GW-006**: Input validation at gateway level (JSON schema / protobuf decode, format enforcement)
+- **GW-007**: CORS enforcement, security headers, request correlation
+
+### 2.4 New: Merchant-Acquirer Link (BYOK) Endpoints
+
+The API Gateway now routes BYOK-related endpoints:
+
+```
+GET    /v1/connectors                    # List available connectors
+GET    /v1/connectors/:id/schema         # Get credential schema for connector
+POST   /v1/merchant-links                # Create MerchantAcquirerLink
+GET    /v1/merchant-links                # List MerchantAcquirerLinks
+GET    /v1/merchant-links/:id            # Get MerchantAcquirerLink
+POST   /v1/merchant-links/:id/test       # Test connection
+POST   /v1/merchant-links/:id/rotate     # Rotate credentials
+DELETE /v1/merchant-links/:id            # Disable MerchantAcquirerLink
+```
 
 ---
 
@@ -89,7 +119,7 @@ The AI Gateway exists because AI-Assistant traffic has distinct requirements tha
 
 | Interaction | Style | Protocol | Rationale |
 |---|---|---|---|
-| External API → API Gateway | **Protobuf-over-HTTP POST** | HTTP/1.1 or HTTP/2 + Protobuf binary | Type-safe, code-gen ready, no REST (PROTO-001) |
+| External API → API Gateway | **RESTful JSON (primary)** or **Protobuf-over-HTTP (secondary)** | HTTP/1.1 or HTTP/2 + JSON or Protobuf binary | Dual API: REST JSON for merchant adoption (Stripe-like), Protobuf for performance-sensitive use cases |
 | API Gateway → domain service (synchronous) | **gRPC** | HTTP/2 + Protobuf | Low latency, strongly-typed contracts (Part 10) |
 | `orchestration-service` → `connector-gateway` (authorize/capture/refund) | **gRPC** (synchronous, in the checkout hot path) | HTTP/2 + Protobuf | Must return a result within the latency budget (BR-020-2) |
 | `orchestration-service` → `risk-service` (pre-authorization risk score) | **gRPC** (synchronous, in the checkout hot path) | HTTP/2 + Protobuf | Risk score needed before routing decision; must be fast |
@@ -109,7 +139,9 @@ The AI Gateway exists because AI-Assistant traffic has distinct requirements tha
 - **RULE-004**: Never use NATS for the checkout hot path (Create/Authorize/Capture) — the latency of NATS publish-ack is unnecessary overhead when a direct gRPC call is more appropriate.
 - **RULE-005**: Never use gRPC for fan-out event distribution — the publisher would need to know and manage all consumers, defeating the decoupling benefit of event-driven architecture.
 - **RULE-006**: All service-to-service calls use gRPC with Protobuf — SeaORM services generate clients from `.proto` files for type-safe inter-service communication.
-- **RULE-007**: No REST anywhere in the stack — no JSON APIs, no GET endpoints, no path variables, no query strings. Everything is protobuf.
+- **RULE-007**: External API supports **dual protocol**: RESTful JSON (primary for merchant adoption) and Protobuf-over-HTTP (secondary for performance). Internal service-to-service communication uses gRPC exclusively. See Part 10 and `docs/backend/17-api-gateway.md` for full endpoint specifications.
+- **RULE-008**: REST JSON follows conventional patterns: `GET /v1/resource/:id`, `POST /v1/resource`, etc. Protobuf uses `POST /proto/{package}.{Service}/{Method}`. Both routes terminate at the same gateway which translates to internal gRPC.
+- **RULE-009**: All IDs use prefix conventions (inspired by Stripe): `pi_` for payment intents, `li_` for merchant links, `sub_` for subscriptions, `evt_` for events.
 
 ### 4.3 NATS JetStream Subject Taxonomy (Versioned)
 
@@ -182,7 +214,7 @@ Each domain service publishes its own `.proto` service definition (full contract
 - Subscribes to chargeback webhooks via `connector-gateway` → NATS; exposes `SubmitRepresentment`, `GetChargebackCase`.
 
 ### 5.9 SVC-11 `risk-service`
-- MVP: synchronous rule-based scoring call from `orchestration-service` before authorization (low-latency requirement, Redis-cached rule set). H3: asynchronous ML scoring feeding back into routing decisions (GOAL-009 adjacent) — architecture must not preclude this evolution (extensibility NFR, Part 8).
+- Initial release: synchronous rule-based scoring call from `orchestration-service` before authorization (low-latency requirement, Redis-cached rule set). H3: asynchronous ML scoring feeding back into routing decisions (GOAL-009 adjacent) — architecture must not preclude this evolution (extensibility NFR, Part 8).
 
 ### 5.10 SVC-13 `document-service`
 - Owns MinIO-backed blob storage abstraction and metadata; triggers OCR pipeline (Qwen3-VL 8B, via `ai-gateway`/`ai-assistant-service`) asynchronously on upload, publishes `DocumentOcrCompleted` with extracted structured fields for the calling context (e.g., `compliance-service`) to consume.
@@ -193,13 +225,19 @@ Each domain service publishes its own `.proto` service definition (full contract
 ### 5.12 SVC-15 `analytics-service`
 - Pure event consumer across effectively all streams; writes append-only into ClickHouse; exposes read-only query endpoints for dashboards (UC-070) and report export (UC-071). Never receives direct write commands from users — all its data is derived.
 
-### 5.13 Gap: SVC-19 `webhook-delivery-service` (Outbound Webhooks)
-- Subscribes to payment lifecycle events (PaymentAuthorized, PaymentCaptured, PaymentFailed, PaymentRefunded, etc.) from orchestration-service via NATS JetStream.
-- For each event: finds matching WebhookSubscriptions for the operator, builds JSON payload, signs with HMAC-SHA256, POSTs to merchant endpoint.
-- Manages delivery retry queue with exponential backoff (1s → 2s → 5s → ... → 8h, 8 attempts max).
-- Exposes webhook subscription CRUD API for merchant dashboard.
-- Retains delivery logs for 30 days (audit trail).
-- Critical for merchant integration — without outbound webhooks, no programmatic integration is possible.
+### 5.13 Merged: Webhook Delivery (within SVC-14 `notification-service`)
+- **Decision**: Webhook delivery functionality is merged into `notification-service` rather than as a separate SVC-19 service. Both email/SMS and webhook notifications are outbound delivery mechanisms with similar reliability requirements (retry, backoff, delivery logging). Merging reduces operational complexity from 18 to 17 deployable services.
+- Retry policy: exponential backoff (1s → 3s → 9s → ... → 8h, 8 attempts max)
+- Payload signing: HMAC-SHA256 with merchant-specific secret
+- Delivery log retention: 30 days
+- Webhook endpoint CRUD available via merchant dashboard
+
+### 5.14 New: SVC-21 `merchant-acquirer-link-service` (BYOK Core)
+- **NEW SERVICE**: See full specification at `docs/backend/21-merchant-acquirer-link-service.md`
+- Owns the `MerchantAcquirerLink` aggregate — the fundamental BYOK entity
+- Manages credential lifecycle: validation, encryption, rotation, expiry monitoring
+- Provides connection health monitoring per merchant-gateway link
+- Integrates with `connector-gateway` for credential validation and onboarding schemas
 
 ---
 
@@ -214,7 +252,7 @@ Each domain service publishes its own `.proto` service definition (full contract
 - **JOB-009**: Data retention enforcement — scheduled archival/purge of data exceeding configured retention periods (Part 8 AUD-001, Part 1 BIZ-051).
 - **JOB-010**: Outbox relay health monitoring — checks relay lag and alerts if relay falls behind (Part 3 §9.2 OUTBOX-001).
 
-For MVP, scheduling is implemented as in-process cron-style schedulers within the owning service; if job volume/complexity grows past H1, a dedicated scheduling service is a candidate future extraction.
+For initial release, scheduling is implemented as in-process cron-style schedulers within the owning service; if job volume/complexity grows past H1, a dedicated scheduling service is a candidate future extraction.
 
 ### 6.1 Leader Election
 
@@ -341,7 +379,7 @@ pub struct DlqEventModel {
 *(Full Kubernetes/Docker deployment specification is in Part 11; this section previews the shape so Parts 5–10 can assume a consistent mental model.)*
 
 - Each service in §1.1 is an independently deployable, independently scalable container. `orchestration-service` and `connector-gateway` are provisioned with the highest replica-count floor and tightest autoscaling responsiveness, since they sit on the checkout-latency-critical path.
-- `ai-assistant-service` and its Ollama inference backend are deployed on GPU-backed node pools, separate from the general CPU-only service mesh, with the `ai-gateway` mediating so that a spike in AI usage cannot starve GPU resources needed for anything else (there is nothing else GPU-bound at MVP, but this isolation is kept as a forward-looking discipline).
+- `ai-assistant-service` and its Ollama inference backend are deployed on GPU-backed node pools, separate from the general CPU-only service mesh, with the `ai-gateway` mediating so that a spike in AI usage cannot starve GPU resources needed for anything else (there is nothing else GPU-bound at launch, but this isolation is kept as a forward-looking discipline).
 - All services are deployed behind a service mesh providing mTLS between services (Part 8, zero-trust internal networking) — this is what makes the "trust only the propagated gateway context" claim enforceable rather than aspirational: services physically cannot be reached except through authenticated mesh identities.
 
 ---
@@ -492,8 +530,38 @@ message EventEnvelope {
 
 ## 11. Open Items Carried Forward
 
-- **OQ-009**: Confirm whether `risk-service` (SVC-11) synchronous scoring call adds unacceptable latency to the checkout path at MVP — needs a benchmark once Part 11 performance targets are set; if too slow, MVP may ship with routing-time risk scoring disabled by default and enabled per-operator opt-in.
-- **OQ-010**: Decide whether `invoice-service` and `payment-link-service` (SVC-06/07) should share a single Postgres instance (different schemas) or fully separate instances at MVP scale — cost vs. isolation trade-off to be resolved in Part 9.
+- **# OQ-009 (Resolved)**: Risk-service latency on checkout path — resolved: risk scoring is called synchronously with a timeout budget (100ms). If timeout exceeded, proceed with default routing (risk score = 0.0). See `11-risk-service.md` for details.
+- **# OQ-010 (Resolved)**: Invoice-service and payment-link-service share a single PostgreSQL instance (different schemas) at launch. Separation is a future scaling option, not a launch requirement.
+
+### 11.1 New: 3D Secure Integration
+
+3D Secure (3DS) is **mandatory** for card payments in the UAE (Central Bank regulations) and Europe (PSD2 SCA). The platform integrates 3DS at the `orchestration-service` (SVC-05) state machine level:
+
+- **3DS-001**: The `PaymentIntent` state machine gains three new states: `ThreeDsRequired`, `ThreeDsAuthenticating`, `ThreeDsFailed`
+- **3DS-002**: `connector-gateway` (SVC-04) gains `check_3ds_enrollment()` and `authenticate_3ds()` methods on the `AcquirerConnector` trait
+- **3DS-003**: The checkout flow: Authorize → Check 3DS → If required → Redirect to ACS → Authenticate → Complete authorization
+- **3DS-004**: 3DS exemptions supported: low-value, low-risk, trusted merchant, secure corporate, delegated, TRA
+
+### 11.2 New: Circuit Breaker Pattern
+
+Every `MerchantAcquirerLink` has an associated circuit breaker at `connector-gateway` (SVC-04) level:
+
+- **CB-001**: Circuit breaker states: `Closed` (normal), `Open` (failing — skip), `HalfOpen` (testing recovery)
+- **CB-002**: Opens when error rate exceeds configurable threshold (default: 50% failure in 30s window)
+- **CB-003**: Stays open for configurable duration (default: 60s), then transitions to HalfOpen
+- **CB-004**: In HalfOpen, limited requests allowed (default: 3). If all succeed → Close. If any fail → Open
+- **CB-005**: Circuit breaker state affects routing: `orchestration-service` skips acquirers with open circuit breaker
+
+### 11.3 New: BYOK (Bring Your Own Key) Model
+
+The platform is a routing layer, NOT a payment gateway or payment facilitator:
+
+- **BYOK-001**: Merchants bring their own merchant accounts with their own payment gateways
+- **BYOK-002**: `merchant-acquirer-link-service` (SVC-21, NEW) manages the link lifecycle
+- **BYOK-003**: Credentials are encrypte at rest via envelope encryption (KMS-managed KEK + per-link DEK)
+- **BYOK-004**: Each connector defines an `OnboardingSchema` (dynamic credential form) rendered by the frontend
+- **BYOK-005**: Credentials validated via sandbox/status-check before activation
+- **BYOK-006**: Dual-key credential rotation supported (old + new credentials active during transition)
 
 ---
 

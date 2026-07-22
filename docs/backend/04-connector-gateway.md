@@ -2,6 +2,8 @@
 
 Anti-Corruption Layer. Translates N acquirer APIs into one normalized internal protocol.
 
+**BYOK Critical Service**: This service provides the `OnboardingSchema` and credential validation that every merchant needs to connect their own gateway credentials.
+
 ---
 
 ## 1. Core Abstraction: AcquirerConnector Trait
@@ -12,24 +14,45 @@ pub trait AcquirerConnector: Send + Sync {
     fn connector_id(&self) -> ConnectorId;
     fn capabilities(&self) -> ConnectorCapabilities;
 
+    // Core payment operations
     async fn authorize(&self, req: AuthorizeRequest) -> Result<AuthorizeResponse, ConnectorError>;
     async fn capture(&self, req: CaptureRequest) -> Result<CaptureResponse, ConnectorError>;
     async fn void(&self, req: VoidRequest) -> Result<VoidResponse, ConnectorError>;
     async fn refund(&self, req: RefundRequest) -> Result<RefundResponse, ConnectorError>;
     async fn status_check(&self, req: StatusCheckRequest) -> Result<StatusCheckResponse, ConnectorError>;
 
-    // Gap: FX rate query — acquirer provides conversion rates for cross-border transactions
+    // FX rate query — acquirer provides conversion rates for cross-border transactions
     async fn get_fx_rate(&self, req: FxRateRequest) -> Result<FxRateResponse, ConnectorError>;
 
-    // Gap: Settlement cycle query — acquirer reports expected settlement timing
+    // Settlement cycle query — acquirer reports expected settlement timing
     fn settlement_cycle(&self) -> SettlementCycle;
+
+    // NEW: 3D Secure support
+    /// Check if a card/enrollment requires 3DS authentication
+    async fn check_3ds_enrollment(&self, req: Check3dsRequest) -> Result<Check3dsResponse, ConnectorError>;
+    /// Authenticate via 3DS (handles challenge/frictionless flow)
+    async fn authenticate_3ds(&self, req: Authenticate3dsRequest) -> Result<Authenticate3dsResponse, ConnectorError>;
+
+    // NEW: Network Token support
+    /// Provision a network token (Visa Token Service, Mastercard MDES)
+    async fn provision_network_token(&self, req: ProvisionTokenRequest) -> Result<ProvisionTokenResponse, ConnectorError>;
 
     async fn poll_settlement(&self, req: PollSettlementRequest) -> Result<Vec<RawSettlementRecord>, ConnectorError>;
     fn verify_webhook_signature(&self, headers: &HeaderMap, body: &[u8]) -> Result<(), ConnectorError>;
     fn parse_webhook(&self, body: &[u8]) -> Result<ConnectorEvent, ConnectorError>;
 
+    // BYOK: Onboarding & Credential Management
+    /// Dynamic credential schema for frontend form rendering
     fn onboarding_schema(&self) -> OnboardingSchema;
-    async fn validate_credentials(&self, config: &ConnectorConfig) -> Result<(), ConnectorError>;
+    /// Validate credentials via sandbox/status-check (never live-money)
+    async fn validate_credentials(&self, config: &ConnectorConfig) -> Result<CredentialValidationResult, ConnectorError>;
+    /// Full connection test — returns merchant name, permissions, latency
+    async fn test_connection(&self, config: &ConnectorConfig) -> Result<ConnectionTestResult, ConnectorError>;
+    /// Get test card numbers valid for this connector's sandbox
+    fn test_card_numbers(&self) -> Vec<TestCardNumber>;
+
+    // NEW: Account Updater (for recurring/subscription payments)
+    async fn account_updater(&self, token: &NetworkTokenReference) -> Result<AccountUpdateResult, ConnectorError>;
 }
 ```
 
