@@ -66,7 +66,7 @@ async fn test_circuit_breaker_on_ollama_failure() {
 
 #[tokio::test]
 async fn test_usage_quota_enforced() {
-    // Exceed per-tenant AI quota
+    // Exceed per-deployment AI quota
     // Should return 429 with quota info
 }
 ```

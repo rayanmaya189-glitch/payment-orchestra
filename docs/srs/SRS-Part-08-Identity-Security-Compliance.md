@@ -126,7 +126,7 @@ Default roles (extensible per operator, Part 2 UC-001 step 5) serve as attribute
 
 ### 5.2 Retention
 
-- **AUD-001**: Money-movement-relevant audit data (Tier 1) is retained per UAE regulatory expectations for financial records — a specific retention period (commonly multi-year for financial transaction records under UAE Central Bank and AML/CFT expectations) must be confirmed with legal counsel (ties to Part 1 ASSUMP-001/OQ-001) and configured as a platform-wide minimum retention floor that cannot be shortened by any tenant-level data-deletion request (i.e., "right to erasure"-style requests under UAE PDPL, where applicable, must be reconciled against financial record-keeping obligations — a legal/compliance decision, not a purely technical one).
+- **AUD-001**: Money-movement-relevant audit data (Tier 1) is retained per UAE regulatory expectations for financial records — a specific retention period (commonly multi-year for financial transaction records under UAE Central Bank and AML/CFT expectations) must be confirmed with legal counsel (ties to Part 1 ASSUMP-001/OQ-001) and configured as a platform-wide minimum retention floor that cannot be shortened by any operator-level data-deletion request (i.e., "right to erasure"-style requests under UAE PDPL, where applicable, must be reconciled against financial record-keeping obligations — a legal/compliance decision, not a purely technical one).
 - **AUD-002**: Tier 2 audit logs follow the same retention floor as a matter of consistency and operational simplicity, absent a specific reason to diverge per data category.
 
 ### 5.3 Immutability

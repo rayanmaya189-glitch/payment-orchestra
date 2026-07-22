@@ -22,7 +22,7 @@
 ## 1. Design Principles (Non-Negotiable, Restated from Part 1/2/3 for This Part's Context)
 
 - **AI-P-001 (Grounding over fluency)**: Every substantive claim in an Assistant answer must be traceable to a specific retrieved record (transaction, event, document, or previously-approved report). If retrieval does not surface sufficient grounding, the Assistant says so explicitly rather than answering from the model's parametric knowledge (BIZ-023, EX-050a).
-- **AI-P-002 (Tenant isolation is structural, not query-time filtering)**: Retrieval indices are physically partitioned per tenant (separate OpenSearch index per tenant, or a tenant-keyed shard routing scheme — Part 9 finalizes which), so that a retrieval bug cannot surface another tenant's data even transiently (BR-050-1).
+- **AI-P-002 (Data isolation is structural): Retrieval indices are physically partitioned for each deployment (separate OpenSearch index per deployment, or a operator-keyed shard routing scheme — Part 9 finalizes which), so that a retrieval bug cannot surface another operator's data even transiently (BR-050-1).
 - **AI-P-003 (No autonomous money movement)**: The Assistant has no command-side access to any bounded context (Part 3 §1.3). Every action it might "suggest" (e.g., resolving a reconciliation exception) must be executed by a human through the normal command API (BR-041-1).
 - **AI-P-004 (Self-hosted by default)**: Model inference runs on platform-operator-controlled infrastructure via Ollama; no tenant data is sent to third-party model APIs unless a tenant explicitly opts in to a future "bring your own model provider" configuration (not in scope) — this satisfies BIZ-021 and the UAE data-residency assumption (ASSUMP-004, Part 1).
 - **AI-P-005 (Not a regulated advice product)**: The Assistant answers operational/informational questions about the tenant's own data; it must not be positioned as, or allowed to produce, regulated financial/legal/tax advice (Part 1 §7.3 scope boundary note).
@@ -97,7 +97,7 @@ Documents (BC-13 DocumentRecord + OCR text) ─┼──► Chunking & Normaliza
 Reconciliation exception records ───────────┘                                        │
 Prior Assistant Q&A (approved/high-confidence only) ─────────────────────────────────┤
                                                                                        ▼
-                                                                     Tenant-partitioned OpenSearch index
+                                                                     Operator-partitioned OpenSearch index
                                                                      (dense vectors + BM25 sparse fields)
 ```
 
@@ -116,8 +116,8 @@ Prior Assistant Q&A (approved/high-confidence only) ─────────�
 
 ### 3.3 Conversation Session Management
 
-- **SESS-001**: `ConversationSession` state (bounded history window, tenant-scoped) allows follow-up questions ("what about last week?") without requiring the user to restate context, while the bounded window prevents unbounded prompt growth from degrading latency/cost over a long session.
-- **SESS-002**: Sessions are tenant- and user-scoped; no session ever mixes context across tenants or across users within a tenant (even though users within one tenant share the same underlying data, session history itself — what *this* user asked — is not shared with other users by default).
+- **SESS-001**: `ConversationSession` state (bounded history window, operator-scoped) allows follow-up questions ("what about last week?") without requiring the user to restate context, while the bounded window prevents unbounded prompt growth from degrading latency/cost over a long session.
+- **SESS-002**: Sessions are operator- and user-scoped; no session ever mixes context across users (even though users within one deployment share the same underlying data, session history itself — what *this* user asked — is not shared with other users by default).
 
 ---
 
@@ -147,7 +147,7 @@ Prior Assistant Q&A (approved/high-confidence only) ─────────�
 ### 5.1 Input Guardrails (AI Gateway, extends Part 4 §3.2 AIGW-003)
 
 - **GRD-IN-001**: Basic prompt-injection pattern screening on any *externally-sourced* content that will enter a prompt (e.g., text extracted from a merchant-uploaded document, or free-text fields from an external acquirer's decline-reason description) — since these are less trusted than the platform's own structured domain events, they are treated as untrusted input requiring screening before being interpolated into a system-level prompt context.
-- **GRD-IN-002**: Per-tenant/per-user rate limiting and quota enforcement (commercial + abuse-prevention).
+- **GRD-IN-002**: Per-user rate limiting and quota enforcement (commercial + abuse-prevention).
 
 ### 5.2 Output Guardrails
 
@@ -261,7 +261,7 @@ CREATE TABLE conversation_history (
   1. **Pattern blocklist**: Known injection patterns are blocked before entering the prompt context.
   2. **Content sandboxing**: Externally-sourced text is wrapped in `<external_content>` XML tags with instructions to treat as data, not instructions.
   3. **Output monitoring**: Post-generation classifier checks for leaked system prompt content.
-  4. **Escalation**: Repeated injection attempts (≥3 per session or ≥5 per tenant per hour) are logged and the tenant's AI usage may be temporarily suspended.
+  4. **Escalation**: Repeated injection attempts (≥3 per session or ≥5 per deployment per hour) are logged and the tenant's AI usage may be temporarily suspended.
 
 ---
 
@@ -273,7 +273,7 @@ CREATE TABLE conversation_history (
 | BIZ-021 (self-hosted, data residency) | §1 AI-P-004, Ollama-hosted stack throughout |
 | BIZ-022 (document/vision processing) | §4 |
 | BIZ-023 (citable answers) | §3.2 step 5, §5.2 GRD-OUT-001 |
-| BR-041-1 / BR-050-1 (human-in-the-loop, tenant isolation) | §1 AI-P-002/AI-P-003, §5.2 GRD-OUT-003 |
+| BR-041-1 / BR-050-1 (human-in-the-loop) | §1 AI-P-002/AI-P-003, §5.2 GRD-OUT-003 |
 | GOAL-004 (top-50 baseline) | §6.1 |
 | GOAL-010 / SCOPE-016 (proactive anomaly, Phase 3) | §7 |
 | Part 1 §7.3 scope boundary (not financial advice) | §1 AI-P-005, §5.2 GRD-OUT-002 |
@@ -349,7 +349,7 @@ CREATE TABLE conversation_history (
 - **OQ-039**: Finalize the feedback-loop UX design (§9.1 AIMON-001) — simple thumbs-up/down vs. structured feedback categories — affects quality dashboard granularity.
 - **OQ-040**: Confirm tool-use API surface for Phase 2 (§9.4 AITOOL-001) — which read-only endpoints to expose, and whether tool results should be cached.
 - **OQ-041**: Finalize multi-step reasoning step limit (§9.5 AICHAIN-002, default 3) based on latency benchmarks.
-- **OQ-042**: Evaluate the trade-off between per-tenant OpenSearch indices (Part 9 OS-001) and a shared index with strong tenant-scoped query filtering — per-tenant provides stronger isolation but creates operational overhead at scale.
+- **OQ-042**: Evaluate the trade-off between per-deployment OpenSearch indices (Part 9 OS-001) and a shared index with strong user-scoped query filtering — per-deployment provides stronger isolation but creates operational overhead at scale.
 
 ---
 

@@ -524,7 +524,7 @@ pub struct Model {
 | BIZ-041 (data residency) | All stores deployed UAE-region (deployment detail, Part 11) |
 | Part 3 INV-06 (idempotent settlement ingestion) | Implicit via `event_id`/checksum uniqueness constraints (§1.1) |
 | Part 5 §4.2 CONC-001/002 | §1.1 DB-001 optimistic concurrency, §2 REDIS-001 |
-| Part 6 AI-P-002 (structural tenant isolation for RAG) | §4.1 OS-001 |
+| Part 6 AI-P-002 (structural data isolation for RAG) | §4.1 OS-001 |
 | Part 7 CRED-001/002 | §1.4 encrypted config storage |
 | Part 8 SEC-001, ENC-003/004 | §1.4, §5 MinIO encryption |
 | Part 8 AUD-003 (immutability) | §1.3 DB-004 |
@@ -622,7 +622,7 @@ GRANT SELECT ON payment_events TO ai_assistant_service;
 
 **OS-SEC-003**: OpenSearch audit logging enabled for all search and index operations.
 
-**OS-SEC-004**: Resolve OQ-042 (per-tenant indices vs. shared index) with security as the primary decision criterion. Recommended: per-tenant index routing for single-tenant deployment (simpler isolation), migrating to shared index with document-level security if multi-tenant is needed.
+**OS-SEC-004**: Resolve OQ-042 (per-deployment indices vs. shared index) with security as the primary decision criterion. Recommended: per-deployment index routing (simpler isolation), migrating to shared index with document-level security if needed in future.
 
 ### 12.4 MinIO Security Configuration
 

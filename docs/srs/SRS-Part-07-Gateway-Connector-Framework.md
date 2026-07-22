@@ -282,7 +282,7 @@ Per Part 1 OQ-003, the final Phase 1 acquirer/PSP shortlist requires business co
 ## 10. Open Items Carried Forward
 
 - **OQ-016 (= OQ-003 from Part 1, restated here for engineering visibility)**: Final Phase 1 acquirer/PSP shortlist must be confirmed before connector implementation begins in earnest — §6's list is a planning placeholder only.
-- **OQ-017**: Confirm whether webhook endpoints (§4.1) should be per-connector-per-tenant unique URLs (simplifies signature/source attribution) or a shared per-connector URL disambiguated by payload content — a Part 9/Part 10 API design decision affecting the webhook contract.
+- **OQ-017**: Confirm whether webhook endpoints (§4.1) should be per-connector unique URLs (simplifies signature/source attribution) or a shared per-connector URL disambiguated by payload content — a Part 9/Part 10 API design decision affecting the webhook contract.
 - **OQ-043**: Finalize circuit breaker thresholds (§5.1 CB-CONN-001) — error-rate percentage, sliding-window duration, and open-window duration — against real acquirer failure-mode data from pilot merchants.
 
 ---

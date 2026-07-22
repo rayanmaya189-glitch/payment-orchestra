@@ -177,7 +177,7 @@ A new operator (merchant or platform operator) signs up, provides business and K
   1. ACT-05 submits payment details (via merchant's own checkout, hosted payment page, or payment link — see PROC-04) which the merchant's system (or the platform's hosted page) forwards to the platform's Payment Intent API.
   2. ACT-10 creates a `PaymentIntent` in `Created` status, evaluates the active `RoutingPolicy`, and selects the first eligible acquirer.
   3. ACT-10 sends an authorize request to ACT-08 (selected acquirer).
-  4. On `Approved`, ACT-10 transitions `PaymentIntent` to `Authorized`, then — per tenant's capture mode configuration (auto-capture vs. manual) — either immediately requests capture from ACT-08 or waits for explicit capture (UC-021).
+  4. On `Approved`, ACT-10 transitions `PaymentIntent` to `Authorized`, then — per deployment's capture mode configuration (auto-capture vs. manual) — either immediately requests capture from ACT-08 or waits for explicit capture (UC-021).
   5. ACT-10 emits domain events (`PaymentAuthorized`, `PaymentCaptured`) consumed by the reconciliation read-model (PROC-05) and analytics pipeline (PROC-08).
   6. Merchant/end customer receives a synchronous API response and, for asynchronous confirmation, a webhook (Part 10).
 - **Alternate Flows**:
@@ -236,7 +236,7 @@ A new operator (merchant or platform operator) signs up, provides business and K
   2. ACT-05 subscribes (via checkout, storing a reusable payment method token per acquirer's tokenization capability — never raw card data touches platform storage, Part 8).
   3. On each billing cycle, ACT-11 triggers a renewal `PaymentIntent` using the stored payment method token, following the same routing/failover logic as UC-020.
   4. On success, subscription period extends; on failure, dunning flow (AF-031a) begins.
-- **Alternate Flows — AF-031a (Dunning)**: Renewal declines → system retries per a configured dunning schedule (e.g., retry at day 1, 3, 7) potentially across different acquirers per routing policy; if all retries exhausted, subscription transitions to `PastDue` then `Cancelled` per tenant policy; ACT-05 notified at each step (Part 4, Notification Service).
+- **Alternate Flows — AF-031a (Dunning)**: Renewal declines → system retries per a configured dunning schedule (e.g., retry at day 1, 3, 7) potentially across different acquirers per routing policy; if all retries exhausted, subscription transitions to `PastDue` then `Cancelled` per deployment policy; ACT-05 notified at each step (Part 4, Notification Service).
 - **Exception Flows**: **EX-031a**: Payment method token itself is invalidated by the acquirer/scheme (e.g., card expired, scheme token update available) → system attempts scheme-provided account-updater refresh if the connector supports it (Part 7), else flags subscription for customer payment-method update.
 - **Postconditions**: Subscription lifecycle state accurately reflects billing history; each renewal attempt is a fully traceable `PaymentIntent` history.
 - **Business Rules**: BR-031-1: Stored payment method tokens are always acquirer-issued tokens (network/PSP tokenization), never platform-generated raw-PAN storage — ties to Part 8 (PCI-scope minimization) and Part 1 no-custody-adjacent principle of minimizing sensitive data the platform itself must protect.
@@ -280,7 +280,7 @@ A new operator (merchant or platform operator) signs up, provides business and K
 - **Preconditions**: Tenant has sufficient transaction/reconciliation history for the question to be answerable; AI Assistant service available (Ollama-hosted models up, per Part 6/Part 11 availability targets).
 - **Main Flow**:
   1. Actor asks a natural-language question in the Assistant panel (e.g., "Why did our authorization rate drop yesterday?").
-  2. System (Part 6 RAG pipeline) embeds the query (BGE-M3), retrieves relevant tenant-scoped documents/events (transaction aggregates, decline-code summaries, prior similar Q&A), reranks results, and constructs a grounded prompt for the Qwen3 32B model.
+  2. System (Part 6 RAG pipeline) embeds the query (BGE-M3), retrieves relevant operator-scoped documents/events (transaction aggregates, decline-code summaries, prior similar Q&A), reranks results, and constructs a grounded prompt for the Qwen3 32B model.
   3. Model produces an answer that includes specific cited references (transaction IDs, date ranges, decline code breakdowns) rather than an unattributed narrative summary.
   4. Actor sees the answer plus expandable citations linking to the underlying data records.
 - **Alternate Flows**: **AF-050a**: Actor uploads a document (e.g., a scanned bank advice) as part of the question → Qwen3-VL 8B vision pipeline extracts structured content first, which is then included in the RAG context.

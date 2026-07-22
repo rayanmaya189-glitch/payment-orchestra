@@ -124,12 +124,12 @@ function select_route(intent, policy, links, attempted_hops):
 
 ### 3.3 Algorithm (Phase 3 — Success-Rate-Weighted Dynamic Routing, GOAL-009)
 
-Extends 3.2 by re-weighting `candidates` using a rolling window (e.g., trailing 1 hour, tenant-configurable) of authorization-rate statistics per acquirer/scheme/currency, subject to a **minimum-sample-size floor** (to avoid a single recent decline skewing routing for a low-volume combination) and a **maximum deviation cap** from the tenant's explicitly configured static priority (to prevent the dynamic layer from silently overriding a tenant's deliberate business preference, e.g., a negotiated-cost priority — dynamic routing optimizes *within* tenant-set boundaries, not around them). Full statistical design (window size defaults, cap defaults, confidence thresholds) is deferred to an Phase 3 design spike, explicitly flagged as **not required for initial launch acceptance** (Part 11).
+Extends 3.2 by re-weighting `candidates` using a rolling window (e.g., trailing 1 hour, operator-configurable) of authorization-rate statistics per acquirer/scheme/currency, subject to a **minimum-sample-size floor** (to avoid a single recent decline skewing routing for a low-volume combination) and a **maximum deviation cap** from the tenant's explicitly configured static priority (to prevent the dynamic layer from silently overriding a tenant's deliberate business preference, e.g., a negotiated-cost priority — dynamic routing optimizes *within* tenant-set boundaries, not around them). Full statistical design (window size defaults, cap defaults, confidence thresholds) is deferred to an Phase 3 design spike, explicitly flagged as **not required for initial launch acceptance** (Part 11).
 
 ### 3.4 Failover Retry Mechanics
 
 - **RTY-001**: On a retryable decline, the engine immediately attempts the next candidate — there is no artificial delay between hops within a single checkout attempt (retries are about trying a *different* acquirer, not waiting out a transient issue on the same one).
-- **RTY-002**: The maximum number of hops is tenant-configurable (UC-011) but the engine enforces a hard platform-wide ceiling (default 3, configurable per deployment, not per tenant, as a cost/latency circuit breaker) regardless of tenant configuration, to bound worst-case checkout latency.
+- **RTY-002**: The maximum number of hops is operator-configurable (UC-011) but the engine enforces a hard platform-wide ceiling (default 3, configurable per deployment, not per deployment, as a cost/latency circuit breaker) regardless of tenant configuration, to bound worst-case checkout latency.
 - **RTY-003**: Each hop's `PaymentAuthorizationAttempted` event records the acquirer attempted, the raw acquirer response (via BC-04's normalized `DeclineReason`), and elapsed latency for that hop — this is the ground truth `ai-assistant-service` and `analytics-service` use to answer "why did this decline" questions (UC-050) and to compute GOAL-002's revenue-recovery metric.
 
 ---
@@ -138,7 +138,7 @@ Extends 3.2 by re-weighting `candidates` using a rolling window (e.g., trailing 
 
 ### 4.1 Two Distinct Idempotency Layers
 
-1. **Caller-facing idempotency** (`CreatePaymentIntent`): keyed on tenant-scoped `IdempotencyKey` supplied by the merchant's integration. A retried request with the same key and same payload returns the original `PaymentIntent`'s current state rather than creating a duplicate or erroring. A retried request with the same key but a *different* payload is rejected with a conflict error (protects against integration bugs silently creating divergent state under one key).
+1. **Caller-facing idempotency** (`CreatePaymentIntent`): keyed on operator-scoped `IdempotencyKey` supplied by the merchant's integration. A retried request with the same key and same payload returns the original `PaymentIntent`'s current state rather than creating a duplicate or erroring. A retried request with the same key but a *different* payload is rejected with a conflict error (protects against integration bugs silently creating divergent state under one key).
 2. **Acquirer-facing idempotency** (within `AuthorizePaymentIntent`'s call to `connector-gateway`): a separate, internally generated idempotency token per routing attempt, passed through BC-04's ACL to the specific acquirer's own idempotency mechanism (where supported — Part 7 documents per-connector support level), specifically to guard against EX-020b's network-partition double-authorization risk. Where an acquirer does not support idempotency keys natively, the connector adapter must perform a pre-flight status-check call before retrying the same acquirer (never applicable here anyway, since RTY-001 never retries the same acquirer twice for one intent — but the same status-check discipline applies if a client-side timeout occurs and the *caller* retries `AuthorizePaymentIntent` itself).
 
 ### 4.2 Concurrency Control
@@ -189,7 +189,7 @@ Extends 3.2 by re-weighting `candidates` using a rolling window (e.g., trailing 
 
 When an acquirer returns a partial authorization (approved for less than the requested amount):
 
-- **PARTIAL-AUTH-001**: The `AuthorizePaymentIntent` command handler checks whether the acquirer response indicates a partial authorization (approved amount < requested amount). If so, the engine has three options, tenant-configurable via `RoutingPolicy`:
+- **PARTIAL-AUTH-001**: The `AuthorizePaymentIntent` command handler checks whether the acquirer response indicates a partial authorization (approved amount < requested amount). If so, the engine has three options, operator-configurable via `RoutingPolicy`:
   1. **Accept partial**: Transition to `Authorized` with the reduced amount. The `PaymentIntent` records both `requested_amount` and `authorized_amount` for audit.
   2. **Retry next acquirer**: Treat the partial as a retryable decline and attempt the next routing candidate for the full requested amount.
   3. **Reject**: Transition to `Failed` with a new normalized decline reason `PartialAuthorizationRejected`.

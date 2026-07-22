@@ -148,7 +148,7 @@ A single-tenant, API-first payment orchestration platform that enables merchants
 | F-087 | AI circuit breaker (degrade to raw-data mode) | Must | BC-12 |
 | F-088 | AI gateway guardrails (prompt injection, output) | Must | Cross-cutting |
 | F-089 | Document upload & OCR pipeline | Must | BC-13 |
-| F-090 | OpenSearch security & tenant isolation | Must | BC-12 |
+| F-090 | OpenSearch security & data isolation | Must | BC-12 |
 
 ### 2.8 Compliance, Security & Operations
 

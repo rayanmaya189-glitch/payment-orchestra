@@ -104,7 +104,7 @@
 | OQ-013 (Part 6) | Finalize top-50 AI Assistant question list | Product + Finance-Ops persona input | Part 6 §6 evaluation harness content |
 | OQ-014 (Part 6) | Confirm GPU hardware spec/quantity | Engineering/Infra | Part 6 NFR-AI-001 numeric targets, Part 11 §6 |
 | OQ-015 (Part 6) | Bounded conversation-history window size | Product/UX | Part 6 SESS-001 finalization |
-| OQ-017 (Part 7) | Per-connector-per-tenant unique webhook URLs vs. shared disambiguated URL | Engineering | Part 9/10 webhook contract finalization |
+| OQ-017 (Part 7) | Per-connector-per-deployment unique webhook URLs vs. shared disambiguated URL | Engineering | Part 9/10 webhook contract finalization |
 | OQ-018 (Part 8) | Exact financial-record retention period | Legal | Part 8 §5.2 AUD-001, Part 11 §7 DR retention alignment |
 | OQ-019 (Part 8) | Applicability/mechanics of PDPL erasure requests vs. financial retention | Legal | Any future "data deletion" API design |
 | OQ-020 (Part 9) | Confirm BGE-M3 embedding dimension for deployed variant | Engineering/AI | Part 9 §4.2 OpenSearch index template finalization |
@@ -211,7 +211,7 @@
 | OQ-108 | Finalize degraded mode behavior thresholds: Redis lag tolerance, NATS outage duration, ClickHouse staleness limit | SRE/Engineering | M7 compliance hardening |
 | OQ-109 | Confirm SSRF deny-list completeness: all RFC 1918/3927/4193 ranges, IPv6-mapped addresses | Security | M2 first connector |
 | OQ-110 | Finalize API key lifecycle: auto-expiry enforcement, notification timing, grace period | Product/Security | M7 compliance hardening |
-| OQ-111 | Confirm cursor pagination encryption key management: per-deployment vs per-tenant | Security | M5 products layer |
+| OQ-111 | Confirm cursor pagination encryption key management: per-deployment vs per-deployment | Security | M5 products layer |
 | OQ-112 | Finalize webhook delivery backpressure: adaptive throttling algorithm, priority queue implementation | Engineering | M5 products layer |
 | OQ-113 | Confirm AML transaction monitoring rule set: specific rules, thresholds, detection logic | Compliance/Legal | M7 compliance hardening |
 | OQ-114 | Finalize property-based test coverage targets: which invariants, how many generated cases | Engineering | M2 first connector |
@@ -235,7 +235,7 @@
 | M4 — Reconciliation | `reconciliation-service` ingesting at least one connector's settlement format; UC-040/041 functional; double-entry ledger (OQ-064); reconciliation matching algorithm (OQ-065); fee breakdown tracking (Part 5 §11.1); ClickHouse security (OQ-080); ledger balance verification (Part 3 §11.7) | Parts 7, 9 |
 | M5 — Products Layer | Invoice, payment link, subscription billing (PROC-04) live; webhook payload versioning (Part 10 §10.2); webhook delivery backpressure (OQ-083); complete API error catalog (Part 10 §11.1); webhook event catalog (Part 10 §11.2) | Part 3 §5.5–5.6, Part 10 |
 | M6 — AI Assistant Baseline | RAG pipeline live against real reconciliation/transaction data; top-50 question set (OQ-013) evaluated and passing EVAL-001 gate; AI bias test set (OQ-069); hallucination detection (OQ-070); real-time quality monitoring (Part 6 §11.3); OpenSearch security (OQ-081); AI output rate limiting (Part 11 §14.8); AI exfiltration prevention (Part 11 §14.9) | Part 6, 9 |
-| M7 — Compliance Hardening | Full audit framework (Part 8 §5), SECTEST-001 cross-tenant suite passing, legal sign-off on custody posture (OQ-001) obtained; audit tamper-evidence (Part 8 §16.4); CSRF protection (OQ-075); credential monitoring (OQ-076); account recovery flow (OQ-072); data masking (OQ-082); runbooks written (Part 11 §14.13); RPO/RTO finalized (OQ-085); data residency enforcement (OQ-079); SIEM selected (OQ-054); PCI token scope confirmed (OQ-089); network zones defined (OQ-090); DDoS edge protection (OQ-091); event signatures (OQ-094); availability SLO set (OQ-097); data durability guarantee (OQ-098); card scheme rules mapped (OQ-099); data portability API (Part 8 §17.25); PCI network diagram (Part 8 §17.23); CHD flow diagram (Part 8 §17.3); key inventory (Part 8 §17.9) | Part 8, Part 11 §7 |
+| M7 — Compliance Hardening | Full audit framework (Part 8 §5), SECTEST-001 data-security suite passing, legal sign-off on custody posture (OQ-001) obtained; audit tamper-evidence (Part 8 §16.4); CSRF protection (OQ-075); credential monitoring (OQ-076); account recovery flow (OQ-072); data masking (OQ-082); runbooks written (Part 11 §14.13); RPO/RTO finalized (OQ-085); data residency enforcement (OQ-079); SIEM selected (OQ-054); PCI token scope confirmed (OQ-089); network zones defined (OQ-090); DDoS edge protection (OQ-091); event signatures (OQ-094); availability SLO set (OQ-097); data durability guarantee (OQ-098); card scheme rules mapped (OQ-099); data portability API (Part 8 §17.25); PCI network diagram (Part 8 §17.23); CHD flow diagram (Part 8 §17.3); key inventory (Part 8 §17.9) | Part 8, Part 11 §7 |
 | M8 — Pilot GA | First pilot merchant live on production with real acquirer connections; PCI-DSS QSA scoping assessment completed; DR drill completed (includes PostgreSQL cluster loss recovery, Part 11 §14.1); capacity projections validated (Part 11 §14.17); concurrent payment load tests passed (Part 11 §14.5) | All |
 
 ### 5.2 Phase 2 — GCC Expansion

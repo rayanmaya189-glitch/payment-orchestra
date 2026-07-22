@@ -416,7 +416,7 @@ The SRS specifies TLS 1.3 for external traffic (Part 8 ENC-001) and mTLS for ser
 
 ### 10.2 Feature Flag Management Pattern
 
-**FF-001**: A Redis-backed feature flag store provides per-tenant progressive rollout and kill-switch capabilities.
+**FF-001**: A Redis-backed feature flag store provides deployment-level progressive rollout and kill-switch capabilities.
 
 **FF-002**: Feature flag evaluation happens at two levels:
 - **API Gateway level**: For cross-cutting flags (e.g., new checkout flow, rate-limit configuration)
@@ -511,7 +511,7 @@ message EventEnvelope {
 
 ### 10.6 Concurrent Request Rate Limiting
 
-**RL-CONC-001**: In addition to time-window rate limiting (Part 10 RL-001), the API Gateway enforces concurrent request limits per API key (or per tenant for unauthenticated endpoints).
+**RL-CONC-001**: In addition to time-window rate limiting (Part 10 RL-001), the API Gateway enforces concurrent request limits per API key (or per deployment for unauthenticated endpoints).
 
 **RL-CONC-002**: Redis-backed concurrent request counter: on request entry, `INCR`; on completion, `DECR`. If counter exceeds configured max concurrent (default: 100 per API key for checkout endpoints), return HTTP 429 with `Retry-After`.
 

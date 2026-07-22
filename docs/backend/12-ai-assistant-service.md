@@ -3,7 +3,7 @@
 > ⚡ **Pure Router**: The platform is a routing and orchestration layer only. Funds flow directly between the customer, the payment gateway, and the merchant bank account. The platform never holds, touches, or controls funds.
 
 n> **Architecture Context**: This module runs within the modular monolith alongside all other modules. All inter-module communication uses in-process gRPC (synchronous) or in-process NATS channels (asynchronous). The module boundaries defined here can be extracted into separate microservices in a future architecture evolution if scaling requires it.
-Read-only Conformist. RAG pipeline over tenant data. No write access to money-movement contexts.
+Read-only Conformist. RAG pipeline over operator data. No write access to money-movement contexts.
 
 ---
 
@@ -12,7 +12,7 @@ Read-only Conformist. RAG pipeline over tenant data. No write access to money-mo
 ### Read-Only Context (No Aggregate Roots)
 
 **Internal State**:
-- `ConversationSession` — bounded history window, tenant-scoped
+- `ConversationSession` — bounded history window, operator-scoped
 - `GroundingCitation` — audit trail per answer
 - OpenSearch index (RAG retrieval)
 
@@ -44,7 +44,7 @@ Prior Q&A (approved only) → same pipeline
 ## 3. Guardrails
 
 - **AI-P-001**: Grounding over fluency — cite sources or say "cannot answer"
-- **AI-P-002**: Tenant isolation — separate OpenSearch index per tenant
+- **AI-P-002**: Data isolation — separate OpenSearch index per deployment
 - **AI-P-003**: No autonomous money movement — read-only
 - **AI-EXFIL-001**: Output volume limits (100 records, 30 days max range)
 - **AI-RATE-001**: Per-query-type rate limits
@@ -106,7 +106,7 @@ async fn test_answer_declines_when_insufficient_data() {
 }
 
 #[tokio::test]
-async fn test_cross_tenant_data_not_accessible() {
+async fn test_cross_operator_data_not_accessible() {
     // Query from tenant A should not return tenant B data
 }
 

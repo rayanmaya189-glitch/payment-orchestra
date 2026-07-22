@@ -186,7 +186,7 @@ Each `BIZ-xxx` ID above will be referenced from: Part 2 (which use cases satisfy
 *(A full market analysis with sizing, competitive landscape, and regulatory citations is intentionally kept brief here and will be expanded as a dedicated appendix in Part 12; this section provides only the context necessary to justify the business requirements above.)*
 
 - **MKT-001**: The UAE payments market is characterized by strong card-scheme penetration (Visa/Mastercard dominant), growing domestic instant-payment rail adoption (AANI, launched by the Central Bank of the UAE), and a competitive acquiring landscape (Network International, Magnati, Telr, PayTabs, Checkout.com, Stripe's regional partnerships, among others).
-- **MKT-002**: UAE Central Bank regulation of retail payment services (the Retail Payment Services and Card Schemes Regulation) creates defined categories of licensed activity (e.g., payment account issuance, payment aggregation, merchant acquiring). A pure orchestration/software layer that does not touch funds is designed to sit outside the funds-custody-triggering categories, but this must be validated with UAE legal counsel per tenant business model (see §6.4 — this SRS records the *architectural* requirement to support that legal position, not the legal opinion itself).
+- **MKT-002**: UAE Central Bank regulation of retail payment services (the Retail Payment Services and Card Schemes Regulation) creates defined categories of licensed activity (e.g., payment account issuance, payment aggregation, merchant acquiring). A pure orchestration/software layer that does not touch funds is designed to sit outside the funds-custody-triggering categories, but this must be validated with UAE legal counsel per deployment business model (see §6.4 — this SRS records the *architectural* requirement to support that legal position, not the legal opinion itself).
 - **MKT-003**: Demand signal for orchestration/failover comes from the fact that individual acquirers in the region can have variable authorization rates and occasional platform-level outages; merchants with single-acquirer dependency report material revenue impact during such events.
 - **MKT-004**: AI adoption in financial operations is nascent in the region; a compliant, data-resident AI assistant is a differentiator versus assistants built on third-party cloud LLM APIs, given regional sensitivity around financial data leaving the country/region.
 
@@ -351,7 +351,7 @@ Brief personas are introduced here because they justify business requirements; f
 
 ### 10.1 Assumptions
 
-- **ASSUMP-001**: See §6.4 (custody/licensing legal confirmation, per tenant business model).
+- **ASSUMP-001**: See §6.4 (custody/licensing legal confirmation, per deployment business model).
 - **ASSUMP-002**: The operator will hold their own merchant acquiring relationships; the platform does not need to become a party to card scheme rules directly.
 - **ASSUMP-003**: Self-hosted model inference (Ollama + Qwen3 32B / Qwen3-VL 8B) is assumed to provide acceptable latency and quality for the AI Assistant's operational use cases at initial launch scale; a fallback/upgrade path (larger models, additional GPU capacity) is assumed to be available if quality benchmarks (Part 6) are not met.
 - **ASSUMP-004**: UAE data residency expectations can be satisfied by hosting the full stack (Postgres, Redis, ClickHouse, OpenSearch, MinIO, Ollama) within UAE-region cloud/data-center infrastructure; specific provider selection is a Part 9/Part 11 concern.

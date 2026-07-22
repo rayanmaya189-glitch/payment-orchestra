@@ -33,7 +33,7 @@ TDD is a process constraint chosen because the core domain (money movement, Part
 | Integration tests | Single service against a real (test-container) Postgres/Redis instance; command → event store → projection round-trip | `testcontainers-rs` or equivalent, spinning ephemeral Postgres/Redis per test run | Feature developer |
 | Contract tests | Cross-service gRPC contracts (Part 10 §2) and connector conformance suites (Part 7 §5) | Generated stub validation against `.proto` definitions; connector conformance harness against sandbox environments | Service owner + connector owner |
 | End-to-end tests | Full use-case flows from Part 2 (e.g., UC-020 authorize-with-failover, across `orchestration-service` + a mocked `connector-gateway` sandbox connector) | Docker Compose or ephemeral K8s namespace spinning the relevant service subset | QA Engineering (STK-012) |
-| AI evaluation suite | Top-50 question regression (Part 6 §6), citation validity, tenant-isolation-of-retrieval | Custom harness comparing model output against ground-truth answer set | AI/ML Team (STK-009) + QA |
+| AI evaluation suite | Top-50 question regression (Part 6 §6), citation validity, data-isolation-of-retrieval | Custom harness comparing model output against ground-truth answer set | AI/ML Team (STK-009) + QA |
 
 ### 1.3 TDD Workflow Rule
 
@@ -88,8 +88,8 @@ Then the PaymentIntent transitions through Authorizing (Acquirer A) -> Failed(si
 | Local/dev | Individual developer work | Synthetic/local fixtures |
 | CI (ephemeral) | Automated pipeline runs | Ephemeral test containers, destroyed after run |
 | Staging | Pre-production validation, connector sandbox integration | Synthetic operators + real acquirer *sandbox* credentials only |
-| Sandbox (tenant-facing) | Merchant developer (ACT-03) integration testing (Part 1 §9 Persona "Rashid") | Tenant's own sandbox-mode data, isolated from their live data within the same tenant record (a `mode` flag, not a separate tenant, to preserve a single onboarding/config experience — Part 9 schema note for Part 12 appendix) |
-| Production | Live traffic | Real tenant data, full Part 8 controls active |
+| Sandbox (merchant-facing) | Merchant developer (ACT-03) integration testing (Part 1 §9 Persona "Rashid") | Operator's own sandbox-mode data, isolated from their live data within the same operator record (a `mode` flag, not a separate deployment, to preserve a single onboarding/config experience — Part 9 schema note for Part 12 appendix) |
+| Production | Live traffic | Real operator data, full Part 8 controls active |
 
 ---
 
@@ -229,7 +229,7 @@ Total checkout latency budget (target, tenant-perceived)
   - **Settlement ingestion burst**: Simulate month-end settlement file ingestion at 10x normal volume.
   - **AI Assistant concurrent queries**: Sustained concurrent Q&A load against the Ollama inference pool.
 
-- **LT-002**: Load tests run against staging environment with realistic data volumes (synthetic tenant data seeded to represent pilot-merchant scale). Results are compared against latency budgets (Part 5 NFR-ORC-001, Part 6 NFR-AI-001) as a CI gate for performance-sensitive services.
+- **LT-002**: Load tests run against staging environment with realistic data volumes (synthetic operator data seeded to represent pilot-merchant scale). Results are compared against latency budgets (Part 5 NFR-ORC-001, Part 6 NFR-AI-001) as a CI gate for performance-sensitive services.
 
 - **LT-003**: Performance regression detection: load test results are stored historically; a CI step compares current-run latency metrics against the baseline and fails the build if p99 latency regresses by more than a configurable threshold (default: 15%).
 

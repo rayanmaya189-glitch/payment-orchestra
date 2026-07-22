@@ -509,9 +509,9 @@ When a request is rate-limited, the API returns HTTP 429 with the following body
 
 ### 10.1 Cursor Pagination Security
 
-**API-CURSOR-001**: Cursors are encrypted tokens (AES-GCM) containing: `last_record_id`, `sort_key`, `filter_hash` (hash of the query's filter parameters), `tenant_id`, and `expiry`.
+**API-CURSOR-001**: Cursors are encrypted tokens (AES-GCM) containing: `last_record_id`, `sort_key`, `filter_hash` (hash of the query's filter parameters), `operator_id`, and `expiry`.
 
-**API-CURSOR-002**: On decode, the server validates: (a) decryption succeeds, (b) `filter_hash` matches current request filters (prevents cursor reuse across different queries), (c) `tenant_id` matches (defense in depth), (d) expiry hasn't passed (cursors valid for 1 hour).
+**API-CURSOR-002**: On decode, the server validates: (a) decryption succeeds, (b) `filter_hash` matches current request filters (prevents cursor reuse across different queries), (c) `operator_id` matches (defense in depth), (d) expiry hasn't passed (cursors valid for 1 hour).
 
 **API-CURSOR-003**: Cursor encryption key is per-deployment and never exposed to clients. Cursors are opaque strings — no internal schema details leak.
 
