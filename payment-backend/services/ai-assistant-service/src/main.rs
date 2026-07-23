@@ -2,6 +2,7 @@
 //! BC-12: RAG pipeline, natural-language Q&A, temporal queries
 
 use std::net::SocketAddr;
+use std::sync::Arc;
 use tonic::transport::Server;
 use tracing::info;
 
@@ -9,15 +10,45 @@ use ai_assistant_service::api::grpc::AiAssistantGrpcService;
 use ai_assistant_service::commands::AiCommandHandler;
 use ai_assistant_service::queries::AiQueryHandler;
 use ai_assistant_service::repository::InMemoryConversationSessionRepository;
+use platform_db::connection::create_service_pool;
+use platform_messaging::event_bus::{EventBus, NoopEventBus};
+use platform_messaging::nats_event_bus::NatsJetStreamEventBus;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenvy::dotenv().ok();
     platform_logging::telemetry::init();
 
+    let _db = match create_service_pool("AI_ASSISTANT").await {
+        Ok(db) => { tracing::info!("Connected to PostgreSQL for ai-assistant-service"); Some(db) }
+        Err(e) => { tracing::warn!("PostgreSQL unavailable for ai-assistant-service ({}), using InMemory", e); None }
+    };
+
     let mut runner = platform_registry::bootstrap::ServerRunner::new("ai-assistant-service", 9012, 9112).await?;
 
     let repo = InMemoryConversationSessionRepository::new();
+
+    let _event_bus: Arc<dyn EventBus> = if let Ok(url) = std::env::var("NATS_URL") {
+        let nats_username = std::env::var("AI_ASSISTANT_NATS_USERNAME").ok();
+        let nats_password = std::env::var("AI_ASSISTANT_NATS_PASSWORD").ok();
+        match NatsJetStreamEventBus::connect_with_auth(
+            &url,
+            nats_username.as_deref(),
+            nats_password.as_deref(),
+        ).await {
+            Ok(bus) => {
+                tracing::info!("Connected to NATS at {} as ai_assistant_svc", url);
+                Arc::new(bus)
+            }
+            Err(e) => {
+                tracing::warn!("Failed to connect to NATS ({}), using NoopEventBus", e);
+                Arc::new(NoopEventBus)
+            }
+        }
+    } else {
+        Arc::new(NoopEventBus)
+    };
+
     let rag_engine = Box::new(ai_assistant_service::commands::SimulatedRagEngine);
     let rate_limiter = Box::new(ai_assistant_service::commands::NoopRateLimiter);
     let command_handler = AiCommandHandler::new(repo.clone(), rag_engine, rate_limiter);

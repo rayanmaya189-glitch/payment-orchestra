@@ -18,6 +18,7 @@ mod pipeline;
 mod tests;
 
 use std::sync::Arc;
+use platform_db::connection::create_service_pool;
 use platform_messaging::event_bus::{EventBus, NoopEventBus};
 use platform_messaging::nats_event_bus::NatsJetStreamEventBus;
 use commands::ComplianceCommandHandler;
@@ -32,14 +33,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     platform_logging::telemetry::init();
     
 
+    let _db = match create_service_pool("COMPLIANCE").await {
+        Ok(db) => { tracing::info!("Connected to PostgreSQL for compliance-service"); Some(db) }
+        Err(e) => { tracing::warn!("PostgreSQL unavailable for compliance-service ({}), using InMemory", e); None }
+    };
+
     let mut runner = platform_registry::bootstrap::ServerRunner::new("compliance-service", 9003, 9103).await?;
 
     let repository = InMemoryComplianceRepository::new();
 
     let event_bus: Arc<dyn EventBus> = if let Ok(url) = std::env::var("NATS_URL") {
-        match NatsJetStreamEventBus::connect(&url).await {
+        let nats_username = std::env::var("COMPLIANCE_NATS_USERNAME").ok();
+        let nats_password = std::env::var("COMPLIANCE_NATS_PASSWORD").ok();
+        match NatsJetStreamEventBus::connect_with_auth(
+            &url,
+            nats_username.as_deref(),
+            nats_password.as_deref(),
+        ).await {
             Ok(bus) => {
-                info!("Connected to NATS at {}", url);
+                info!("Connected to NATS at {} as compliance_svc", url);
                 Arc::new(bus)
             }
             Err(e) => {

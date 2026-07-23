@@ -1,15 +1,33 @@
 //! API Gateway
 //! External ingress: REST paths + protobuf bodies, auth, rate limiting
 
+use std::sync::Arc;
 use tracing::info;
+
+use platform_db::connection::create_service_pool;
+use platform_messaging::event_bus::{EventBus, NoopEventBus};
+use platform_messaging::nats_event_bus::NatsJetStreamEventBus;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenvy::dotenv().ok();
     platform_logging::telemetry::init();
-    
+
+    let _db = match create_service_pool("API_GATEWAY").await {
+        Ok(db) => { tracing::info!("Connected to PostgreSQL for api-gateway"); Some(db) }
+        Err(e) => { tracing::warn!("PostgreSQL unavailable for api-gateway ({}), skipping", e); None }
+    };
 
     let mut runner = platform_registry::bootstrap::ServerRunner::new("api-gateway", 9020, 9120).await?;
+
+    let _event_bus: Arc<dyn EventBus> = if let Ok(url) = std::env::var("NATS_URL") {
+        let nats_username = std::env::var("API_GATEWAY_NATS_USERNAME").ok();
+        let nats_password = std::env::var("API_GATEWAY_NATS_PASSWORD").ok();
+        match NatsJetStreamEventBus::connect_with_auth(&url, nats_username.as_deref(), nats_password.as_deref()).await {
+            Ok(bus) => { tracing::info!("Connected to NATS as api_gateway_svc"); Arc::new(bus) }
+            Err(e) => { tracing::warn!("NATS failed ({}), using NoopEventBus", e); Arc::new(NoopEventBus) }
+        }
+    } else { Arc::new(NoopEventBus) };
 
     // Initialize gRPC clients for downstream services
     // (used when routing external requests to internal services)

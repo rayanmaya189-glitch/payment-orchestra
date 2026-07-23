@@ -19,6 +19,7 @@ platform-logging.workspace = true
 dotenvy.workspace = true
 platform-error.workspace = true
 platform-messaging.workspace = true
+platform-db.workspace = true
 platform-registry.workspace = true
 platform-health.workspace = true
 

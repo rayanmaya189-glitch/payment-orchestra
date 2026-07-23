@@ -18,6 +18,7 @@ mod pipeline;
 mod tests;
 
 use std::sync::Arc;
+use platform_db::connection::create_service_pool;
 use platform_messaging::event_bus::{EventBus, NoopEventBus};
 use platform_messaging::nats_event_bus::NatsJetStreamEventBus;
 use commands::IamCommandHandler;
@@ -34,15 +35,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut runner = platform_registry::bootstrap::ServerRunner::new("iam-service", 9002, 9102).await?;
 
+    let _db = match create_service_pool("IAM").await {
+        Ok(db) => { tracing::info!("Connected to PostgreSQL for iam-service"); Some(db) }
+        Err(e) => { tracing::warn!("PostgreSQL unavailable for iam-service ({}), using InMemory", e); None }
+    };
+
     let config = platform_config::config::ServiceConfig::from_env()
         .unwrap_or_default();
 
     let repository = InMemoryIamRepository::new();
 
     let event_bus: Arc<dyn EventBus> = if let Ok(url) = std::env::var("NATS_URL") {
-        match NatsJetStreamEventBus::connect(&url).await {
+        let nats_username = std::env::var("IAM_NATS_USERNAME").ok();
+        let nats_password = std::env::var("IAM_NATS_PASSWORD").ok();
+        match NatsJetStreamEventBus::connect_with_auth(
+            &url,
+            nats_username.as_deref(),
+            nats_password.as_deref(),
+        ).await {
             Ok(bus) => {
-                info!("Connected to NATS at {}", url);
+                info!("Connected to NATS at {} as iam_svc", url);
                 Arc::new(bus)
             }
             Err(e) => {

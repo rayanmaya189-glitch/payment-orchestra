@@ -25,16 +25,37 @@ impl NatsJetStreamEventBus {
     /// # Arguments
     /// * `url` - NATS server URL (e.g., "nats://localhost:4222")
     pub async fn connect(url: &str) -> Result<Self, String> {
-        let client = async_nats::connect_with_options(
-            url,
-            ConnectOptions::new()
-                .name("payment-orchestra-event-bus")
-                .event_callback(|event| async move {
-                    tracing::debug!(?event, "NATS connection event");
-                }),
-        )
-        .await
-        .map_err(|e| format!("NATS connection failed: {}", e))?;
+        Self::connect_with_auth(url, None, None).await
+    }
+
+    /// Connect to NATS with optional username/password authentication.
+    ///
+    /// Each service uses its own credentials as defined in `nats.conf`.
+    /// Falls back to unauthenticated connection if credentials are not provided.
+    ///
+    /// # Arguments
+    /// * `url` - NATS server URL (e.g., "nats://localhost:4222")
+    /// * `username` - Optional NATS username for this service
+    /// * `password` - Optional NATS password for this service
+    pub async fn connect_with_auth(
+        url: &str,
+        username: Option<&str>,
+        password: Option<&str>,
+    ) -> Result<Self, String> {
+        let mut opts = ConnectOptions::new()
+            .name("payment-orchestra-event-bus")
+            .event_callback(|event| async move {
+                tracing::debug!(?event, "NATS connection event");
+            });
+
+        if let (Some(user), Some(pass)) = (username, password) {
+            opts = opts.user_and_password(user.to_string(), pass.to_string());
+            tracing::info!("Connecting to NATS with service credentials");
+        }
+
+        let client = async_nats::connect_with_options(url, opts)
+            .await
+            .map_err(|e| format!("NATS connection failed: {}", e))?;
 
         let jetstream = jetstream::new(client);
 

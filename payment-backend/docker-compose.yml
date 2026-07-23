@@ -10,6 +10,7 @@ services:
       - "5432:5432"
     volumes:
       - pg_data:/var/lib/postgresql/data
+      - ./db/init-multi-tenant.sql:/docker-entrypoint-initdb.d/init-multi-tenant.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U platform -d payment_orchestra"]
       interval: 5s
@@ -41,9 +42,10 @@ services:
     ports:
       - "4222:4222"
       - "8222:8222"
-    command: "-js -sd /data"
+    command: "-js -sd /data -c /etc/nats/nats.conf"
     volumes:
       - nats_data:/data
+      - ./nats.conf:/etc/nats/nats.conf:ro
 
   ollama:
     image: ollama/ollama:latest

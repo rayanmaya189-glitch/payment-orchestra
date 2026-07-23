@@ -22,6 +22,7 @@ dotenvy.workspace = true
 platform-error.workspace = true
 platform-outbox.workspace = true
 platform-messaging.workspace = true
+platform-db.workspace = true
 platform-health.workspace = true
 
 [dev-dependencies]
