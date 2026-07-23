@@ -21,7 +21,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let command_handler = ReconciliationCommandHandler::new(repo.clone());
     let query_handler = ReconciliationQueryHandler::new(repo.clone());
 
-    let reconciliation_service = ReconciliationGrpcService::new(command_handler, query_handler);
+    let reconciliation_service = ReconciliationGrpcService::new(command_handler, query_handler, repo);
 
     let grpc_addr: SocketAddr = runner.grpc_addr;
     info!("Reconciliation service listening on {}", grpc_addr);

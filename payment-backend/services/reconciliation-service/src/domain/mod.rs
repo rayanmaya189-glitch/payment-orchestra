@@ -113,6 +113,16 @@ pub enum BatchStatus {
     Quarantined,
 }
 
+impl std::fmt::Display for BatchStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Ingesting => write!(f, "pending"),
+            Self::Processed => write!(f, "matched"),
+            Self::Quarantined => write!(f, "exception"),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SettlementRecord {
     pub record_id: Uuid,

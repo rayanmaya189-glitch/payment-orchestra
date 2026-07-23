@@ -498,10 +498,12 @@ mod tests {
             rotate_immediately: true,
         }).await.unwrap();
 
-        assert_eq!(rotated.link.credentials_hash,
-            MerchantAcquirerLink::compute_credentials_hash(&serde_json::to_string(
-                &std::collections::HashMap::from([("key".into(), "new_value".into())])
-            ).unwrap()));
+        let expected_hash = {
+            let mut m = std::collections::HashMap::<String, String>::new();
+            m.insert("key".to_string(), "new_value".to_string());
+            MerchantAcquirerLink::compute_credentials_hash(&serde_json::to_string(&m).unwrap())
+        };
+        assert_eq!(rotated.link.credentials_hash, expected_hash);
     }
 
     #[tokio::test]

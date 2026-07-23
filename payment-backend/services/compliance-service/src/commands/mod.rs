@@ -390,7 +390,7 @@ mod tests {
             alert_id: scan.alerts[0].alert_id,
             reviewer_id: Uuid::now_v7(),
             decision: AmlAlertDecision::ClosedFalsePositive,
-            notes: Some("False positive".into()),
+            _notes: Some("False positive".into()),
         }).await.unwrap();
 
         assert_eq!(result.alert.status, AlertStatus::Closed);

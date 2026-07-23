@@ -16,6 +16,7 @@ pub trait SettlementBatchRepository: Send + Sync {
     async fn load_settlement_batch(&self, id: Uuid) -> Result<Option<SettlementBatch>, ReconciliationError>;
     async fn save_settlement_batch(&self, batch: &SettlementBatch) -> Result<(), ReconciliationError>;
     async fn find_batch_by_checksum(&self, checksum: &str) -> Result<Option<SettlementBatch>, ReconciliationError>;
+    async fn list_all_batches(&self) -> Result<Vec<SettlementBatch>, ReconciliationError>;
 }
 
 #[async_trait]
@@ -92,6 +93,13 @@ impl SettlementBatchRepository for InMemoryReconciliationRepository {
             return Ok(store.get(batch_id).cloned());
         }
         Ok(None)
+    }
+
+    async fn list_all_batches(&self) -> Result<Vec<SettlementBatch>, ReconciliationError> {
+        let store = self.batches.read().await;
+        let mut batches: Vec<SettlementBatch> = store.values().cloned().collect();
+        batches.sort_by(|a, b| a.ingested_at.cmp(&b.ingested_at));
+        Ok(batches)
     }
 }
 

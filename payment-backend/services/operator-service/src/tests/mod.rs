@@ -4,9 +4,9 @@
 #[cfg(test)]
 mod integration_tests {
     use uuid::Uuid;
-    use crate::commands::{OperatorCommandHandler, RegisterOperator, VerifyEmail, UpdateOperatorStatus};
+    use crate::commands::{CommandHandler, OperatorCommandHandler, RegisterOperator, VerifyEmail, UpdateOperatorStatus};
     use crate::domain::{OperatorStatus, OperatorError};
-    use crate::queries::OperatorQueries;
+    use crate::queries::{QueryHandler, OperatorQueries};
     use crate::repository::InMemoryOperatorRepository;
 
     fn setup() -> (OperatorCommandHandler<InMemoryOperatorRepository>, OperatorQueries<InMemoryOperatorRepository>) {
