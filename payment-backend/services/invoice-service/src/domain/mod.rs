@@ -48,6 +48,19 @@ pub enum InvoiceStatus {
     Cancelled,
 }
 
+impl std::fmt::Display for InvoiceStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            InvoiceStatus::Draft => write!(f, "draft"),
+            InvoiceStatus::Sent => write!(f, "sent"),
+            InvoiceStatus::Paid => write!(f, "paid"),
+            InvoiceStatus::PartiallyPaid => write!(f, "partially_paid"),
+            InvoiceStatus::Overdue => write!(f, "overdue"),
+            InvoiceStatus::Cancelled => write!(f, "cancelled"),
+        }
+    }
+}
+
 impl InvoiceStatus {
     pub fn can_transition_to(&self, new_status: &InvoiceStatus) -> Result<(), InvoiceError> {
         match (self, new_status) {
