@@ -39,6 +39,12 @@ impl NotificationPipeline {
             repo,
         }
     }
+
+    /// Override the default no-op event bus with a real NATS-backed bus.
+    pub fn with_event_bus(mut self, event_bus: Box<dyn EventBus>) -> Self {
+        self.event_bus = event_bus;
+        self
+    }
 }
 
 #[derive(Clone)]

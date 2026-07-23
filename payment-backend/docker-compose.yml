@@ -36,6 +36,15 @@ services:
       MINIO_ROOT_PASSWORD: dev_password
     command: server /data --console-address ":9001"
 
+  nats:
+    image: nats:2.10-alpine
+    ports:
+      - "4222:4222"
+      - "8222:8222"
+    command: "-js -sd /data"
+    volumes:
+      - nats_data:/data
+
   ollama:
     image: ollama/ollama:latest
     ports:
@@ -53,3 +62,4 @@ services:
 volumes:
   pg_data:
   ollama_data:
+  nats_data:
