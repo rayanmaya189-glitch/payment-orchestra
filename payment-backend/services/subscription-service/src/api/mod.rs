@@ -6,6 +6,8 @@ use crate::queries::*;
 use uuid::Uuid;
 
 /// Public API facade for the subscription service.
+pub mod grpc;
+
 pub struct SubscriptionApi {
     command_handler: Box<dyn CommandHandler>,
     query_handler: Box<dyn QueryHandler>,

@@ -100,6 +100,20 @@ impl SubscriptionStatus {
     }
 }
 
+impl std::str::FromStr for SubscriptionStatus {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "active" => Ok(SubscriptionStatus::Active),
+            "past_due" => Ok(SubscriptionStatus::PastDue),
+            "cancelled" => Ok(SubscriptionStatus::Cancelled),
+            "paused" => Ok(SubscriptionStatus::Paused),
+            _ => Err(format!("Invalid subscription status: {}", s)),
+        }
+    }
+}
+
 impl std::fmt::Display for SubscriptionStatus {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
