@@ -1,5 +1,7 @@
 //! Subscription Billing repository — BC-08
 
+pub mod pg;
+
 use async_trait::async_trait;
 use std::collections::HashMap;
 use std::sync::Arc;

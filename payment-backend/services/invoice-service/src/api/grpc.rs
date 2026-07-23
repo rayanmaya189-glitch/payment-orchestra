@@ -264,6 +264,7 @@ fn invoice_error_to_status(e: InvoiceError) -> Status {
             Status::already_exists(format!("Duplicate order invoice: {}", order))
         }
         InvoiceError::Validation(msg) => Status::invalid_argument(msg),
+        InvoiceError::DatabaseError(msg) => Status::internal(format!("Database error: {}", msg)),
         InvoiceError::General(msg) => Status::internal(msg),
     }
 }

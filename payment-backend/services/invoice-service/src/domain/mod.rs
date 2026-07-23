@@ -193,6 +193,9 @@ pub enum InvoiceError {
     #[error("Validation error: {0}")]
     Validation(String),
 
+    #[error("Database error: {0}")]
+    DatabaseError(String),
+
     #[error("Invoice error: {0}")]
     General(String),
 }

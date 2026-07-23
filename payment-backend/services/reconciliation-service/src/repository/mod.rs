@@ -1,5 +1,7 @@
 //! Repository interfaces and in-memory implementation for reconciliation-service.
 
+pub mod pg;
+
 use async_trait::async_trait;
 use chrono::Utc;
 use std::collections::HashMap;

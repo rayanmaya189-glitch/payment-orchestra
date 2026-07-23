@@ -1,6 +1,8 @@
 //! Repository interfaces and in-memory implementation for orchestration-service.
 //! In production, these would be backed by SeaORM + PostgreSQL + Redis.
 
+pub mod pg;
+
 use async_trait::async_trait;
 use std::collections::HashMap;
 use std::sync::Arc;

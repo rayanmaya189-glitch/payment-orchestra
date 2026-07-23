@@ -6,7 +6,7 @@ use uuid::Uuid;
 
 use crate::domain::*;
 use super::SubscriptionRepository;
-use platform_db::entities::subscription::{Entity as SubEntity, ActiveModel as SubActiveModel, Model as SubModel};
+use crate::entities::{Entity as SubEntity, ActiveModel as SubActiveModel, Model as SubModel, Column as SubColumn};
 
 /// SeaORM-backed subscription repository.
 pub struct PostgresSubscriptionRepository {
@@ -25,7 +25,7 @@ impl SubscriptionRepository for PostgresSubscriptionRepository {
         let result = SubEntity::find_by_id(id)
             .one(&self.db)
             .await
-            .map_err(|e| SubscriptionError::General(e.to_string()))?;
+            .map_err(|e| SubscriptionError::DatabaseError(e.to_string()))?;
         match result {
             Some(m) => Ok(Some(model_to_domain(m)?)),
             None => Ok(None),
@@ -37,18 +37,18 @@ impl SubscriptionRepository for PostgresSubscriptionRepository {
         let exists = SubEntity::find_by_id(sub.subscription_id)
             .one(&self.db)
             .await
-            .map_err(|e| SubscriptionError::General(e.to_string()))?
+            .map_err(|e| SubscriptionError::DatabaseError(e.to_string()))?
             .is_some();
         if exists {
-            SubEntity::update(model.into())
+            SubEntity::update(SubActiveModel::from(model.clone()))
                 .exec(&self.db)
                 .await
-                .map_err(|e| SubscriptionError::General(e.to_string()))?;
+                .map_err(|e| SubscriptionError::DatabaseError(e.to_string()))?;
         } else {
-            SubEntity::insert(model.into())
+            SubEntity::insert(SubActiveModel::from(model))
                 .exec(&self.db)
                 .await
-                .map_err(|e| SubscriptionError::General(e.to_string()))?;
+                .map_err(|e| SubscriptionError::DatabaseError(e.to_string()))?;
         }
         Ok(())
     }
@@ -62,7 +62,7 @@ impl SubscriptionRepository for PostgresSubscriptionRepository {
             )
             .all(&self.db)
             .await
-            .map_err(|e| SubscriptionError::General(e.to_string()))?;
+            .map_err(|e| SubscriptionError::DatabaseError(e.to_string()))?;
         models.into_iter().map(model_to_domain).collect()
     }
 
@@ -71,7 +71,7 @@ impl SubscriptionRepository for PostgresSubscriptionRepository {
             .filter(SubColumn::CustomerId.eq(customer_id))
             .all(&self.db)
             .await
-            .map_err(|e| SubscriptionError::General(e.to_string()))?;
+            .map_err(|e| SubscriptionError::DatabaseError(e.to_string()))?;
         models.into_iter().map(model_to_domain).collect()
     }
 
@@ -80,7 +80,7 @@ impl SubscriptionRepository for PostgresSubscriptionRepository {
             .filter(SubColumn::OperatorId.eq(operator_id))
             .all(&self.db)
             .await
-            .map_err(|e| SubscriptionError::General(e.to_string()))?;
+            .map_err(|e| SubscriptionError::DatabaseError(e.to_string()))?;
         models.into_iter().map(model_to_domain).collect()
     }
 }
@@ -120,7 +120,7 @@ fn model_to_domain(m: SubModel) -> Result<Subscription, SubscriptionError> {
         plan_id: m.plan_id,
         plan_amount_minor_units: m.plan_amount_minor_units,
         currency: m.currency,
-        status: m.status.parse().map_err(|e: String| SubscriptionError::General(e))?,
+        status: m.status.parse().map_err(|e: String| SubscriptionError::DatabaseError(e))?,
         current_period_start: m.current_period_start.into(),
         current_period_end: m.current_period_end.into(),
         billing_interval_days: m.billing_interval_days,
@@ -128,9 +128,9 @@ fn model_to_domain(m: SubModel) -> Result<Subscription, SubscriptionError> {
         dunning_retry_count: m.dunning_retry_count,
         max_dunning_retries: m.max_dunning_retries,
         billing_cycles: serde_json::from_value(m.billing_cycles)
-            .map_err(|e| SubscriptionError::General(e.to_string()))?,
+            .map_err(|e| SubscriptionError::DatabaseError(e.to_string()))?,
         dunning_retries: serde_json::from_value(m.dunning_retries)
-            .map_err(|e| SubscriptionError::General(e.to_string()))?,
+            .map_err(|e| SubscriptionError::DatabaseError(e.to_string()))?,
         created_at: m.created_at.into(),
         cancelled_at: m.cancelled_at.map(Into::into),
         paused_at: m.paused_at.map(Into::into),
