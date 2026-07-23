@@ -1,5 +1,7 @@
 //! Analytics Service public API layer
 
+pub mod grpc;
+
 use crate::commands::*;
 use crate::domain::*;
 use crate::queries::*;

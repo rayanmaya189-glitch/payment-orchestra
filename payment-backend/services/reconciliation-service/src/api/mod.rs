@@ -1,5 +1,7 @@
 //! Reconciliation-service API — handler exports for the modular monolith.
 
+pub mod grpc;
+
 pub use crate::commands::{CommandHandler, ReconciliationCommandHandler};
 pub use crate::queries::{QueryHandler, ReconciliationQueryHandler};
 pub use crate::domain::{SettlementBatch, SettlementRecord, LedgerEntry, FeeVariance, SettlementExpectation};

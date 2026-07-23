@@ -1,5 +1,7 @@
 //! AI Assistant Service public API layer
 
+pub mod grpc;
+
 use uuid::Uuid;
 
 use crate::commands::*;

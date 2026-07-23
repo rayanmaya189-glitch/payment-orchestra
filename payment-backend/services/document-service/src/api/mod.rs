@@ -1,5 +1,7 @@
 //! Document Management API surface — BC-13
 
+pub mod grpc;
+
 use crate::commands::*;
 use crate::domain::{DocumentError, DocumentRecord};
 use crate::queries::*;
