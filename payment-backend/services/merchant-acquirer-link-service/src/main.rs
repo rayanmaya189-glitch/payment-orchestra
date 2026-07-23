@@ -26,7 +26,9 @@ use platform_proto::connector::merchant_acquirer_link_service_server::MerchantAc
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    dotenvy::dotenv().ok();
     platform_logging::telemetry::init();
+    
 
     let mut runner = platform_registry::bootstrap::ServerRunner::new("merchant-acquirer-link-service", 9018, 9118).await?;
 

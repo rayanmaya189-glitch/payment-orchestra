@@ -26,7 +26,9 @@ use platform_proto::operator::operator_service_server::OperatorServiceServer;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    dotenvy::dotenv().ok();
     platform_logging::telemetry::init();
+    
 
     let mut runner = platform_registry::bootstrap::ServerRunner::new("operator-service", 9001, 9101).await?;
 

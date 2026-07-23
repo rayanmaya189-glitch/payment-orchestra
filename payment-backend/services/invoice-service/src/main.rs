@@ -12,7 +12,9 @@ use invoice_service::pipeline::InvoicePipeline;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    dotenvy::dotenv().ok();
     platform_logging::telemetry::init();
+    
 
     let mut runner = platform_registry::bootstrap::ServerRunner::new("invoice-service", 9006, 9106).await?;
 
@@ -22,7 +24,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let _pipeline = InvoicePipeline::new(command_handler, query_handler);
 
     info!("Invoice service registered, listening on {}", runner.grpc_addr);
-    runner.wait_for_shutdown().await?;
+    platform_health::serve::serve_health(&mut runner).await?;
     runner.deregister().await;;
 
     info!("Invoice service stopped");

@@ -7,6 +7,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // ── All proto files ──
     let all_proto_files: Vec<&str> = vec![
         "common.proto",
+        "health.proto",
         "operator.proto",
         "iam.proto",
         "compliance.proto",
@@ -60,6 +61,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // which will overwrite our renamed prost files with the gRPC stubs included.
     // All protos with service definitions are listed here.
     let service_proto_files: Vec<&str> = vec![
+        "health.proto",
         "operator.proto",
         "iam.proto",
         "compliance.proto",

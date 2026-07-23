@@ -102,6 +102,8 @@ futures = "0.3"
 # HTTP client
 reqwest = { version = "0.12", features = ["json"] }
 rand = "0.8"
+# Dotenv (.env file loader)
+dotenvy = "0.15"
 # OpenTelemetry
 opentelemetry = "0.27"
 opentelemetry-otlp = "0.27"

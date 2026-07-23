@@ -1,0 +1,31 @@
+// health.proto — Minimal gRPC Health Checking Protocol
+// AI-Native Payment Orchestration Platform
+//
+// All services serve this health endpoint to be discoverable via etcd.
+// Once a service has real gRPC implementations, it can upgrade to its
+// own service proto while keeping this health check.
+
+syntax = "proto3";
+package health.v1;
+
+// Health checking service — gRPC standard-compatible
+service Health {
+  // Check returns the serving status of the given service.
+  rpc Check(HealthCheckRequest) returns (HealthCheckResponse);
+}
+
+message HealthCheckRequest {
+  // Service name to check (empty = overall service health)
+  string service = 1;
+}
+
+message HealthCheckResponse {
+  // Serving status of the service
+  enum ServingStatus {
+    UNKNOWN = 0;
+    SERVING = 1;
+    NOT_SERVING = 2;
+    SERVICE_UNKNOWN = 3;
+  }
+  ServingStatus status = 1;
+}

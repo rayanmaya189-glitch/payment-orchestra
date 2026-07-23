@@ -17,7 +17,9 @@ use orchestration_service::pipeline::OrchestrationPipeline;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    dotenvy::dotenv().ok();
     platform_logging::telemetry::init();
+    
 
     let mut runner = platform_registry::bootstrap::ServerRunner::new("orchestration-service", 9005, 9105).await?;
 
@@ -30,7 +32,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!("Orchestration service gRPC server listening on {}", runner.grpc_addr);
 
     // Keep the process alive until shutdown signal
-    runner.wait_for_shutdown().await?;
+    platform_health::serve::serve_health(&mut runner).await?;
     runner.deregister().await;;
 
     info!("Orchestration service stopped");

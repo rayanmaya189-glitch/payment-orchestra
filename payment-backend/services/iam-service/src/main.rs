@@ -26,7 +26,9 @@ use platform_proto::iam::iam_service_server::IamServiceServer;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    dotenvy::dotenv().ok();
     platform_logging::telemetry::init();
+    
 
     let mut runner = platform_registry::bootstrap::ServerRunner::new("iam-service", 9002, 9102).await?;
 

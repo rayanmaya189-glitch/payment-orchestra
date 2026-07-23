@@ -6,6 +6,10 @@ pub mod common {
     include!(concat!(env!("OUT_DIR"), "/common.v1.rs"));
 }
 
+pub mod health {
+    include!(concat!(env!("OUT_DIR"), "/health.v1.rs"));
+}
+
 pub mod operator {
     include!(concat!(env!("OUT_DIR"), "/operator.v1.rs"));
 }

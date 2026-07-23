@@ -24,6 +24,7 @@ hex.workspace = true
 ring.workspace = true
 platform-proto.workspace = true
 platform-logging.workspace = true
+dotenvy.workspace = true
 platform-error.workspace = true
 platform-config.workspace = true
 platform-messaging.workspace = true

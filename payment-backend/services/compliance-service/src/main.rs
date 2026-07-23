@@ -26,7 +26,9 @@ use platform_proto::compliance::compliance_service_server::ComplianceServiceServ
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    dotenvy::dotenv().ok();
     platform_logging::telemetry::init();
+    
 
     let mut runner = platform_registry::bootstrap::ServerRunner::new("compliance-service", 9003, 9103).await?;
 
