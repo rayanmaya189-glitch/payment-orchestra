@@ -1,7 +1,6 @@
 use crate::api::*;
 use crate::commands::*;
 use crate::domain::*;
-use crate::events::*;
 use crate::queries::*;
 use crate::repository::*;
 
