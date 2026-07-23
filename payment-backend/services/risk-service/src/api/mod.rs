@@ -7,6 +7,8 @@ use chrono::{DateTime, Utc};
 use uuid::Uuid;
 
 /// Public API facade for the risk service.
+pub mod grpc;
+
 pub struct RiskApi {
     command_handler: Box<dyn CommandHandler>,
     query_handler: Box<dyn QueryHandler>,
