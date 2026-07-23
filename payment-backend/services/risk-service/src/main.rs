@@ -1,7 +1,6 @@
 //! Risk Service
 //! SVC-11: Fraud scoring, rules engine, synchronous scoring
 
-use tokio::signal;
 use tracing::info;
 
 #[tokio::main]
@@ -13,8 +12,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut runner = platform_registry::bootstrap::ServerRunner::new("risk-service", 9011, 9111).await?;
 
     info!("Risk service registered, listening on {}", runner.grpc_addr);
-    platform_health::serve::serve_health(&mut runner).await?;
-    runner.deregister().await;;
+    platform_health::serve::serve_health(&runner).await?;
+    runner.deregister().await;
 
     info!("Risk service stopped");
     Ok(())

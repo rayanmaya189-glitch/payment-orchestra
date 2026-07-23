@@ -5,7 +5,6 @@ use reconciliation_service::commands::ReconciliationCommandHandler;
 use reconciliation_service::queries::ReconciliationQueryHandler;
 use reconciliation_service::repository::InMemoryReconciliationRepository;
 use reconciliation_service::pipeline::ReconciliationPipeline;
-use tokio::signal;
 use tracing::info;
 
 #[tokio::main]
@@ -22,8 +21,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let _pipeline = ReconciliationPipeline::new(command_handler, query_handler);
 
     info!("Reconciliation service registered, listening on {}", runner.grpc_addr);
-    platform_health::serve::serve_health(&mut runner).await?;
-    runner.deregister().await;;
+    platform_health::serve::serve_health(&runner).await?;
+    runner.deregister().await;
 
     info!("Reconciliation service stopped");
     Ok(())
