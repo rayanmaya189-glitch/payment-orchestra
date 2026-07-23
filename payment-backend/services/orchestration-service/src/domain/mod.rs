@@ -663,6 +663,9 @@ pub enum OrchestrationError {
 
     #[error("Payment method token not found or inactive")]
     PaymentMethodTokenInvalid,
+
+    #[error("Database error: {0}")]
+    DatabaseError(String),
 }
 
 // ─── Idempotency ─────────────────────────────────────────────────────────────

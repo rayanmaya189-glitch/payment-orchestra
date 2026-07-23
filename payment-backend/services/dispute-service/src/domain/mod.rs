@@ -317,4 +317,6 @@ pub enum DisputeError {
     InvalidRepresentmentEvidence,
     #[error("Representment deadline has passed")]
     RepresentmentDeadlinePassed,
+    #[error("Database error: {0}")]
+    DatabaseError(String),
 }

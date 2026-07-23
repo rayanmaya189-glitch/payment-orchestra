@@ -340,6 +340,7 @@ fn orchestration_error_to_status(e: OrchestrationError) -> Status {
         OrchestrationError::RoutingPolicyNotFound => Status::not_found("Routing policy not found"),
         OrchestrationError::AllAcquirersDeclined => Status::unavailable("All acquirers declined"),
         OrchestrationError::PaymentMethodTokenInvalid => Status::invalid_argument("Payment method token invalid"),
+        OrchestrationError::DatabaseError(msg) => Status::internal(format!("Database error: {}", msg)),
     }
 }
 

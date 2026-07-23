@@ -6,7 +6,7 @@ use uuid::Uuid;
 use tracing::info;
 
 use std::sync::Arc;
-use platform_messaging::event_bus::{EventBus, publish_event_fire_and_forget};
+use platform_messaging::{event_bus::{EventBus, publish_event_fire_and_forget}, encode_proto};
 use crate::domain::{Operator, OperatorError, OperatorStatus};
 use crate::events::{OperatorEvent, OperatorRegistered, OperatorVerified, OperatorSuspended, OperatorReactivated};
 use crate::repository::OperatorRepository;
@@ -265,9 +265,7 @@ impl<R: OperatorRepository> OperatorCommandHandler<R> {
                     subdomain: e.subdomain.clone(),
                     occurred_at_unix_ms: e.occurred_at.timestamp_millis(),
                 };
-                let mut buf = Vec::new();
-                prost::Message::encode(&proto, &mut buf).map_err(|e| e.to_string())?;
-                Ok(buf)
+                encode_proto!(proto)
             }
             OperatorEvent::Verified(e) => {
                 let proto = platform_proto::operator::OperatorVerifiedEvent {
@@ -276,9 +274,7 @@ impl<R: OperatorRepository> OperatorCommandHandler<R> {
                     new_status: e.new_status.clone(),
                     occurred_at_unix_ms: e.occurred_at.timestamp_millis(),
                 };
-                let mut buf = Vec::new();
-                prost::Message::encode(&proto, &mut buf).map_err(|e| e.to_string())?;
-                Ok(buf)
+                encode_proto!(proto)
             }
             OperatorEvent::Suspended(e) => {
                 let proto = platform_proto::operator::OperatorSuspendedEvent {
@@ -286,9 +282,7 @@ impl<R: OperatorRepository> OperatorCommandHandler<R> {
                     reason: e.reason.clone(),
                     occurred_at_unix_ms: e.occurred_at.timestamp_millis(),
                 };
-                let mut buf = Vec::new();
-                prost::Message::encode(&proto, &mut buf).map_err(|e| e.to_string())?;
-                Ok(buf)
+                encode_proto!(proto)
             }
             OperatorEvent::Reactivated(e) => {
                 let proto = platform_proto::operator::OperatorReactivatedEvent {
@@ -296,9 +290,7 @@ impl<R: OperatorRepository> OperatorCommandHandler<R> {
                     reason: e.reason.clone(),
                     occurred_at_unix_ms: e.occurred_at.timestamp_millis(),
                 };
-                let mut buf = Vec::new();
-                prost::Message::encode(&proto, &mut buf).map_err(|e| e.to_string())?;
-                Ok(buf)
+                encode_proto!(proto)
             }
         }
     }

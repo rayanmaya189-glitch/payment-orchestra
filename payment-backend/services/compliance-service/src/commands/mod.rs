@@ -5,7 +5,7 @@ use tracing::info;
 use uuid::Uuid;
 
 use std::sync::Arc;
-use platform_messaging::event_bus::{EventBus, publish_event_fire_and_forget};
+use platform_messaging::{event_bus::{EventBus, publish_event_fire_and_forget}, encode_proto};
 use crate::domain::{KybCase, AmlAlert, AmlMonitor, ComplianceError};
 use crate::events::{ComplianceEvent, KybCaseSubmitted, KybCaseApproved, KybCaseRejected, AmlAlertCreated};
 use crate::repository::ComplianceRepository;
@@ -116,9 +116,7 @@ impl<R: ComplianceRepository> ComplianceCommandHandler<R> {
                     document_count: e.document_count as i32,
                     occurred_at_unix_ms: e.occurred_at.timestamp_millis(),
                 };
-                let mut buf = Vec::new();
-                prost::Message::encode(&proto, &mut buf).map_err(|e| e.to_string())?;
-                Ok(buf)
+                encode_proto!(proto)
             }
             ComplianceEvent::KybCaseApproved(e) => {
                 let proto = platform_proto::compliance::KybCaseApprovedEvent {
@@ -126,9 +124,7 @@ impl<R: ComplianceRepository> ComplianceCommandHandler<R> {
                     operator_id: e.operator_id.to_string(),
                     occurred_at_unix_ms: e.occurred_at.timestamp_millis(),
                 };
-                let mut buf = Vec::new();
-                prost::Message::encode(&proto, &mut buf).map_err(|e| e.to_string())?;
-                Ok(buf)
+                encode_proto!(proto)
             }
             ComplianceEvent::KybCaseRejected(e) => {
                 let proto = platform_proto::compliance::KybCaseRejectedEvent {
@@ -137,9 +133,7 @@ impl<R: ComplianceRepository> ComplianceCommandHandler<R> {
                     reason: e.reason.clone(),
                     occurred_at_unix_ms: e.occurred_at.timestamp_millis(),
                 };
-                let mut buf = Vec::new();
-                prost::Message::encode(&proto, &mut buf).map_err(|e| e.to_string())?;
-                Ok(buf)
+                encode_proto!(proto)
             }
             ComplianceEvent::AmlAlertCreated(e) => {
                 let proto = platform_proto::compliance::AmlAlertCreatedEvent {
@@ -149,9 +143,7 @@ impl<R: ComplianceRepository> ComplianceCommandHandler<R> {
                     severity: e.severity.clone(),
                     occurred_at_unix_ms: e.occurred_at.timestamp_millis(),
                 };
-                let mut buf = Vec::new();
-                prost::Message::encode(&proto, &mut buf).map_err(|e| e.to_string())?;
-                Ok(buf)
+                encode_proto!(proto)
             }
         }
     }

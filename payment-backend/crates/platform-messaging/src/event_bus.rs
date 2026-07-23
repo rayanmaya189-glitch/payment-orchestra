@@ -177,4 +177,41 @@ mod tests {
         assert_eq!(decoded.payload, envelope.payload);
         assert_eq!(decoded.event_id, envelope.event_id);
     }
+
+    // ── Fire-and-Forget Helper Tests ────────────────────────────────────────
+
+    #[tokio::test]
+    async fn test_fire_and_forget_with_noop_bus() {
+        // Verify that publishing to a NoopEventBus via the helper does not panic.
+        let bus: Arc<dyn EventBus> = Arc::new(NoopEventBus);
+        publish_event_fire_and_forget(&Some(bus), "test", "event_type", vec![1, 2, 3]);
+        // Give the spawned background task time to complete.
+        tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+    }
+
+    #[tokio::test]
+    async fn test_fire_and_forget_with_none_bus() {
+        // Verify that passing None does not panic and takes no action.
+        publish_event_fire_and_forget(&None, "test", "event_type", vec![1, 2, 3]);
+        tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+    }
+
+    #[tokio::test]
+    async fn test_fire_and_forget_payload_integrity() {
+        // Verify that the helper publishes the correct subject and payload
+        // by using a ChannelEventBus and subscribing to verify.
+        let channel = ChannelEventBus::new(16);
+        let mut rx = channel.subscribe();
+        let bus: Arc<dyn EventBus> = Arc::new(channel);
+
+        let payload = vec![10, 20, 30];
+        publish_event_fire_and_forget(&Some(bus), "test-prefix", "my.event", payload.clone());
+
+        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+
+        let received = rx.try_recv().unwrap();
+        let envelope = EventEnvelope::from_bytes(&received).unwrap();
+        assert_eq!(envelope.subject, "test-prefix.my.event");
+        assert_eq!(envelope.payload, payload);
+    }
 }

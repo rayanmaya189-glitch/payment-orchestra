@@ -5,7 +5,7 @@ use tracing::info;
 use uuid::Uuid;
 
 use std::sync::Arc;
-use platform_messaging::event_bus::{EventBus, publish_event_fire_and_forget};
+use platform_messaging::{event_bus::{EventBus, publish_event_fire_and_forget}, encode_proto};
 use crate::domain::{Principal, ApiKey, ApiKeyStatus, PendingChange, AuthError, IamError};
 use crate::events::{IamEvent, PrincipalAuthenticated, PermissionDenied, ApiKeyCreated, ApiKeyRevoked};
 use crate::repository::IamRepository;
@@ -124,9 +124,7 @@ impl<R: IamRepository> IamCommandHandler<R> {
                     principal_type: e.principal_type.clone(),
                     occurred_at_unix_ms: e.occurred_at.timestamp_millis(),
                 };
-                let mut buf = Vec::new();
-                prost::Message::encode(&proto, &mut buf).map_err(|e| e.to_string())?;
-                Ok(buf)
+                encode_proto!(proto)
             }
             IamEvent::PrincipalAuthenticated(e) => {
                 let proto = platform_proto::iam::PrincipalAuthenticatedEvent {
@@ -135,9 +133,7 @@ impl<R: IamRepository> IamCommandHandler<R> {
                     user_agent: e.user_agent.clone(),
                     occurred_at_unix_ms: e.occurred_at.timestamp_millis(),
                 };
-                let mut buf = Vec::new();
-                prost::Message::encode(&proto, &mut buf).map_err(|e| e.to_string())?;
-                Ok(buf)
+                encode_proto!(proto)
             }
             IamEvent::PermissionDenied(e) => {
                 let proto = platform_proto::iam::PermissionDeniedEvent {
@@ -147,9 +143,7 @@ impl<R: IamRepository> IamCommandHandler<R> {
                     reason: e.reason.clone(),
                     occurred_at_unix_ms: e.occurred_at.timestamp_millis(),
                 };
-                let mut buf = Vec::new();
-                prost::Message::encode(&proto, &mut buf).map_err(|e| e.to_string())?;
-                Ok(buf)
+                encode_proto!(proto)
             }
             IamEvent::ApiKeyCreated(e) => {
                 let proto = platform_proto::iam::ApiKeyCreatedEvent {
@@ -158,9 +152,7 @@ impl<R: IamRepository> IamCommandHandler<R> {
                     scopes: e.scopes.clone(),
                     occurred_at_unix_ms: e.occurred_at.timestamp_millis(),
                 };
-                let mut buf = Vec::new();
-                prost::Message::encode(&proto, &mut buf).map_err(|e| e.to_string())?;
-                Ok(buf)
+                encode_proto!(proto)
             }
             IamEvent::ApiKeyRevoked(e) => {
                 let proto = platform_proto::iam::ApiKeyRevokedEvent {
@@ -168,9 +160,7 @@ impl<R: IamRepository> IamCommandHandler<R> {
                     principal_id: e.principal_id.to_string(),
                     occurred_at_unix_ms: e.occurred_at.timestamp_millis(),
                 };
-                let mut buf = Vec::new();
-                prost::Message::encode(&proto, &mut buf).map_err(|e| e.to_string())?;
-                Ok(buf)
+                encode_proto!(proto)
             }
         }
     }

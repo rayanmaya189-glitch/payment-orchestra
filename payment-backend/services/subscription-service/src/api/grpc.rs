@@ -315,6 +315,9 @@ fn subscription_error_to_status(e: SubscriptionError) -> Status {
         SubscriptionError::BillingCycleNotFound => {
             Status::not_found("Billing cycle not found")
         }
+        SubscriptionError::DatabaseError(msg) => {
+            Status::internal(format!("Database error: {}", msg))
+        }
     }
 }
 

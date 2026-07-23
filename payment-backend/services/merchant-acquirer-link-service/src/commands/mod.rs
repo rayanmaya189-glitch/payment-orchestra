@@ -5,7 +5,7 @@ use tracing::info;
 use uuid::Uuid;
 
 use std::sync::Arc;
-use platform_messaging::event_bus::{EventBus, publish_event_fire_and_forget};
+use platform_messaging::{event_bus::{EventBus, publish_event_fire_and_forget}, encode_proto};
 use crate::domain::{MerchantAcquirerLink, LinkEnvironment, LinkError};
 use crate::events::{LinkEvent, LinkCreated, LinkEnabled, LinkDisabled, CredentialsRotated, ConnectionTested, HealthChanged};
 use crate::repository::LinkRepository;
@@ -125,9 +125,7 @@ impl<R: LinkRepository> LinkCommandHandler<R> {
                     environment: e.environment.clone(),
                     occurred_at_unix_ms: e.occurred_at.timestamp_millis(),
                 };
-                let mut buf = Vec::new();
-                prost::Message::encode(&proto, &mut buf).map_err(|e| e.to_string())?;
-                Ok(buf)
+                encode_proto!(proto)
             }
             LinkEvent::Enabled(e) => {
                 let proto = platform_proto::connector::MerchantAcquirerLinkEnabledEvent {
@@ -135,9 +133,7 @@ impl<R: LinkRepository> LinkCommandHandler<R> {
                     operator_id: e.operator_id.to_string(),
                     occurred_at_unix_ms: e.occurred_at.timestamp_millis(),
                 };
-                let mut buf = Vec::new();
-                prost::Message::encode(&proto, &mut buf).map_err(|e| e.to_string())?;
-                Ok(buf)
+                encode_proto!(proto)
             }
             LinkEvent::Disabled(e) => {
                 let proto = platform_proto::connector::MerchantAcquirerLinkDisabledEvent {
@@ -146,9 +142,7 @@ impl<R: LinkRepository> LinkCommandHandler<R> {
                     reason: e.reason.clone(),
                     occurred_at_unix_ms: e.occurred_at.timestamp_millis(),
                 };
-                let mut buf = Vec::new();
-                prost::Message::encode(&proto, &mut buf).map_err(|e| e.to_string())?;
-                Ok(buf)
+                encode_proto!(proto)
             }
             LinkEvent::CredentialsRotated(e) => {
                 let proto = platform_proto::connector::MerchantAcquirerCredentialsRotatedEvent {
@@ -156,9 +150,7 @@ impl<R: LinkRepository> LinkCommandHandler<R> {
                     operator_id: e.operator_id.to_string(),
                     rotated_at_unix_ms: e.rotated_at.timestamp_millis(),
                 };
-                let mut buf = Vec::new();
-                prost::Message::encode(&proto, &mut buf).map_err(|e| e.to_string())?;
-                Ok(buf)
+                encode_proto!(proto)
             }
             LinkEvent::ConnectionTested(e) => {
                 let proto = platform_proto::connector::ConnectorConnectionTestedEvent {
@@ -168,9 +160,7 @@ impl<R: LinkRepository> LinkCommandHandler<R> {
                     latency_ms: e.latency_ms,
                     occurred_at_unix_ms: e.occurred_at.timestamp_millis(),
                 };
-                let mut buf = Vec::new();
-                prost::Message::encode(&proto, &mut buf).map_err(|e| e.to_string())?;
-                Ok(buf)
+                encode_proto!(proto)
             }
             LinkEvent::CredentialsExpiring(e) => {
                 let proto = platform_proto::connector::ConnectorCredentialsExpiringEvent {
@@ -179,9 +169,7 @@ impl<R: LinkRepository> LinkCommandHandler<R> {
                     days_until_expiry: e.days_until_expiry,
                     occurred_at_unix_ms: e.occurred_at.timestamp_millis(),
                 };
-                let mut buf = Vec::new();
-                prost::Message::encode(&proto, &mut buf).map_err(|e| e.to_string())?;
-                Ok(buf)
+                encode_proto!(proto)
             }
             LinkEvent::CredentialsExpired(e) => {
                 let proto = platform_proto::connector::ConnectorCredentialsExpiredEvent {
@@ -189,9 +177,7 @@ impl<R: LinkRepository> LinkCommandHandler<R> {
                     operator_id: e.operator_id.to_string(),
                     occurred_at_unix_ms: e.occurred_at.timestamp_millis(),
                 };
-                let mut buf = Vec::new();
-                prost::Message::encode(&proto, &mut buf).map_err(|e| e.to_string())?;
-                Ok(buf)
+                encode_proto!(proto)
             }
             LinkEvent::HealthChanged(e) => {
                 let proto = platform_proto::connector::ConnectorHealthChangedEvent {
@@ -201,9 +187,7 @@ impl<R: LinkRepository> LinkCommandHandler<R> {
                     new_health: e.new_health.clone(),
                     occurred_at_unix_ms: e.occurred_at.timestamp_millis(),
                 };
-                let mut buf = Vec::new();
-                prost::Message::encode(&proto, &mut buf).map_err(|e| e.to_string())?;
-                Ok(buf)
+                encode_proto!(proto)
             }
         }
     }

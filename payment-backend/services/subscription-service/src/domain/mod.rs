@@ -374,4 +374,6 @@ pub enum SubscriptionError {
     DunningExhausted,
     #[error("Billing cycle not found")]
     BillingCycleNotFound,
+    #[error("Database error: {0}")]
+    DatabaseError(String),
 }

@@ -296,6 +296,9 @@ fn reconciliation_error_to_status(e: ReconciliationError) -> Status {
         ReconciliationError::LedgerImbalance(id) => {
             Status::failed_precondition(format!("Ledger imbalance detected for transaction {}", id))
         }
+        ReconciliationError::DatabaseError(msg) => {
+            Status::internal(format!("Database error: {}", msg))
+        }
     }
 }
 

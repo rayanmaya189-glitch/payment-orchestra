@@ -349,4 +349,7 @@ pub enum ReconciliationError {
 
     #[error("Ledger imbalance detected for transaction {0}")]
     LedgerImbalance(Uuid),
+
+    #[error("Database error: {0}")]
+    DatabaseError(String),
 }

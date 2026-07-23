@@ -319,6 +319,9 @@ fn dispute_error_to_status(e: DisputeError) -> Status {
         DisputeError::RepresentmentDeadlinePassed => {
             Status::failed_precondition("Representment deadline has passed")
         }
+        DisputeError::DatabaseError(msg) => {
+            Status::internal(format!("Database error: {}", msg))
+        }
     }
 }
 
