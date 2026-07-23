@@ -1,0 +1,26 @@
+# ─── Module Structure & File Size ────────────────────────────────────────────
+#
+# These flags enforce the project's "one file per concept" convention.
+# A "concept" is a single type family (struct + its impls), a trait + its impl,
+# or a small group of closely related types (≤ 3).
+#
+# If a file exceeds these thresholds, the concept should be split into
+# separate files under a directory with a `mod.rs`.
+
+# Max lines per .rs file — exceeding this is a strong signal the file
+# contains too many concepts and needs splitting.
+too-many-lines-threshold = 300
+
+# ─── Complexity Guards ───────────────────────────────────────────────────────
+#
+# These prevent individual functions/types from becoming too complex,
+# which would encourage monolithic files.
+
+cognitive-complexity-threshold = 25
+
+# Warn if a struct has more than 5 bool fields (indicates poor cohesion).
+struct-excessive-bools-threshold = 5
+
+# ─── Function Signatures ─────────────────────────────────────────────────────
+
+too-many-arguments-threshold = 8
