@@ -4,8 +4,8 @@
 use tonic::{Request, Response, Status};
 use uuid::Uuid;
 
-use crate::commands::{self, CommandHandler, CreatePaymentIntent, AuthorizePaymentIntent, CapturePaymentIntent, VoidPaymentIntent, RefundPaymentIntent, ActivateRoutingPolicy};
-use crate::domain::{self, PaymentStatus, Money, SourceType, OrchestrationError};
+use crate::commands::{CommandHandler, CreatePaymentIntent, AuthorizePaymentIntent, CapturePaymentIntent, VoidPaymentIntent, RefundPaymentIntent, ActivateRoutingPolicy};
+use crate::domain::{self, PaymentStatus, SourceType, OrchestrationError};
 
 use platform_proto::orchestration::orchestration_service_server::OrchestrationService;
 use platform_proto::orchestration::*;
@@ -136,7 +136,7 @@ where
 
         match self.commands.capture_payment_intent(cmd).await {
             Ok(result) => {
-                let is_partial = matches!(result.status, PaymentStatus::PartiallyCaptured);
+                let _is_partial = matches!(result.status, PaymentStatus::PartiallyCaptured);
                 Ok(Response::new(CapturePaymentIntentResponse {
                     status: result.status.to_string(),
                     captured_amount: Some(ProtoMoney {
@@ -187,7 +187,7 @@ where
 
         match self.commands.refund_payment_intent(cmd).await {
             Ok(result) => {
-                let is_partial = matches!(result.status, PaymentStatus::PartiallyRefunded);
+                let _is_partial = matches!(result.status, PaymentStatus::PartiallyRefunded);
                 Ok(Response::new(RefundPaymentIntentResponse {
                     status: result.status.to_string(),
                     refund_id: format!("ref_{}", Uuid::now_v7()),

@@ -3,7 +3,6 @@
 
 use chrono::{DateTime, Datelike, Utc};
 use tonic::{Request, Response, Status};
-use uuid::Uuid;
 
 use crate::commands::CommandHandler;
 use crate::domain::*;
@@ -15,14 +14,14 @@ use platform_proto::analytics::*;
 use platform_proto::common::Money as ProtoMoney;
 
 pub struct AnalyticsGrpcService<C, Q, R> {
-    commands: C,
+    _commands: C,
     queries: Q,
     repo: R,
 }
 
 impl<C, Q, R> AnalyticsGrpcService<C, Q, R> {
     pub fn new(commands: C, queries: Q, repo: R) -> Self {
-        Self { commands, queries, repo }
+        Self { _commands: commands, queries, repo }
     }
 }
 

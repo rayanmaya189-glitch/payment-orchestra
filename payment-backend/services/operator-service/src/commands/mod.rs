@@ -260,7 +260,7 @@ impl<R: OperatorRepository> OperatorCommandHandler<R> {
 
     /// Encode an OperatorEvent as protobuf bytes using the generated proto types.
     fn encode_event_proto(event: &OperatorEvent) -> Result<Vec<u8>, String> {
-        use prost::Message;
+        
         match event {
             OperatorEvent::Registered(e) => {
                 let proto = platform_proto::operator::OperatorRegisteredEvent {

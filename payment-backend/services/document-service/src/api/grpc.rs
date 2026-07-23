@@ -8,7 +8,7 @@ use crate::commands::{self, CommandHandler};
 use crate::domain::{self, DocumentCategory, DocumentError, DocumentStatus};
 use crate::queries::QueryHandler;
 
-use platform_proto::common::{Money as ProtoMoney, Timestamp, PaginationRequest, PaginationResponse};
+use platform_proto::common::{Timestamp, PaginationResponse};
 use platform_proto::document::document_service_server::DocumentService;
 use platform_proto::document::*;
 
@@ -87,7 +87,7 @@ where
         let document_id = parse_uuid(&req.document_id, "document_id")?;
 
         match self.queries.get_document(document_id).await {
-            Ok(record) => {
+            Ok(_record) => {
                 // In production, this would generate a pre-signed MinIO URL.
                 // For Phase 1, return a storage-key based URL.
                 Ok(Response::new(GetDocumentUrlResponse {

@@ -1,26 +1,26 @@
 //! gRPC service implementation for reconciliation-service (BC-09).
 //! Translates between protobuf types and domain types for settlement matching.
 
-use chrono::{DateTime, Utc};
+use chrono::Utc;
 use tonic::{Request, Response, Status};
 use uuid::Uuid;
 
 use crate::commands::{self, CommandHandler};
 use crate::domain::*;
-use crate::queries::{self as query_types, QueryHandler};
 
-use platform_proto::common::{Money as ProtoMoney, Timestamp, PaginationRequest, PaginationResponse};
+
+use platform_proto::common::{Timestamp, PaginationResponse};
 use platform_proto::reconciliation::reconciliation_service_server::ReconciliationService;
 use platform_proto::reconciliation::*;
 
 pub struct ReconciliationGrpcService<C, Q> {
     commands: C,
-    queries: Q,
+    _queries: Q,
 }
 
 impl<C, Q> ReconciliationGrpcService<C, Q> {
     pub fn new(commands: C, queries: Q) -> Self {
-        Self { commands, queries }
+        Self { commands, _queries: queries }
     }
 }
 
@@ -28,7 +28,7 @@ impl<C, Q> ReconciliationGrpcService<C, Q> {
 impl<C, Q> ReconciliationService for ReconciliationGrpcService<C, Q>
 where
     C: CommandHandler + Send + Sync + 'static,
-    Q: QueryHandler + Send + Sync + 'static,
+    Q: Send + Sync + 'static,
 {
     async fn ingest_settlement_file(
         &self,
@@ -70,26 +70,10 @@ where
 
     async fn get_reconciliation_exceptions(
         &self,
-        request: Request<GetExceptionsRequest>,
+        _request: Request<GetExceptionsRequest>,
     ) -> Result<Response<GetExceptionsResponse>, Status> {
-        let req = request.into_inner();
-
-        // Get all batches via the query handler — in production this would
-        // use a proper paginated query filtered by exception status
-        let unmatched_query = query_types::GetUnmatchedRecordsQuery {
-            settlement_batch_id: Uuid::nil(),
-        };
-
-        // Since we can't list all exceptions across batches directly,
-        // return an empty list for now (the query infrastructure supports
-        // per-batch unmatched records which covers exceptions)
-        let _status_filter = if req.status.is_empty() {
-            None
-        } else {
-            Some(req.status.as_str())
-        };
-
-        // Return empty response with pagination metadata
+        // In production, query the settlement batch store for unmatched records.
+        // For Phase 1, return an empty list with pagination metadata.
         Ok(Response::new(GetExceptionsResponse {
             exceptions: Vec::new(),
             pagination: Some(PaginationResponse {

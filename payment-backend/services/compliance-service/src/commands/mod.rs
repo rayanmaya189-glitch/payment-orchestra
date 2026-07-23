@@ -4,7 +4,7 @@ use chrono::Utc;
 use tracing::info;
 use uuid::Uuid;
 
-use crate::domain::{KybCase, AmlAlert, AmlMonitor, RecentTransaction, ComplianceError};
+use crate::domain::{KybCase, AmlAlert, AmlMonitor, ComplianceError};
 use crate::events::{ComplianceEvent, KybCaseSubmitted, KybCaseApproved, KybCaseRejected, AmlAlertCreated};
 use crate::repository::ComplianceRepository;
 
@@ -28,7 +28,7 @@ pub struct ReviewKybCase {
     pub kyb_case_id: Uuid,
     pub approved: bool,
     pub reason: Option<String>,
-    pub reviewed_by: Uuid,
+    pub _reviewed_by: Uuid,
 }
 
 pub struct ScanTransaction {
@@ -42,7 +42,7 @@ pub struct ReviewAmlAlert {
     pub alert_id: Uuid,
     pub reviewer_id: Uuid,
     pub decision: AmlAlertDecision,
-    pub notes: Option<String>,
+    pub _notes: Option<String>,
 }
 
 pub enum AmlAlertDecision {
@@ -99,7 +99,7 @@ impl<R: ComplianceRepository> ComplianceCommandHandler<R> {
 
     /// Encode a ComplianceEvent as protobuf bytes using the generated proto types.
     fn encode_event_proto(event: &ComplianceEvent) -> Result<Vec<u8>, String> {
-        use prost::Message;
+        
         match event {
             ComplianceEvent::KybCaseSubmitted(e) => {
                 let proto = platform_proto::compliance::KybCaseSubmittedEvent {
@@ -334,7 +334,7 @@ mod tests {
             kyb_case_id: submitted.kyb_case.kyb_case_id,
             approved: true,
             reason: None,
-            reviewed_by: Uuid::now_v7(),
+            _reviewed_by: Uuid::now_v7(),
         }).await.unwrap();
 
         assert_eq!(result.kyb_case.status.as_str(), "approved");
@@ -353,7 +353,7 @@ mod tests {
             kyb_case_id: submitted.kyb_case.kyb_case_id,
             approved: false,
             reason: Some("Invalid documents".into()),
-            reviewed_by: Uuid::now_v7(),
+            _reviewed_by: Uuid::now_v7(),
         }).await.unwrap();
 
         assert_eq!(result.kyb_case.status.as_str(), "rejected");

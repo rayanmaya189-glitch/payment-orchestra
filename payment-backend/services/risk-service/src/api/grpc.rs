@@ -5,10 +5,10 @@ use tonic::{Request, Response, Status};
 use uuid::Uuid;
 
 use crate::commands::{self, CommandHandler};
-use crate::domain::{self, RiskError, RiskLevel};
+use crate::domain::{RiskError, RiskLevel};
 use crate::queries::QueryHandler;
 
-use platform_proto::common::{RiskAssessment as ProtoRiskAssessment, Money as ProtoMoney, Timestamp};
+use platform_proto::common::RiskAssessment as ProtoRiskAssessment;
 use platform_proto::risk::risk_service_server::RiskService;
 use platform_proto::risk::*;
 

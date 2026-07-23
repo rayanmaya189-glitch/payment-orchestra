@@ -4,7 +4,7 @@
 use tonic::{Request, Response, Status};
 use uuid::Uuid;
 
-use crate::commands::{self, CommandHandler, CreateInvoice, SendInvoice, CancelInvoice};
+use crate::commands::{CommandHandler, CreateInvoice, SendInvoice, CancelInvoice};
 use crate::domain::{self, InvoiceStatus, InvoiceError};
 
 use platform_proto::invoice::invoice_service_server::InvoiceService;

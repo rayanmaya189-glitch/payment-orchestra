@@ -141,7 +141,7 @@ impl MerchantAcquirerLink {
     }
 
     /// Test connection result handler
-    pub fn record_connection_test(&mut self, success: bool, latency_ms: u32) {
+    pub fn record_connection_test(&mut self, success: bool, _latency_ms: u32) {
         self.last_tested_at = Some(Utc::now());
         if success {
             self.health_status = HealthStatus::Healthy;
@@ -250,7 +250,7 @@ impl From<LinkError> for platform_error::PlatformError {
                     platform_error::ConflictError::IdempotencyKeyConflict
                 )
             }
-            LinkError::ConnectorNotFound(ref c) => {
+            LinkError::ConnectorNotFound(_c) => {
                 platform_error::PlatformError::NotFound { resource: "connector", id: Uuid::nil() }
             }
             LinkError::EncryptionFailed(ref msg) => {

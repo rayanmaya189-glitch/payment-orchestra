@@ -5,6 +5,7 @@ use serde::Serialize;
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize)]
+#[allow(dead_code)]
 pub enum LinkEvent {
     Created(LinkCreated),
     Enabled(LinkEnabled),

@@ -96,7 +96,7 @@ where
 
         match self.queries.get_session(session_id, operator_id).await {
             Ok(session) => {
-                let proto_messages: Vec<proto_ConversationMessage> = session
+                let proto_messages: Vec<ProtoConversationMessage> = session
                     .messages
                     .into_iter()
                     .map(|msg| {
@@ -113,7 +113,7 @@ where
                                 relevance_score: c.relevance_score,
                             })
                             .collect();
-                        proto_ConversationMessage {
+                        ProtoConversationMessage {
                             role,
                             content: msg.content,
                             timestamp_unix_ms: msg.created_at.timestamp_millis(),
@@ -155,7 +155,7 @@ where
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 // Alias for the proto type to avoid naming conflict with domain type
-type proto_ConversationMessage = platform_proto::ai_assistant::ConversationMessage;
+type ProtoConversationMessage = platform_proto::ai_assistant::ConversationMessage;
 
 fn parse_uuid(s: &str, field: &str) -> Result<Uuid, Status> {
     Uuid::parse_str(s).map_err(|_| Status::invalid_argument(format!("Invalid {}", field)))

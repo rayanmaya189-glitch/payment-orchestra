@@ -5,7 +5,7 @@ use tonic::{Request, Response, Status};
 use uuid::Uuid;
 
 use crate::commands::{self, CommandHandler};
-use crate::domain::{self, DeliveryStatus, NotificationChannel, NotificationError};
+use crate::domain::{DeliveryStatus, NotificationChannel, NotificationError};
 use crate::queries::QueryHandler;
 use platform_proto::common::Timestamp;
 use platform_proto::notification::notification_service_server::NotificationService;

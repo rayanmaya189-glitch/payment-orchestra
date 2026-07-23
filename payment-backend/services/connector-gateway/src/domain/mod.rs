@@ -950,7 +950,7 @@ pub mod mocks {
             })
         }
 
-        async fn refund(&self, req: RefundRequest) -> Result<RefundResponse, ConnectorError> {
+        async fn refund(&self, _req: RefundRequest) -> Result<RefundResponse, ConnectorError> {
             Ok(RefundResponse {
                 success: true,
                 acquirer_reference: Some(format!("ni_ref_{}", uuid::Uuid::now_v7())),
@@ -1130,7 +1130,7 @@ pub mod mocks {
             })
         }
 
-        async fn refund(&self, req: RefundRequest) -> Result<RefundResponse, ConnectorError> {
+        async fn refund(&self, _req: RefundRequest) -> Result<RefundResponse, ConnectorError> {
             Ok(RefundResponse {
                 success: true,
                 acquirer_reference: Some(format!("cko_ref_{}", uuid::Uuid::now_v7())),
@@ -1342,7 +1342,7 @@ pub mod mocks {
             })
         }
 
-        async fn refund(&self, req: RefundRequest) -> Result<RefundResponse, ConnectorError> {
+        async fn refund(&self, _req: RefundRequest) -> Result<RefundResponse, ConnectorError> {
             Ok(RefundResponse {
                 success: true,
                 acquirer_reference: Some(format!("telr_ref_{}", uuid::Uuid::now_v7())),

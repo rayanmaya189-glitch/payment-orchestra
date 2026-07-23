@@ -4,7 +4,7 @@ use chrono::Utc;
 use tracing::info;
 use uuid::Uuid;
 
-use crate::domain::{MerchantAcquirerLink, LinkEnvironment, LinkError, LinkStatus, HealthStatus};
+use crate::domain::{MerchantAcquirerLink, LinkEnvironment, LinkError};
 use crate::events::{LinkEvent, LinkCreated, LinkEnabled, LinkDisabled, CredentialsRotated, ConnectionTested, HealthChanged};
 use crate::repository::LinkRepository;
 
@@ -108,7 +108,7 @@ impl<R: LinkRepository> LinkCommandHandler<R> {
 
     /// Encode a LinkEvent as protobuf bytes using the generated proto types.
     fn encode_event_proto(event: &LinkEvent) -> Result<Vec<u8>, String> {
-        use prost::Message;
+        
         match event {
             LinkEvent::Created(e) => {
                 let proto = platform_proto::connector::MerchantAcquirerLinkCreatedEvent {

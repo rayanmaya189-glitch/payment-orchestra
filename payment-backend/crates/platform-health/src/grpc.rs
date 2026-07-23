@@ -10,12 +10,12 @@ use platform_proto::health::{health_check_response, HealthCheckRequest, HealthCh
 
 /// A simple health check service that reports SERVING status.
 pub struct HealthService {
-    service_name: String,
+    _service_name: String,
 }
 
 impl HealthService {
     pub fn new(service_name: String) -> Self {
-        Self { service_name }
+        Self { _service_name: service_name }
     }
 }
 

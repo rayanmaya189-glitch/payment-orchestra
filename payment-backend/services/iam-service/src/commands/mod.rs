@@ -108,7 +108,7 @@ impl<R: IamRepository> IamCommandHandler<R> {
 
     /// Encode an IamEvent as protobuf bytes using the generated proto types.
     fn encode_event_proto(event: &IamEvent) -> Result<Vec<u8>, String> {
-        use prost::Message;
+        
         match event {
             IamEvent::PrincipalCreated(e) => {
                 let proto = platform_proto::iam::PrincipalCreatedEvent {

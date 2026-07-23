@@ -75,7 +75,7 @@ where
             kyb_case_id,
             approved: req.approved,
             reason: if req.reason.is_empty() { None } else { Some(req.reason) },
-            reviewed_by,
+            _reviewed_by: reviewed_by,
         };
 
         match self.commands.review_kyb_case(cmd).await {
@@ -237,7 +237,7 @@ where
             alert_id,
             reviewer_id,
             decision,
-            notes: if req.notes.is_empty() { None } else { Some(req.notes) },
+            _notes: if req.notes.is_empty() { None } else { Some(req.notes) },
         };
 
         match self.commands.review_aml_alert(cmd).await {

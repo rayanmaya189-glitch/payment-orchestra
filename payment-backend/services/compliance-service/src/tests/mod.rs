@@ -43,7 +43,7 @@ mod integration_tests {
             kyb_case_id: submitted.kyb_case.kyb_case_id,
             approved: true,
             reason: None,
-            reviewed_by: reviewer_id,
+            _reviewed_by: reviewer_id,
         }).await.unwrap();
 
         assert_eq!(approved.kyb_case.status, KybStatus::Approved);
@@ -74,7 +74,7 @@ mod integration_tests {
             alert_id: scan.alerts[0].alert_id,
             reviewer_id: Uuid::now_v7(),
             decision: AmlAlertDecision::ClosedFalsePositive,
-            notes: Some("Legitimate high-value transaction".into()),
+            _notes: Some("Legitimate high-value transaction".into()),
         }).await.unwrap();
 
         assert_eq!(reviewed.alert.status, AlertStatus::Closed);

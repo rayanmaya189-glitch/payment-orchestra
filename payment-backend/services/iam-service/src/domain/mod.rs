@@ -382,7 +382,7 @@ impl From<IamError> for platform_error::PlatformError {
                     },
                 )
             }
-            IamError::DuplicateApiKeyName(ref msg) => {
+            IamError::DuplicateApiKeyName(_msg) => {
                 platform_error::PlatformError::Conflict(
                     platform_error::ConflictError::IdempotencyKeyConflict,
                 )
