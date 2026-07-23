@@ -158,6 +158,9 @@ pub enum OperatorError {
 
     #[error("KYB not approved")]
     KybNotApproved,
+
+    #[error("Database error: {0}")]
+    DatabaseError(String),
 }
 
 impl From<OperatorError> for platform_error::PlatformError {
@@ -205,6 +208,9 @@ impl From<OperatorError> for platform_error::PlatformError {
                 platform_error::PlatformError::AuthorizationDenied(
                     "KYB not yet approved".into(),
                 )
+            }
+            OperatorError::DatabaseError(ref msg) => {
+                platform_error::PlatformError::Internal(msg.clone())
             }
         }
     }

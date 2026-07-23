@@ -45,7 +45,7 @@ fn valid_evidence() -> RepresentmentEvidence {
         cardholder_agreement: None,
         refund_policy: None,
         description: "Customer received the product on time. See attached receipt.".into(),
-        supporting_documents: vec![],
+        supporting_documents: vec![Uuid::now_v7()],
     }
 }
 
@@ -95,7 +95,7 @@ async fn test_submit_representment_requires_valid_evidence() {
         cardholder_agreement: None,
         refund_policy: None,
         description: "".into(),
-        supporting_documents: vec![],
+        supporting_documents: vec![Uuid::now_v7()],
     };
 
     let result = pipeline

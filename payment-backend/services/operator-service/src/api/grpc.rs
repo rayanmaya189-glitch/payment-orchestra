@@ -201,10 +201,14 @@ impl From<crate::domain::OperatorError> for Status {
             }
             crate::domain::OperatorError::Suspended => {
                 Status::failed_precondition("Operator suspended")
-            }
-            crate::domain::OperatorError::KybNotApproved => {
+            }            crate::domain::OperatorError::KybNotApproved => {
                 Status::failed_precondition("KYB not approved")
+            }
+            crate::domain::OperatorError::DatabaseError(ref msg) => {
+                Status::internal(format!("Database error: {}", msg))
             }
         }
     }
 }
+
+
