@@ -48,6 +48,22 @@ pub enum InvoiceStatus {
     Cancelled,
 }
 
+impl std::str::FromStr for InvoiceStatus {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "draft" => Ok(InvoiceStatus::Draft),
+            "sent" => Ok(InvoiceStatus::Sent),
+            "paid" => Ok(InvoiceStatus::Paid),
+            "partially_paid" => Ok(InvoiceStatus::PartiallyPaid),
+            "overdue" => Ok(InvoiceStatus::Overdue),
+            "cancelled" => Ok(InvoiceStatus::Cancelled),
+            _ => Err(format!("Invalid invoice status: {}", s)),
+        }
+    }
+}
+
 impl std::fmt::Display for InvoiceStatus {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {

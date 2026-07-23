@@ -9,7 +9,7 @@ use crate::domain::{self, InvoiceStatus, InvoiceError};
 
 use platform_proto::invoice::invoice_service_server::InvoiceService;
 use platform_proto::invoice::*;
-use platform_proto::common::{Money as ProtoMoney, Timestamp, PaginationRequest as ProtoPagination};
+use platform_proto::common::{Money as ProtoMoney, Timestamp, PaginationResponse};
 
 pub struct InvoiceGrpcService<C, Q> {
     commands: C,
@@ -47,11 +47,12 @@ where
             }
         }).collect();
 
+        let currency = if req.currency_code.is_empty() { "AED".to_string() } else { req.currency_code };
         let cmd = CreateInvoice {
             operator_id,
             order_reference: req.order_reference,
             line_items,
-            currency: if req.currency_code.is_empty() { "AED".into() } else { req.currency_code },
+            currency: currency.clone(),
             due_date,
             recipient_email: if req.recipient_email.is_empty() { None } else { Some(req.recipient_email) },
         };
@@ -63,7 +64,7 @@ where
                     status: result.status.to_string(),
                     total_amount: Some(ProtoMoney {
                         amount_minor_units: result.total_amount_minor,
-                        currency_code: String::new(),
+                        currency_code: currency,
                     }),
                     created_at: Some(Timestamp { unix_ms: chrono::Utc::now().timestamp_millis() }),
                 }))
@@ -124,14 +125,89 @@ where
         let req = request.into_inner();
         let operator_id = parse_uuid(&req.operator_id, "operator_id")?;
 
-        // Since the query handler doesn't have a list_all method, we just return an empty list
-        // This is a simplified implementation
-        let invoices = Vec::new();
+        let status_filter = if req.status_filter.is_empty() {
+            None
+        } else {
+            Some(req.status_filter.parse::<InvoiceStatus>().map_err(|_| {
+                Status::invalid_argument(format!("Invalid status filter: {}", req.status_filter))
+            })?)
+        };
 
-        Ok(Response::new(ListInvoicesResponse {
-            invoices,
-            pagination: None,
-        }))
+        let query = crate::queries::ListInvoicesQuery {
+            operator_id,
+            status_filter,
+        };
+
+        let page_limit = req.pagination.as_ref().map_or(50, |p| {
+            if p.limit > 0 && p.limit <= 100 { p.limit as usize } else { 50 }
+        });
+        let cursor = req.pagination.as_ref().and_then(|p| {
+            if p.cursor.is_empty() { None } else { Some(p.cursor.clone()) }
+        });
+
+        match self.queries.list_invoices(query).await {
+            Ok(invoices) => {
+                let proto_invoices: Vec<InvoiceView> = invoices.into_iter()
+                    .skip_while(|inv| {
+                        // Simple cursor pagination: skip until we find the cursor
+                        if let Some(ref c) = cursor {
+                            inv.invoice_id.to_string() != *c
+                        } else {
+                            false
+                        }
+                    })
+                    .take(page_limit)
+                    .map(|inv| {
+                        let proto_items: Vec<InvoiceLineItem> = inv.line_items.iter().map(|item| {
+                            InvoiceLineItem {
+                                description: item.description.clone(),
+                                amount_minor_units: item.amount_minor,
+                                currency_code: inv.currency.clone(),
+                                quantity: item.quantity,
+                            }
+                        }).collect();
+
+                        InvoiceView {
+                            invoice_id: inv.invoice_id.to_string(),
+                            operator_id: inv.operator_id.to_string(),
+                            order_reference: inv.order_reference,
+                            status: inv.status.to_string(),
+                            total_amount: Some(ProtoMoney {
+                                amount_minor_units: inv.total_amount_minor,
+                                currency_code: inv.currency.clone(),
+                            }),
+                            paid_amount: Some(ProtoMoney {
+                                amount_minor_units: inv.paid_amount_minor,
+                                currency_code: inv.currency.clone(),
+                            }),
+                            line_items: proto_items,
+                            due_date: inv.due_date.format("%Y-%m-%dT%H:%M:%SZ").to_string(),
+                            recipient_email: inv.recipient_email.unwrap_or_default(),
+                            recipient_name: String::new(),
+                            payment_intent_ids: inv.payment_intent_ids.iter().map(|id| id.to_string()).collect(),
+                            created_at: Some(Timestamp { unix_ms: inv.created_at.timestamp_millis() }),
+                            paid_at: None,
+                        }
+                    })
+                    .collect();
+
+        // Cursor-based pagination: if cursor is provided, skip results
+        // until we find the matching invoice, then return items from there.
+
+                let next_cursor = proto_invoices.last().map(|inv| inv.invoice_id.clone());
+                let has_more = proto_invoices.len() >= page_limit;
+
+                Ok(Response::new(ListInvoicesResponse {
+                    invoices: proto_invoices,
+                    pagination: Some(PaginationResponse {
+                        next_cursor: next_cursor.unwrap_or_default(),
+                        has_more,
+                        as_of_unix_ms: chrono::Utc::now().timestamp_millis(),
+                    }),
+                }))
+            }
+            Err(e) => Err(invoice_error_to_status(e)),
+        }
     }
 
     async fn send_invoice(

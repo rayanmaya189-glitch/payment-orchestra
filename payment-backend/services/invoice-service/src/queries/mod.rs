@@ -22,11 +22,18 @@ pub struct FindOverdueInvoicesQuery {
     pub operator_id: Uuid,
 }
 
+#[derive(Debug, Clone)]
+pub struct ListInvoicesQuery {
+    pub operator_id: Uuid,
+    pub status_filter: Option<InvoiceStatus>,
+}
+
 #[async_trait]
 pub trait QueryHandler: Send + Sync {
     async fn get_invoice(&self, query: GetInvoiceQuery) -> Result<Option<Invoice>, InvoiceError>;
     async fn find_by_order(&self, query: FindInvoiceByOrderQuery) -> Result<Option<Invoice>, InvoiceError>;
     async fn find_overdue(&self, query: FindOverdueInvoicesQuery) -> Result<Vec<Invoice>, InvoiceError>;
+    async fn list_invoices(&self, query: ListInvoicesQuery) -> Result<Vec<Invoice>, InvoiceError>;
 }
 
 pub struct InvoiceQueryHandler<R: InvoiceRepository> {
@@ -51,5 +58,9 @@ impl<R: InvoiceRepository + Send + Sync> QueryHandler for InvoiceQueryHandler<R>
 
     async fn find_overdue(&self, query: FindOverdueInvoicesQuery) -> Result<Vec<Invoice>, InvoiceError> {
         self.repo.find_overdue(query.operator_id).await
+    }
+
+    async fn list_invoices(&self, query: ListInvoicesQuery) -> Result<Vec<Invoice>, InvoiceError> {
+        self.repo.list_invoices(query.operator_id, query.status_filter).await
     }
 }

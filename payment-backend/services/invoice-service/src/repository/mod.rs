@@ -16,6 +16,7 @@ pub trait InvoiceRepository: Send + Sync {
     async fn find_by_order_reference(&self, operator_id: Uuid, order_ref: &str) -> Result<Option<Invoice>, InvoiceError>;
     async fn find_by_payment_intent(&self, payment_intent_id: Uuid) -> Result<Option<Invoice>, InvoiceError>;
     async fn find_overdue(&self, operator_id: Uuid) -> Result<Vec<Invoice>, InvoiceError>;
+    async fn list_invoices(&self, operator_id: Uuid, status_filter: Option<InvoiceStatus>) -> Result<Vec<Invoice>, InvoiceError>;
 }
 
 #[derive(Clone)]
@@ -80,6 +81,24 @@ impl InvoiceRepository for InMemoryInvoiceRepository {
                 inv.operator_id == operator_id
                     && matches!(inv.status, InvoiceStatus::Sent)
                     && inv.due_date < now
+            })
+            .cloned()
+            .collect())
+    }
+
+    async fn list_invoices(&self, operator_id: Uuid, status_filter: Option<InvoiceStatus>) -> Result<Vec<Invoice>, InvoiceError> {
+        let store = self.invoices.read().await;
+        Ok(store.values()
+            .filter(|inv| {
+                if inv.operator_id != operator_id {
+                    return false;
+                }
+                if let Some(ref filter) = status_filter {
+                    if &inv.status != filter {
+                        return false;
+                    }
+                }
+                true
             })
             .cloned()
             .collect())
