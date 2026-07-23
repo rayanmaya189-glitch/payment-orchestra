@@ -7,6 +7,7 @@ use uuid::Uuid;
 
 use crate::domain::{MerchantAcquirerLink, LinkError};
 
+#[allow(dead_code)]
 #[async_trait::async_trait]
 pub trait LinkRepository: Send + Sync {
     async fn load(&self, id: Uuid) -> Result<Option<MerchantAcquirerLink>, LinkError>;

@@ -17,6 +17,9 @@ mod pipeline;
 #[cfg(test)]
 mod tests;
 
+use std::sync::Arc;
+use platform_messaging::event_bus::{EventBus, NoopEventBus};
+use platform_messaging::nats_event_bus::NatsJetStreamEventBus;
 use commands::LinkCommandHandler;
 use queries::LinkQueries;
 use repository::InMemoryLinkRepository;
@@ -32,7 +35,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut runner = platform_registry::bootstrap::ServerRunner::new("merchant-acquirer-link-service", 9018, 9118).await?;
 
     let repository = InMemoryLinkRepository::new();
-    let command_handler = LinkCommandHandler::new(repository.clone());
+
+    let event_bus: Arc<dyn EventBus> = if let Ok(url) = std::env::var("NATS_URL") {
+        match NatsJetStreamEventBus::connect(&url).await {
+            Ok(bus) => {
+                info!("Connected to NATS at {}", url);
+                Arc::new(bus)
+            }
+            Err(e) => {
+                tracing::warn!("Failed to connect to NATS ({}), using NoopEventBus", e);
+                Arc::new(NoopEventBus)
+            }
+        }
+    } else {
+        Arc::new(NoopEventBus)
+    };
+
+    let command_handler = LinkCommandHandler::new(repository.clone())
+        .with_event_bus(event_bus);
     let queries = LinkQueries::new(repository);
     let link_service = LinkGrpcService::new(command_handler, queries);
 

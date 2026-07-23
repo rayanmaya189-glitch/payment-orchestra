@@ -4,6 +4,8 @@ use chrono::Utc;
 use tracing::info;
 use uuid::Uuid;
 
+use std::sync::Arc;
+use platform_messaging::event_bus::EventBus;
 use crate::domain::{KybCase, AmlAlert, AmlMonitor, ComplianceError};
 use crate::events::{ComplianceEvent, KybCaseSubmitted, KybCaseApproved, KybCaseRejected, AmlAlertCreated};
 use crate::repository::ComplianceRepository;
@@ -74,6 +76,7 @@ pub struct ReviewAmlAlertResult {
 pub struct ComplianceCommandHandler<R: ComplianceRepository> {
     repository: R,
     aml_monitor: AmlMonitor,
+    event_bus: Option<Arc<dyn EventBus>>,
 }
 
 impl<R: ComplianceRepository> ComplianceCommandHandler<R> {
@@ -81,14 +84,28 @@ impl<R: ComplianceRepository> ComplianceCommandHandler<R> {
         Self {
             repository,
             aml_monitor: AmlMonitor::new(),
+            event_bus: None,
         }
     }
 
+    #[allow(dead_code)]
+    pub fn with_event_bus(mut self, event_bus: Arc<dyn EventBus>) -> Self {
+        self.event_bus = Some(event_bus);
+        self
+    }
+
     fn publish_event(&self, event: ComplianceEvent) {
-        // Encode event as protobuf using generated proto types
-        // Event bus wiring (publish via ChannelEventBus) will be added in future
         match Self::encode_event_proto(&event) {
-            Ok(_payload) => {
+            Ok(payload) => {
+                if let Some(ref bus) = self.event_bus {
+                    let subject = format!("compliance.{}", event.event_type());
+                    let bus = Arc::clone(bus);
+                    tokio::spawn(async move {
+                        if let Err(e) = bus.publish(&subject, payload).await {
+                            tracing::warn!(subject = %subject, error = %e, "Failed to publish event");
+                        }
+                    });
+                }
                 tracing::debug!(event_type = %event.event_type(), "Domain event encoded as protobuf");
             }
             Err(e) => {

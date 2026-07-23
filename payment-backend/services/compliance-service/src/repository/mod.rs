@@ -7,6 +7,7 @@ use uuid::Uuid;
 
 use crate::domain::{KybCase, AmlAlert, ComplianceError, RecentTransaction};
 
+#[allow(dead_code)]
 #[async_trait::async_trait]
 pub trait ComplianceRepository: Send + Sync {
     // KYB operations

@@ -4,6 +4,8 @@ use chrono::Utc;
 use tracing::info;
 use uuid::Uuid;
 
+use std::sync::Arc;
+use platform_messaging::event_bus::EventBus;
 use crate::domain::{MerchantAcquirerLink, LinkEnvironment, LinkError};
 use crate::events::{LinkEvent, LinkCreated, LinkEnabled, LinkDisabled, CredentialsRotated, ConnectionTested, HealthChanged};
 use crate::repository::LinkRepository;
@@ -86,18 +88,32 @@ pub struct UpdateMetadataResult {
 
 pub struct LinkCommandHandler<R: LinkRepository> {
     repository: R,
+    event_bus: Option<Arc<dyn EventBus>>,
 }
 
 impl<R: LinkRepository> LinkCommandHandler<R> {
     pub fn new(repository: R) -> Self {
-        Self { repository }
+        Self { repository, event_bus: None }
+    }
+
+    #[allow(dead_code)]
+    pub fn with_event_bus(mut self, event_bus: Arc<dyn EventBus>) -> Self {
+        self.event_bus = Some(event_bus);
+        self
     }
 
     fn publish_event(&self, event: LinkEvent) {
-        // Encode event as protobuf using generated proto types
-        // Event bus wiring (publish via ChannelEventBus) will be added in future
         match Self::encode_event_proto(&event) {
-            Ok(_payload) => {
+            Ok(payload) => {
+                if let Some(ref bus) = self.event_bus {
+                    let subject = format!("connector.{}", event.event_type());
+                    let bus = Arc::clone(bus);
+                    tokio::spawn(async move {
+                        if let Err(e) = bus.publish(&subject, payload).await {
+                            tracing::warn!(subject = %subject, error = %e, "Failed to publish event");
+                        }
+                    });
+                }
                 tracing::debug!(event_type = %event.event_type(), "Domain event encoded as protobuf");
             }
             Err(e) => {

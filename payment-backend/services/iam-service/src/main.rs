@@ -17,6 +17,9 @@ mod pipeline;
 #[cfg(test)]
 mod tests;
 
+use std::sync::Arc;
+use platform_messaging::event_bus::{EventBus, NoopEventBus};
+use platform_messaging::nats_event_bus::NatsJetStreamEventBus;
 use commands::IamCommandHandler;
 use queries::IamQueries;
 use repository::InMemoryIamRepository;
@@ -35,10 +38,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .unwrap_or_default();
 
     let repository = InMemoryIamRepository::new();
+
+    let event_bus: Arc<dyn EventBus> = if let Ok(url) = std::env::var("NATS_URL") {
+        match NatsJetStreamEventBus::connect(&url).await {
+            Ok(bus) => {
+                info!("Connected to NATS at {}", url);
+                Arc::new(bus)
+            }
+            Err(e) => {
+                tracing::warn!("Failed to connect to NATS ({}), using NoopEventBus", e);
+                Arc::new(NoopEventBus)
+            }
+        }
+    } else {
+        Arc::new(NoopEventBus)
+    };
+
     let command_handler = IamCommandHandler::new(
         repository.clone(),
         config.jwt_secret,
-    );
+    ).with_event_bus(event_bus);
     let queries = IamQueries::new(repository);
     let iam_service = IamGrpcService::new(command_handler, queries);
 

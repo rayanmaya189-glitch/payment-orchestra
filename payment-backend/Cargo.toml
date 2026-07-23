@@ -98,6 +98,8 @@ async-trait = "0.1"
 proptest = "1"
 # Test containers
 testcontainers = "0.23"
+# NATS JetStream for async event bus
+async-nats = "0.38"
 # Async stream
 futures = "0.3"
 # HTTP client

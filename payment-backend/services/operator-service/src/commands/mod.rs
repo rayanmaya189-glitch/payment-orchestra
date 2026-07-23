@@ -5,6 +5,8 @@ use chrono::Utc;
 use uuid::Uuid;
 use tracing::info;
 
+use std::sync::Arc;
+use platform_messaging::event_bus::EventBus;
 use crate::domain::{Operator, OperatorError, OperatorStatus};
 use crate::events::{OperatorEvent, OperatorRegistered, OperatorVerified, OperatorSuspended, OperatorReactivated};
 use crate::repository::OperatorRepository;
@@ -60,8 +62,7 @@ pub struct UpdateOperatorStatusResult {
 
 pub struct OperatorCommandHandler<R: OperatorRepository> {
     repository: R,
-    event_bus: Option<platform_messaging::event_bus::ChannelEventBus>,
-        
+    event_bus: Option<Arc<dyn EventBus>>,
 }
 
 impl<R: OperatorRepository> OperatorCommandHandler<R> {
@@ -69,8 +70,7 @@ impl<R: OperatorRepository> OperatorCommandHandler<R> {
         Self { repository, event_bus: None }
     }
 
-    #[allow(dead_code)]
-    pub fn with_event_bus(mut self, event_bus: platform_messaging::event_bus::ChannelEventBus) -> Self {
+    pub fn with_event_bus(mut self, event_bus: Arc<dyn EventBus>) -> Self {
         self.event_bus = Some(event_bus);
         self
     }
@@ -247,9 +247,13 @@ impl<R: OperatorRepository> OperatorCommandHandler<R> {
             let subject = format!("operator.{}", event.event_type());
             match Self::encode_event_proto(&event) {
                 Ok(payload) => {
-                    if let Err(e) = bus.publish_sync(&subject, payload) {
-                        tracing::warn!(subject = %subject, error = %e, "Failed to publish event");
-                    }
+                    // Use spawn since publish_event is called from sync contexts
+                    let bus = Arc::clone(bus);
+                    tokio::spawn(async move {
+                        if let Err(e) = bus.publish(&subject, payload).await {
+                            tracing::warn!(subject = %subject, error = %e, "Failed to publish event");
+                        }
+                    });
                 }
                 Err(e) => {
                     tracing::error!(error = %e, event_type = %event.event_type(), "Failed to encode event");

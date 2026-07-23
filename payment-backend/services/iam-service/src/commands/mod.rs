@@ -4,6 +4,8 @@ use chrono::Utc;
 use tracing::info;
 use uuid::Uuid;
 
+use std::sync::Arc;
+use platform_messaging::event_bus::EventBus;
 use crate::domain::{Principal, ApiKey, ApiKeyStatus, PendingChange, AuthError, IamError};
 use crate::events::{IamEvent, PrincipalAuthenticated, PermissionDenied, ApiKeyCreated, ApiKeyRevoked};
 use crate::repository::IamRepository;
@@ -86,18 +88,32 @@ pub struct ReviewChangeResult {
 pub struct IamCommandHandler<R: IamRepository> {
     repository: R,
     jwt_secret: String,
+    event_bus: Option<Arc<dyn EventBus>>,
 }
 
 impl<R: IamRepository> IamCommandHandler<R> {
     pub fn new(repository: R, jwt_secret: String) -> Self {
-        Self { repository, jwt_secret }
+        Self { repository, jwt_secret, event_bus: None }
+    }
+
+    #[allow(dead_code)]
+    pub fn with_event_bus(mut self, event_bus: Arc<dyn EventBus>) -> Self {
+        self.event_bus = Some(event_bus);
+        self
     }
 
     fn publish_event(&self, event: IamEvent) {
-        // Encode event as protobuf using generated proto types
-        // Event bus wiring (publish via ChannelEventBus) will be added in future
         match Self::encode_event_proto(&event) {
-            Ok(_payload) => {
+            Ok(payload) => {
+                if let Some(ref bus) = self.event_bus {
+                    let subject = format!("iam.{}", event.event_type());
+                    let bus = Arc::clone(bus);
+                    tokio::spawn(async move {
+                        if let Err(e) = bus.publish(&subject, payload).await {
+                            tracing::warn!(subject = %subject, error = %e, "Failed to publish event");
+                        }
+                    });
+                }
                 tracing::debug!(event_type = %event.event_type(), "Domain event encoded as protobuf");
             }
             Err(e) => {
