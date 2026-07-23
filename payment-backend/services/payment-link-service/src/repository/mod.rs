@@ -18,6 +18,7 @@ pub trait PaymentLinkRepository: Send + Sync {
     async fn load(&self, id: Uuid) -> Result<Option<PaymentLink>, PaymentLinkError>;
     async fn load_by_token(&self, token: &str) -> Result<Option<PaymentLink>, PaymentLinkError>;
     async fn save(&self, link: &PaymentLink) -> Result<(), PaymentLinkError>;
+    async fn find_by_operator(&self, operator_id: Uuid) -> Result<Vec<PaymentLink>, PaymentLinkError>;
     async fn find_expired(&self) -> Result<Vec<PaymentLink>, PaymentLinkError>;
 }
 
@@ -70,6 +71,16 @@ impl PaymentLinkRepository for InMemoryPaymentLinkRepository {
             token_map.insert(token, id);
         }
         Ok(())
+    }
+
+    async fn find_by_operator(&self, operator_id: Uuid) -> Result<Vec<PaymentLink>, PaymentLinkError> {
+        let map = self.links.read().await;
+        let results: Vec<PaymentLink> = map
+            .values()
+            .filter(|l| l.operator_id == operator_id)
+            .cloned()
+            .collect();
+        Ok(results)
     }
 
     async fn find_expired(&self) -> Result<Vec<PaymentLink>, PaymentLinkError> {

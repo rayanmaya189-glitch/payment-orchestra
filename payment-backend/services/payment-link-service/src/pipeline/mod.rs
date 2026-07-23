@@ -67,6 +67,11 @@ impl PaymentLinkRepository for ArcRepoAdapter {
         repo.save(link).await
     }
 
+    async fn find_by_operator(&self, operator_id: uuid::Uuid) -> Result<Vec<PaymentLink>, PaymentLinkError> {
+        let repo = self.0.read().await;
+        repo.find_by_operator(operator_id).await
+    }
+
     async fn find_expired(&self) -> Result<Vec<PaymentLink>, PaymentLinkError> {
         let repo = self.0.read().await;
         repo.find_expired().await

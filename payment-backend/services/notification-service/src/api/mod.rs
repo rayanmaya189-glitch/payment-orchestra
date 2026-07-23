@@ -5,6 +5,8 @@ use crate::domain::{NotificationError, NotificationRequest, NotificationTemplate
 use crate::queries::*;
 use uuid::Uuid;
 
+pub mod grpc;
+
 pub struct NotificationApi {
     command_handler: Box<dyn CommandHandler>,
     query_handler: Box<dyn QueryHandler>,

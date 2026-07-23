@@ -182,8 +182,36 @@ pub struct RenderedMessage {
 // Default templates
 // ---------------------------------------------------------------------------
 
+impl std::str::FromStr for DeliveryStatus {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "queued" => Ok(DeliveryStatus::Queued),
+            "sent" => Ok(DeliveryStatus::Sent),
+            "failed" => Ok(DeliveryStatus::Failed),
+            "dead_letter" => Ok(DeliveryStatus::DeadLetter),
+            _ => Err(format!("Invalid delivery status: {}", s)),
+        }
+    }
+}
+
 pub fn default_templates() -> Vec<NotificationTemplate> {
     vec![
+        NotificationTemplate {
+            template_id: "direct_email".into(),
+            channel: NotificationChannel::Email,
+            subject_template: None,
+            body_template: "{{body}}".into(),
+            description: "Direct email send (no template)".into(),
+        },
+        NotificationTemplate {
+            template_id: "direct_sms".into(),
+            channel: NotificationChannel::Sms,
+            subject_template: None,
+            body_template: "{{body}}".into(),
+            description: "Direct SMS send (no template)".into(),
+        },
         NotificationTemplate {
             template_id: "payment_failed".into(),
             channel: NotificationChannel::Email,

@@ -6,6 +6,8 @@ use crate::queries::*;
 use uuid::Uuid;
 
 /// Public API facade for the payment-link service.
+pub mod grpc;
+
 pub struct PaymentLinkApi {
     command_handler: Box<dyn CommandHandler>,
     query_handler: Box<dyn QueryHandler>,

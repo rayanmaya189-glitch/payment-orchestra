@@ -37,6 +37,20 @@ impl PaymentLinkStatus {
     }
 }
 
+impl std::str::FromStr for PaymentLinkStatus {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "active" => Ok(PaymentLinkStatus::Active),
+            "used" => Ok(PaymentLinkStatus::Used),
+            "expired" => Ok(PaymentLinkStatus::Expired),
+            "cancelled" => Ok(PaymentLinkStatus::Cancelled),
+            _ => Err(format!("Invalid payment link status: {}", s)),
+        }
+    }
+}
+
 impl std::fmt::Display for PaymentLinkStatus {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {

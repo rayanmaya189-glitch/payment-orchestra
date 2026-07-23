@@ -14,6 +14,7 @@ use crate::repository::*;
 pub trait QueryHandler: Send + Sync {
     async fn get_payment_link(&self, id: Uuid) -> Result<PaymentLink, PaymentLinkError>;
     async fn get_payment_link_by_token(&self, token: &str) -> Result<PaymentLink, PaymentLinkError>;
+    async fn find_by_operator(&self, operator_id: Uuid) -> Result<Vec<PaymentLink>, PaymentLinkError>;
     async fn find_expired_links(&self) -> Result<Vec<PaymentLink>, PaymentLinkError>;
 }
 
@@ -45,6 +46,10 @@ impl<R: PaymentLinkRepository + Send + Sync> QueryHandler for PaymentLinkQueryHa
             .load_by_token(token)
             .await?
             .ok_or(PaymentLinkError::NotFound)
+    }
+
+    async fn find_by_operator(&self, operator_id: Uuid) -> Result<Vec<PaymentLink>, PaymentLinkError> {
+        self.repo.find_by_operator(operator_id).await
     }
 
     async fn find_expired_links(&self) -> Result<Vec<PaymentLink>, PaymentLinkError> {
