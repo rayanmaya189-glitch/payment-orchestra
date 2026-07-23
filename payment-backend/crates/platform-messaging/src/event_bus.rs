@@ -109,6 +109,39 @@ impl EventBus for ChannelEventBus {
     }
 }
 
+// ── Fire-and-Forget Publish Helper ──────────────────────────────────────────
+
+use std::sync::Arc;
+
+/// Publish an event payload via the event bus in a fire-and-forget manner.
+///
+/// If an event bus is configured, spawns a background task that publishes the
+/// encoded payload to the constructed subject `"{prefix}.{event_type}"`.
+/// On failure, a warning is logged. This helper is designed for command handlers
+/// that need to publish events without awaiting the publish result.
+///
+/// # Arguments
+/// * `event_bus` - Optional reference to an `Arc<dyn EventBus>`.
+/// * `subject_prefix` - The domain prefix (e.g., `"operator"`, `"compliance"`).
+/// * `event_type` - The specific event type name (e.g., `"operator_registered"`).
+/// * `payload` - The protobuf-encoded event payload bytes.
+pub fn publish_event_fire_and_forget(
+    event_bus: &Option<Arc<dyn EventBus>>,
+    subject_prefix: &str,
+    event_type: &str,
+    payload: Vec<u8>,
+) {
+    if let Some(bus) = event_bus.as_ref() {
+        let subject = format!("{}.{}", subject_prefix, event_type);
+        let bus = Arc::clone(bus);
+        tokio::spawn(async move {
+            if let Err(e) = bus.publish(&subject, payload).await {
+                tracing::warn!(subject = %subject, error = %e, "Failed to publish event");
+            }
+        });
+    }
+}
+
 // ── Tests ───────────────────────────────────────────────────────────────────
 
 #[cfg(test)]

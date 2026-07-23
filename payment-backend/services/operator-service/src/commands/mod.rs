@@ -6,7 +6,7 @@ use uuid::Uuid;
 use tracing::info;
 
 use std::sync::Arc;
-use platform_messaging::event_bus::EventBus;
+use platform_messaging::event_bus::{EventBus, publish_event_fire_and_forget};
 use crate::domain::{Operator, OperatorError, OperatorStatus};
 use crate::events::{OperatorEvent, OperatorRegistered, OperatorVerified, OperatorSuspended, OperatorReactivated};
 use crate::repository::OperatorRepository;
@@ -243,21 +243,12 @@ impl<R: OperatorRepository> OperatorCommandHandler<R> {
     }
 
     fn publish_event(&self, event: OperatorEvent) {
-        if let Some(ref bus) = self.event_bus {
-            let subject = format!("operator.{}", event.event_type());
-            match Self::encode_event_proto(&event) {
-                Ok(payload) => {
-                    // Use spawn since publish_event is called from sync contexts
-                    let bus = Arc::clone(bus);
-                    tokio::spawn(async move {
-                        if let Err(e) = bus.publish(&subject, payload).await {
-                            tracing::warn!(subject = %subject, error = %e, "Failed to publish event");
-                        }
-                    });
-                }
-                Err(e) => {
-                    tracing::error!(error = %e, event_type = %event.event_type(), "Failed to encode event");
-                }
+        match Self::encode_event_proto(&event) {
+            Ok(payload) => {
+                publish_event_fire_and_forget(&self.event_bus, "operator", event.event_type(), payload);
+            }
+            Err(e) => {
+                tracing::error!(error = %e, event_type = %event.event_type(), "Failed to encode event");
             }
         }
     }

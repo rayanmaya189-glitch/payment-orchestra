@@ -5,7 +5,7 @@ use tracing::info;
 use uuid::Uuid;
 
 use std::sync::Arc;
-use platform_messaging::event_bus::EventBus;
+use platform_messaging::event_bus::{EventBus, publish_event_fire_and_forget};
 use crate::domain::{MerchantAcquirerLink, LinkEnvironment, LinkError};
 use crate::events::{LinkEvent, LinkCreated, LinkEnabled, LinkDisabled, CredentialsRotated, ConnectionTested, HealthChanged};
 use crate::repository::LinkRepository;
@@ -105,16 +105,7 @@ impl<R: LinkRepository> LinkCommandHandler<R> {
     fn publish_event(&self, event: LinkEvent) {
         match Self::encode_event_proto(&event) {
             Ok(payload) => {
-                if let Some(ref bus) = self.event_bus {
-                    let subject = format!("connector.{}", event.event_type());
-                    let bus = Arc::clone(bus);
-                    tokio::spawn(async move {
-                        if let Err(e) = bus.publish(&subject, payload).await {
-                            tracing::warn!(subject = %subject, error = %e, "Failed to publish event");
-                        }
-                    });
-                }
-                tracing::debug!(event_type = %event.event_type(), "Domain event encoded as protobuf");
+                publish_event_fire_and_forget(&self.event_bus, "connector", event.event_type(), payload);
             }
             Err(e) => {
                 tracing::error!(error = %e, event_type = %event.event_type(), "Failed to encode event as protobuf");
