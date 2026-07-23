@@ -4,7 +4,6 @@
 //! AML transaction monitoring, and SAR report generation.
 
 use std::net::SocketAddr;
-use tonic::transport::Server;
 use tracing::info;
 
 mod domain;
@@ -37,17 +36,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let queries = ComplianceQueries::new(repository);
     let compliance_service = ComplianceGrpcService::new(command_handler, queries);
 
-    let grpc_addr: SocketAddr = runner.grpc_addr;
-    info!("Compliance service gRPC server listening on {grpc_addr}");
-
-    let server = Server::builder()
-        .add_service(ComplianceServiceServer::new(compliance_service))
-        .serve(grpc_addr);
+    let addr: SocketAddr = runner.grpc_addr;
+    info!("Compliance service gRPC server listening on {addr}");
 
     tokio::select! {
-        result = server => {
-            result?;
-        }
+        result = tonic::transport::Server::builder()
+            .add_service(ComplianceServiceServer::new(compliance_service))
+            .serve_with_shutdown(addr, async {
+                tokio::signal::ctrl_c().await.ok();
+            }) => {
+                if let Err(e) = result {
+                    tracing::error!("gRPC server error: {}", e);
+                }
+            }
         _ = tokio::signal::ctrl_c() => {
             info!("Shutdown signal received");
         }

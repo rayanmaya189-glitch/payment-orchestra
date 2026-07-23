@@ -2,7 +2,6 @@
 //! SVC-06: Invoice create, send, cancel, payment tracking, overdue management.
 
 use std::net::SocketAddr;
-use tonic::transport::Server;
 use tracing::info;
 
 use invoice_service::api::grpc::InvoiceGrpcService;
@@ -22,19 +21,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let command_handler = InvoiceCommandHandler::new(repo.clone());
     let query_handler = InvoiceQueryHandler::new(repo.clone());
 
-    let grpc_addr: SocketAddr = runner.grpc_addr;
+    let addr: SocketAddr = runner.grpc_addr;
     let invoice_service = InvoiceGrpcService::new(command_handler, query_handler);
 
-    info!("Invoice service gRPC server listening on {grpc_addr}");
-
-    let server = Server::builder()
-        .add_service(InvoiceServiceServer::new(invoice_service))
-        .serve(grpc_addr);
+    info!("Invoice service gRPC server listening on {addr}");
 
     tokio::select! {
-        result = server => {
-            result?;
-        }
+        result = tonic::transport::Server::builder()
+            .add_service(InvoiceServiceServer::new(invoice_service))
+            .serve_with_shutdown(addr, async {
+                tokio::signal::ctrl_c().await.ok();
+            }) => {
+                if let Err(e) = result {
+                    tracing::error!("gRPC server error: {}", e);
+                }
+            }
         _ = tokio::signal::ctrl_c() => {
             info!("Shutdown signal received");
         }
