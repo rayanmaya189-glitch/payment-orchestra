@@ -41,30 +41,44 @@ pub struct ServerRunner {
 
 impl ServerRunner {
     /// Create a new server runner and register with etcd.
-    /// Configuration is loaded from environment variables (via `ServiceConfig::from_env`).
-    /// Falls back to default ports if env vars are not set.
+    ///
+    /// Port resolution priority:
+    /// 1. `{service_name}_grpc_port` / `{service_name}_health_port` env vars (per-service)
+    /// 2. Generic `GRPC_PORT` / `HEALTH_PORT` env vars (from `ServiceConfig::from_env`)
+    /// 3. `default_grpc_port` / `default_health_port` fallback
+    ///
+    /// Service name hyphens (`-`) are converted to underscores (`_`) for env var lookup.
+    /// Example: `"operator-service"` reads `operator_service_grpc_port`.
     pub async fn new(
         service_name: &str,
         default_grpc_port: u16,
         default_health_port: u16,
     ) -> Result<Self, Box<dyn std::error::Error>> {
-        let config = platform_config::config::ServiceConfig::from_env().unwrap_or_else(|_| {
-            let mut cfg = platform_config::config::ServiceConfig::default();
-            cfg.grpc_port = default_grpc_port;
-            cfg.health_port = default_health_port;
-            cfg
-        });
+        // Load shared config once (used for etcd, shutdown timeout, and generic port fallback)
+        let config = platform_config::config::ServiceConfig::from_env().unwrap_or_default();
 
-        let grpc_port = if config.grpc_port > 0 {
-            config.grpc_port
-        } else {
-            default_grpc_port
-        };
-        let health_port = if config.health_port > 0 {
-            config.health_port
-        } else {
-            default_health_port
-        };
+        // Build per-service env var names: replace '-' with '_'
+        // Example: "operator-service" -> "operator_service_grpc_port"
+        let env_key = service_name.replace('-', "_");
+        let grpc_env = format!("{}_grpc_port", env_key);
+        let health_env = format!("{}_health_port", env_key);
+
+        // Port resolution priority:
+        //   1. Per-service env var (e.g., operator_service_grpc_port)
+        //   2. Hardcoded default_grpc_port / default_health_port parameter
+        //
+        // Note: Generic GRPC_PORT env var is NOT used as fallback because
+        // ServiceConfig::default().grpc_port = 9000, which would shadow the
+        // per-service defaults (9001, 9002, ...) whenever no env var is set.
+        let grpc_port = std::env::var(&grpc_env)
+            .ok()
+            .and_then(|v| v.parse::<u16>().ok())
+            .unwrap_or(default_grpc_port);
+
+        let health_port = std::env::var(&health_env)
+            .ok()
+            .and_then(|v| v.parse::<u16>().ok())
+            .unwrap_or(default_health_port);
 
         let grpc_addr: SocketAddr = format!("0.0.0.0:{}", grpc_port).parse()?;
         let health_addr: SocketAddr = format!("0.0.0.0:{}", health_port).parse()?;
