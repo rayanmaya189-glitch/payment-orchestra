@@ -1,22 +1,19 @@
-//! Connector Gateway — Anti-Corruption Layer for acquirer integrations.
-//! Hosts the AcquirerConnector trait, ConnectorRegistry, GatewayProfile lifecycle,
-//! circuit breakers, and mock connector implementations for testing.
+//! Connector Gateway
+//! BC-04: Acquirer connector framework, circuit breaker, adapters
 
-use connector_gateway::domain;
+use tokio::signal;
+use tracing::info;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     platform_logging::telemetry::init();
-    tracing::info!("connector-gateway starting...");
 
-    // Initialize connector registry with mock connectors
-    let mut registry = domain::ConnectorRegistry::new();
-    registry.register(Box::new(domain::mocks::MockNetworkIntlConnector::new("sandbox")));
-    registry.register(Box::new(domain::mocks::MockCheckoutComConnector::new("sandbox")));
-    registry.register(Box::new(domain::mocks::MockTelrConnector::new("sandbox")));
-    tracing::info!(connectors = ?registry.list_ids(), "Connector registry initialized");
+    let mut runner = platform_registry::bootstrap::ServerRunner::new("connector-gateway", 9004, 9104).await?;
 
-    tracing::info!("connector-gateway ready");
+    info!("Connector Gateway service registered, listening on {}", runner.grpc_addr);
+    runner.wait_for_shutdown().await?;
+    runner.deregister().await;;
 
+    info!("Connector Gateway service stopped");
     Ok(())
 }

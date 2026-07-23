@@ -5,7 +5,6 @@
 //! as all other services depend on operator identity.
 
 use std::net::SocketAddr;
-use tokio::signal;
 use tonic::transport::Server;
 use tracing::info;
 
@@ -27,45 +26,32 @@ use platform_proto::operator::operator_service_server::OperatorServiceServer;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Initialize structured logging
     platform_logging::telemetry::init();
-    
-    // Load configuration
-    let config = platform_config::config::ServiceConfig::from_env()
-        .unwrap_or_default();
-    
-    info!(
-        service = %config.service_name,
-        listen_addr = %config.listen_addr,
-        log_level = %config.log_level,
-        "Operator service starting"
-    );
 
-    // Initialize repository (in-memory for now, SeaORM in production)
+    let mut runner = platform_registry::bootstrap::ServerRunner::new("operator-service", 9001, 9101).await?;
+
     let repository = InMemoryOperatorRepository::new();
-    
-    // Create command handler and queries
     let command_handler = OperatorCommandHandler::new(repository.clone());
     let queries = OperatorQueries::new(repository);
-    
-    // Create gRPC service
     let operator_service = OperatorGrpcService::new(command_handler, queries);
-    
-    // Parse listen address
-    let addr: SocketAddr = config.listen_addr.parse()
-        .unwrap_or_else(|_| "0.0.0.0:9001".parse().unwrap());
-    
-    info!("gRPC server listening on {}", addr);
 
-    // Start gRPC server with graceful shutdown
-    Server::builder()
+    let grpc_addr: SocketAddr = runner.grpc_addr;
+    info!("Operator service gRPC server listening on {grpc_addr}");
+
+    let server = Server::builder()
         .add_service(OperatorServiceServer::new(operator_service))
-        .serve_with_shutdown(addr, async {
-            signal::ctrl_c().await.ok();
-            info!("Shutdown signal received, starting graceful shutdown");
-        })
-        .await?;
+        .serve(grpc_addr);
 
+    tokio::select! {
+        result = server => {
+            result?;
+        }
+        _ = tokio::signal::ctrl_c() => {
+            info!("Shutdown signal received");
+        }
+    }
+
+    runner.deregister().await;
     info!("Operator service stopped");
     Ok(())
 }

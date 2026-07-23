@@ -94,7 +94,78 @@ impl<R: IamRepository> IamCommandHandler<R> {
     }
 
     fn publish_event(&self, event: IamEvent) {
-        tracing::debug!(event_type = %event.event_type(), "Domain event");
+        // Encode event as protobuf using generated proto types
+        // Event bus wiring (publish via ChannelEventBus) will be added in future
+        match Self::encode_event_proto(&event) {
+            Ok(_payload) => {
+                tracing::debug!(event_type = %event.event_type(), "Domain event encoded as protobuf");
+            }
+            Err(e) => {
+                tracing::error!(error = %e, event_type = %event.event_type(), "Failed to encode event as protobuf");
+            }
+        }
+    }
+
+    /// Encode an IamEvent as protobuf bytes using the generated proto types.
+    fn encode_event_proto(event: &IamEvent) -> Result<Vec<u8>, String> {
+        use prost::Message;
+        match event {
+            IamEvent::PrincipalCreated(e) => {
+                let proto = platform_proto::iam::PrincipalCreatedEvent {
+                    principal_id: e.principal_id.to_string(),
+                    email: e.email.clone(),
+                    principal_type: e.principal_type.clone(),
+                    occurred_at_unix_ms: e.occurred_at.timestamp_millis(),
+                };
+                let mut buf = Vec::new();
+                prost::Message::encode(&proto, &mut buf).map_err(|e| e.to_string())?;
+                Ok(buf)
+            }
+            IamEvent::PrincipalAuthenticated(e) => {
+                let proto = platform_proto::iam::PrincipalAuthenticatedEvent {
+                    principal_id: e.principal_id.to_string(),
+                    ip_address: e.ip_address.clone(),
+                    user_agent: e.user_agent.clone(),
+                    occurred_at_unix_ms: e.occurred_at.timestamp_millis(),
+                };
+                let mut buf = Vec::new();
+                prost::Message::encode(&proto, &mut buf).map_err(|e| e.to_string())?;
+                Ok(buf)
+            }
+            IamEvent::PermissionDenied(e) => {
+                let proto = platform_proto::iam::PermissionDeniedEvent {
+                    principal_id: e.principal_id.to_string(),
+                    resource: e.resource.clone(),
+                    action: e.action.clone(),
+                    reason: e.reason.clone(),
+                    occurred_at_unix_ms: e.occurred_at.timestamp_millis(),
+                };
+                let mut buf = Vec::new();
+                prost::Message::encode(&proto, &mut buf).map_err(|e| e.to_string())?;
+                Ok(buf)
+            }
+            IamEvent::ApiKeyCreated(e) => {
+                let proto = platform_proto::iam::ApiKeyCreatedEvent {
+                    api_key_id: e.api_key_id.to_string(),
+                    principal_id: e.principal_id.to_string(),
+                    scopes: e.scopes.clone(),
+                    occurred_at_unix_ms: e.occurred_at.timestamp_millis(),
+                };
+                let mut buf = Vec::new();
+                prost::Message::encode(&proto, &mut buf).map_err(|e| e.to_string())?;
+                Ok(buf)
+            }
+            IamEvent::ApiKeyRevoked(e) => {
+                let proto = platform_proto::iam::ApiKeyRevokedEvent {
+                    api_key_id: e.api_key_id.to_string(),
+                    principal_id: e.principal_id.to_string(),
+                    occurred_at_unix_ms: e.occurred_at.timestamp_millis(),
+                };
+                let mut buf = Vec::new();
+                prost::Message::encode(&proto, &mut buf).map_err(|e| e.to_string())?;
+                Ok(buf)
+            }
+        }
     }
 }
 

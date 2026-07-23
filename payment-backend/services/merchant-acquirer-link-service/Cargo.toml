@@ -28,6 +28,8 @@ platform-health.workspace = true
 platform-metrics.workspace = true
 ring.workspace = true
 hex.workspace = true
+prost.workspace = true
+platform-registry.workspace = true
 
 [dev-dependencies]
 proptest.workspace = true

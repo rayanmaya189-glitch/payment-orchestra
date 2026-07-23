@@ -244,16 +244,66 @@ impl<R: OperatorRepository> OperatorCommandHandler<R> {
 
     fn publish_event(&self, event: OperatorEvent) {
         if let Some(ref bus) = self.event_bus {
-            match serde_json::to_vec(&event) {
+            let subject = format!("operator.{}", event.event_type());
+            match Self::encode_event_proto(&event) {
                 Ok(payload) => {
-                    let subject = format!("operator.{}", event.event_type());
                     if let Err(e) = bus.publish_sync(&subject, payload) {
                         tracing::warn!(subject = %subject, error = %e, "Failed to publish event");
                     }
                 }
                 Err(e) => {
-                    tracing::error!(error = %e, event_type = %event.event_type(), "Failed to serialize event");
+                    tracing::error!(error = %e, event_type = %event.event_type(), "Failed to encode event");
                 }
+            }
+        }
+    }
+
+    /// Encode an OperatorEvent as protobuf bytes using the generated proto types.
+    fn encode_event_proto(event: &OperatorEvent) -> Result<Vec<u8>, String> {
+        use prost::Message;
+        match event {
+            OperatorEvent::Registered(e) => {
+                let proto = platform_proto::operator::OperatorRegisteredEvent {
+                    operator_id: e.operator_id.to_string(),
+                    legal_name: e.legal_name.clone(),
+                    email: e.email.clone(),
+                    subdomain: e.subdomain.clone(),
+                    occurred_at_unix_ms: e.occurred_at.timestamp_millis(),
+                };
+                let mut buf = Vec::new();
+                prost::Message::encode(&proto, &mut buf).map_err(|e| e.to_string())?;
+                Ok(buf)
+            }
+            OperatorEvent::Verified(e) => {
+                let proto = platform_proto::operator::OperatorVerifiedEvent {
+                    operator_id: e.operator_id.to_string(),
+                    previous_status: e.previous_status.clone(),
+                    new_status: e.new_status.clone(),
+                    occurred_at_unix_ms: e.occurred_at.timestamp_millis(),
+                };
+                let mut buf = Vec::new();
+                prost::Message::encode(&proto, &mut buf).map_err(|e| e.to_string())?;
+                Ok(buf)
+            }
+            OperatorEvent::Suspended(e) => {
+                let proto = platform_proto::operator::OperatorSuspendedEvent {
+                    operator_id: e.operator_id.to_string(),
+                    reason: e.reason.clone(),
+                    occurred_at_unix_ms: e.occurred_at.timestamp_millis(),
+                };
+                let mut buf = Vec::new();
+                prost::Message::encode(&proto, &mut buf).map_err(|e| e.to_string())?;
+                Ok(buf)
+            }
+            OperatorEvent::Reactivated(e) => {
+                let proto = platform_proto::operator::OperatorReactivatedEvent {
+                    operator_id: e.operator_id.to_string(),
+                    reason: e.reason.clone(),
+                    occurred_at_unix_ms: e.occurred_at.timestamp_millis(),
+                };
+                let mut buf = Vec::new();
+                prost::Message::encode(&proto, &mut buf).map_err(|e| e.to_string())?;
+                Ok(buf)
             }
         }
     }

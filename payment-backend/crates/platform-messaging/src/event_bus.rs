@@ -15,7 +15,6 @@ pub trait EventBus: Send + Sync {
 // ── Noop Event Bus (for testing) ────────────────────────────────────────────
 
 /// No-op event bus that discards all published events.
-/// Use in tests or when the event bus is not yet configured.
 #[derive(Clone, Default)]
 pub struct NoopEventBus;
 
@@ -26,10 +25,54 @@ impl EventBus for NoopEventBus {
     }
 }
 
+// ── Event Envelope (protobuf-encoded in transport) ──────────────────────────
+
+/// Transport envelope wrapping event subject and payload.
+/// Encoded with `prost::Message::encode` for protobuf-native transport.
+#[derive(Clone, PartialEq, prost::Message)]
+pub struct EventEnvelope {
+    /// Event subject/topic (e.g., "operator.operator_registered")
+    #[prost(string, tag = "1")]
+    pub subject: String,
+    /// Serialized event payload (protobuf-encoded domain event)
+    #[prost(bytes, tag = "2")]
+    pub payload: Vec<u8>,
+    /// Unique event identifier (UUIDv7 as string)
+    #[prost(string, tag = "3")]
+    pub event_id: String,
+    /// Event timestamp in milliseconds since Unix epoch
+    #[prost(int64, tag = "4")]
+    pub timestamp_unix_ms: i64,
+}
+
+impl EventEnvelope {
+    /// Create a new event envelope with the given subject and payload.
+    pub fn new(subject: &str, payload: Vec<u8>) -> Self {
+        Self {
+            subject: subject.to_string(),
+            payload,
+            event_id: Uuid::now_v7().to_string(),
+            timestamp_unix_ms: chrono::Utc::now().timestamp_millis(),
+        }
+    }
+
+    /// Decode an event envelope from protobuf-encoded bytes.
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self, String> {
+        prost::Message::decode(bytes).map_err(|e| e.to_string())
+    }
+
+    /// Encode this envelope into protobuf bytes for transport.
+    pub fn to_bytes(&self) -> Result<Vec<u8>, String> {
+        let mut buf = Vec::new();
+        prost::Message::encode(self, &mut buf).map_err(|e| e.to_string())?;
+        Ok(buf)
+    }
+}
+
 // ── Concrete Channel Event Bus ──────────────────────────────────────────────
 
 /// In-process event bus backed by a `tokio::sync::broadcast` channel.
-/// Events are serialized as JSON and broadcast to all subscribers.
+/// Events are encoded as protobuf and broadcast to all subscribers.
 pub struct ChannelEventBus {
     sender: broadcast::Sender<Vec<u8>>,
 }
@@ -48,16 +91,11 @@ impl ChannelEventBus {
         self.sender.receiver_count()
     }
 
-    /// Synchronous publish — wraps the event in an envelope and sends it.
-    /// Used by services that call publish in non-async contexts.
+    /// Synchronous publish — wraps subject + payload in a protobuf-encoded
+    /// EventEnvelope and broadcasts to all subscribers.
     pub fn publish_sync(&self, subject: &str, payload: Vec<u8>) -> Result<(), String> {
-        let envelope = EventEnvelope {
-            subject: subject.to_string(),
-            payload,
-            event_id: Uuid::now_v7(),
-            timestamp: chrono::Utc::now(),
-        };
-        let bytes = serde_json::to_vec(&envelope).map_err(|e| e.to_string())?;
+        let envelope = EventEnvelope::new(subject, payload);
+        let bytes = envelope.to_bytes()?;
         self.sender.send(bytes).map_err(|_| "No subscribers".to_string())?;
         info!("Published to {}", subject);
         Ok(())
@@ -71,20 +109,7 @@ impl EventBus for ChannelEventBus {
     }
 }
 
-// ── Event Envelope ──────────────────────────────────────────────────────────
-
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct EventEnvelope {
-    pub subject: String,
-    pub payload: Vec<u8>,
-    pub event_id: Uuid,
-    pub timestamp: chrono::DateTime<chrono::Utc>,
-}
-
-// ── Backward Compatibility Alias ────────────────────────────────────────────
-
-/// Backward-compatible alias. Use `ChannelEventBus` for new code.
-pub type EventBusStruct = ChannelEventBus;
+// ── Tests ───────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {
@@ -102,22 +127,21 @@ mod tests {
         let mut rx = bus.subscribe();
 
         let payload = vec![1, 2, 3];
-        bus.publish("test.subject", payload.clone()).await.unwrap();
+        bus.publish_sync("test.subject", payload).unwrap();
 
         let received = rx.try_recv().unwrap();
-        let envelope: EventEnvelope = serde_json::from_slice(&received).unwrap();
+        let envelope = EventEnvelope::from_bytes(&received).unwrap();
         assert_eq!(envelope.subject, "test.subject");
+        assert!(!envelope.event_id.is_empty());
     }
 
     #[test]
-    fn test_channel_event_bus_publish_sync() {
-        let bus = ChannelEventBus::new(16);
-        let mut rx = bus.subscribe();
-
-        bus.publish_sync("sync.subject", vec![4, 5, 6]).unwrap();
-
-        let received = rx.try_recv().unwrap();
-        let envelope: EventEnvelope = serde_json::from_slice(&received).unwrap();
-        assert_eq!(envelope.subject, "sync.subject");
+    fn test_event_envelope_roundtrip() {
+        let envelope = EventEnvelope::new("roundtrip.test", vec![4, 5, 6]);
+        let bytes = envelope.to_bytes().unwrap();
+        let decoded = EventEnvelope::from_bytes(&bytes).unwrap();
+        assert_eq!(decoded.subject, envelope.subject);
+        assert_eq!(decoded.payload, envelope.payload);
+        assert_eq!(decoded.event_id, envelope.event_id);
     }
 }

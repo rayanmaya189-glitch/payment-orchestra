@@ -4,7 +4,6 @@
 //! AML transaction monitoring, and SAR report generation.
 
 use std::net::SocketAddr;
-use tokio::signal;
 use tonic::transport::Server;
 use tracing::info;
 
@@ -29,34 +28,30 @@ use platform_proto::compliance::compliance_service_server::ComplianceServiceServ
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     platform_logging::telemetry::init();
 
-    let config = platform_config::config::ServiceConfig::from_env()
-        .unwrap_or_default();
-
-    info!(
-        service = %config.service_name,
-        listen_addr = %config.listen_addr,
-        "Compliance service starting"
-    );
+    let mut runner = platform_registry::bootstrap::ServerRunner::new("compliance-service", 9003, 9103).await?;
 
     let repository = InMemoryComplianceRepository::new();
     let command_handler = ComplianceCommandHandler::new(repository.clone());
     let queries = ComplianceQueries::new(repository);
-
     let compliance_service = ComplianceGrpcService::new(command_handler, queries);
 
-    let addr: SocketAddr = config.listen_addr.parse()
-        .unwrap_or_else(|_| "0.0.0.0:9003".parse().unwrap());
+    let grpc_addr: SocketAddr = runner.grpc_addr;
+    info!("Compliance service gRPC server listening on {grpc_addr}");
 
-    info!("gRPC server listening on {}", addr);
-
-    Server::builder()
+    let server = Server::builder()
         .add_service(ComplianceServiceServer::new(compliance_service))
-        .serve_with_shutdown(addr, async {
-            signal::ctrl_c().await.ok();
-            info!("Shutdown signal received");
-        })
-        .await?;
+        .serve(grpc_addr);
 
+    tokio::select! {
+        result = server => {
+            result?;
+        }
+        _ = tokio::signal::ctrl_c() => {
+            info!("Shutdown signal received");
+        }
+    }
+
+    runner.deregister().await;
     info!("Compliance service stopped");
     Ok(())
 }

@@ -106,3 +106,9 @@ message OperatorSuspendedEvent {
   string reason = 2;
   int64 occurred_at_unix_ms = 3;
 }
+
+message OperatorReactivatedEvent {
+  string operator_id = 1;
+  string reason = 2;
+  int64 occurred_at_unix_ms = 3;
+}

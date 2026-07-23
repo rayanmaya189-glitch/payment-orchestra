@@ -30,6 +30,8 @@ ring.workspace = true
 hex.workspace = true
 hmac.workspace = true
 sha2.workspace = true
+prost.workspace = true
+platform-registry.workspace = true
 
 [dev-dependencies]
 proptest.workspace = true

@@ -5,24 +5,24 @@ use reconciliation_service::commands::ReconciliationCommandHandler;
 use reconciliation_service::queries::ReconciliationQueryHandler;
 use reconciliation_service::repository::InMemoryReconciliationRepository;
 use reconciliation_service::pipeline::ReconciliationPipeline;
+use tokio::signal;
+use tracing::info;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     platform_logging::telemetry::init();
-    tracing::info!("reconciliation-service starting...");
 
-    // Initialize in-memory repository (production: SeaORM + PostgreSQL)
+    let mut runner = platform_registry::bootstrap::ServerRunner::new("reconciliation-service", 9009, 9109).await?;
+
     let repo = InMemoryReconciliationRepository::new();
-
-    // Command handler
     let command_handler = ReconciliationCommandHandler::new(repo.clone());
-
-    // Query handler
     let query_handler = ReconciliationQueryHandler::new(repo.clone());
-
-    // Pipeline with logging, metrics, and authz
     let _pipeline = ReconciliationPipeline::new(command_handler, query_handler);
 
-    tracing::info!("reconciliation-service ready — settlement matching engine initialized");
+    info!("Reconciliation service registered, listening on {}", runner.grpc_addr);
+    runner.wait_for_shutdown().await?;
+    runner.deregister().await;;
+
+    info!("Reconciliation service stopped");
     Ok(())
 }

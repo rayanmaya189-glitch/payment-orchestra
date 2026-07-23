@@ -4,7 +4,6 @@
 //! API key lifecycle, MFA enrollment, and Maker/Checker flows.
 
 use std::net::SocketAddr;
-use tokio::signal;
 use tonic::transport::Server;
 use tracing::info;
 
@@ -29,37 +28,36 @@ use platform_proto::iam::iam_service_server::IamServiceServer;
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     platform_logging::telemetry::init();
 
+    let mut runner = platform_registry::bootstrap::ServerRunner::new("iam-service", 9002, 9102).await?;
+
     let config = platform_config::config::ServiceConfig::from_env()
         .unwrap_or_default();
-
-    info!(
-        service = %config.service_name,
-        listen_addr = %config.listen_addr,
-        "IAM service starting"
-    );
 
     let repository = InMemoryIamRepository::new();
     let command_handler = IamCommandHandler::new(
         repository.clone(),
-        config.jwt_secret.clone(),
+        config.jwt_secret,
     );
     let queries = IamQueries::new(repository);
-
     let iam_service = IamGrpcService::new(command_handler, queries);
 
-    let addr: SocketAddr = config.listen_addr.parse()
-        .unwrap_or_else(|_| "0.0.0.0:9002".parse().unwrap());
+    let grpc_addr: SocketAddr = runner.grpc_addr;
+    info!("IAM service gRPC server listening on {grpc_addr}");
 
-    info!("gRPC server listening on {}", addr);
-
-    Server::builder()
+    let server = Server::builder()
         .add_service(IamServiceServer::new(iam_service))
-        .serve_with_shutdown(addr, async {
-            signal::ctrl_c().await.ok();
-            info!("Shutdown signal received");
-        })
-        .await?;
+        .serve(grpc_addr);
 
+    tokio::select! {
+        result = server => {
+            result?;
+        }
+        _ = tokio::signal::ctrl_c() => {
+            info!("Shutdown signal received");
+        }
+    }
+
+    runner.deregister().await;
     info!("IAM service stopped");
     Ok(())
 }

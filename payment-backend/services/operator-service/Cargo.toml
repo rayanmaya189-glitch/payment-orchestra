@@ -27,6 +27,8 @@ platform-health.workspace = true
 platform-metrics.workspace = true
 ring = "0.17"
 hex = "0.4"
+prost.workspace = true
+platform-registry.workspace = true
 
 [dev-dependencies]
 proptest.workspace = true

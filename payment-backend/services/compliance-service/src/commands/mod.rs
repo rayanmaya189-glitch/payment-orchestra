@@ -84,9 +84,68 @@ impl<R: ComplianceRepository> ComplianceCommandHandler<R> {
         }
     }
 
-    fn publish_event(&self, _event: ComplianceEvent) {
-        // Event publishing via platform_messaging::event_bus will be wired later
-        tracing::debug!(event_type = %_event.event_type(), "Domain event");
+    fn publish_event(&self, event: ComplianceEvent) {
+        // Encode event as protobuf using generated proto types
+        // Event bus wiring (publish via ChannelEventBus) will be added in future
+        match Self::encode_event_proto(&event) {
+            Ok(_payload) => {
+                tracing::debug!(event_type = %event.event_type(), "Domain event encoded as protobuf");
+            }
+            Err(e) => {
+                tracing::error!(error = %e, event_type = %event.event_type(), "Failed to encode event as protobuf");
+            }
+        }
+    }
+
+    /// Encode a ComplianceEvent as protobuf bytes using the generated proto types.
+    fn encode_event_proto(event: &ComplianceEvent) -> Result<Vec<u8>, String> {
+        use prost::Message;
+        match event {
+            ComplianceEvent::KybCaseSubmitted(e) => {
+                let proto = platform_proto::compliance::KybCaseSubmittedEvent {
+                    kyb_case_id: e.kyb_case_id.to_string(),
+                    operator_id: e.operator_id.to_string(),
+                    document_count: e.document_count as i32,
+                    occurred_at_unix_ms: e.occurred_at.timestamp_millis(),
+                };
+                let mut buf = Vec::new();
+                prost::Message::encode(&proto, &mut buf).map_err(|e| e.to_string())?;
+                Ok(buf)
+            }
+            ComplianceEvent::KybCaseApproved(e) => {
+                let proto = platform_proto::compliance::KybCaseApprovedEvent {
+                    kyb_case_id: e.kyb_case_id.to_string(),
+                    operator_id: e.operator_id.to_string(),
+                    occurred_at_unix_ms: e.occurred_at.timestamp_millis(),
+                };
+                let mut buf = Vec::new();
+                prost::Message::encode(&proto, &mut buf).map_err(|e| e.to_string())?;
+                Ok(buf)
+            }
+            ComplianceEvent::KybCaseRejected(e) => {
+                let proto = platform_proto::compliance::KybCaseRejectedEvent {
+                    kyb_case_id: e.kyb_case_id.to_string(),
+                    operator_id: e.operator_id.to_string(),
+                    reason: e.reason.clone(),
+                    occurred_at_unix_ms: e.occurred_at.timestamp_millis(),
+                };
+                let mut buf = Vec::new();
+                prost::Message::encode(&proto, &mut buf).map_err(|e| e.to_string())?;
+                Ok(buf)
+            }
+            ComplianceEvent::AmlAlertCreated(e) => {
+                let proto = platform_proto::compliance::AmlAlertCreatedEvent {
+                    alert_id: e.alert_id.to_string(),
+                    operator_id: e.operator_id.to_string(),
+                    alert_type: e.alert_type.clone(),
+                    severity: e.severity.clone(),
+                    occurred_at_unix_ms: e.occurred_at.timestamp_millis(),
+                };
+                let mut buf = Vec::new();
+                prost::Message::encode(&proto, &mut buf).map_err(|e| e.to_string())?;
+                Ok(buf)
+            }
+        }
     }
 }
 

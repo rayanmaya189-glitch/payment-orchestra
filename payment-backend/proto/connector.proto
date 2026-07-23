@@ -156,3 +156,32 @@ message MerchantAcquirerCredentialsRotatedEvent {
   string operator_id = 2;
   int64 rotated_at_unix_ms = 3;
 }
+
+message ConnectorConnectionTestedEvent {
+  string link_id = 1;
+  string operator_id = 2;
+  bool success = 3;
+  uint32 latency_ms = 4;
+  int64 occurred_at_unix_ms = 5;
+}
+
+message ConnectorCredentialsExpiringEvent {
+  string link_id = 1;
+  string operator_id = 2;
+  uint32 days_until_expiry = 3;
+  int64 occurred_at_unix_ms = 4;
+}
+
+message ConnectorCredentialsExpiredEvent {
+  string link_id = 1;
+  string operator_id = 2;
+  int64 occurred_at_unix_ms = 3;
+}
+
+message ConnectorHealthChangedEvent {
+  string link_id = 1;
+  string operator_id = 2;
+  string old_health = 3;
+  string new_health = 4;
+  int64 occurred_at_unix_ms = 5;
+}

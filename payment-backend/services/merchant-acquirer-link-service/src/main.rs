@@ -4,7 +4,6 @@
 //! to a specific payment gateway using their own credentials.
 
 use std::net::SocketAddr;
-use tokio::signal;
 use tonic::transport::Server;
 use tracing::info;
 
@@ -29,34 +28,30 @@ use platform_proto::connector::merchant_acquirer_link_service_server::MerchantAc
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     platform_logging::telemetry::init();
 
-    let config = platform_config::config::ServiceConfig::from_env()
-        .unwrap_or_default();
-
-    info!(
-        service = %config.service_name,
-        listen_addr = %config.listen_addr,
-        "Merchant Acquirer Link service starting"
-    );
+    let mut runner = platform_registry::bootstrap::ServerRunner::new("merchant-acquirer-link-service", 9018, 9118).await?;
 
     let repository = InMemoryLinkRepository::new();
     let command_handler = LinkCommandHandler::new(repository.clone());
     let queries = LinkQueries::new(repository);
-
     let link_service = LinkGrpcService::new(command_handler, queries);
 
-    let addr: SocketAddr = config.listen_addr.parse()
-        .unwrap_or_else(|_| "0.0.0.0:9004".parse().unwrap());
+    let grpc_addr: SocketAddr = runner.grpc_addr;
+    info!("Merchant Acquirer Link service gRPC server listening on {grpc_addr}");
 
-    info!("gRPC server listening on {}", addr);
-
-    Server::builder()
+    let server = Server::builder()
         .add_service(MerchantAcquirerLinkServiceServer::new(link_service))
-        .serve_with_shutdown(addr, async {
-            signal::ctrl_c().await.ok();
-            info!("Shutdown signal received");
-        })
-        .await?;
+        .serve(grpc_addr);
 
+    tokio::select! {
+        result = server => {
+            result?;
+        }
+        _ = tokio::signal::ctrl_c() => {
+            info!("Shutdown signal received");
+        }
+    }
+
+    runner.deregister().await;
     info!("Merchant Acquirer Link service stopped");
     Ok(())
 }

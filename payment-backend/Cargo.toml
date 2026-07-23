@@ -17,6 +17,7 @@ members = [
     "crates/platform-outbox",
     "crates/platform-health",
     "crates/platform-metrics",
+    "crates/platform-registry",
 
     # Database migrations
     "migrations",
@@ -146,6 +147,9 @@ path = "crates/platform-health"
 
 [workspace.dependencies.platform-metrics]
 path = "crates/platform-metrics"
+
+[workspace.dependencies.platform-registry]
+path = "crates/platform-registry"
 
 [profile.release]
 lto = "fat"

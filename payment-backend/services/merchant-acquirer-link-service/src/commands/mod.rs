@@ -93,8 +93,112 @@ impl<R: LinkRepository> LinkCommandHandler<R> {
         Self { repository }
     }
 
-    fn publish_event(&self, _event: LinkEvent) {
-        tracing::debug!(event_type = %_event.event_type(), "Domain event");
+    fn publish_event(&self, event: LinkEvent) {
+        // Encode event as protobuf using generated proto types
+        // Event bus wiring (publish via ChannelEventBus) will be added in future
+        match Self::encode_event_proto(&event) {
+            Ok(_payload) => {
+                tracing::debug!(event_type = %event.event_type(), "Domain event encoded as protobuf");
+            }
+            Err(e) => {
+                tracing::error!(error = %e, event_type = %event.event_type(), "Failed to encode event as protobuf");
+            }
+        }
+    }
+
+    /// Encode a LinkEvent as protobuf bytes using the generated proto types.
+    fn encode_event_proto(event: &LinkEvent) -> Result<Vec<u8>, String> {
+        use prost::Message;
+        match event {
+            LinkEvent::Created(e) => {
+                let proto = platform_proto::connector::MerchantAcquirerLinkCreatedEvent {
+                    link_id: e.link_id.to_string(),
+                    operator_id: e.operator_id.to_string(),
+                    connector_id: e.connector_id.clone(),
+                    environment: e.environment.clone(),
+                    occurred_at_unix_ms: e.occurred_at.timestamp_millis(),
+                };
+                let mut buf = Vec::new();
+                prost::Message::encode(&proto, &mut buf).map_err(|e| e.to_string())?;
+                Ok(buf)
+            }
+            LinkEvent::Enabled(e) => {
+                let proto = platform_proto::connector::MerchantAcquirerLinkEnabledEvent {
+                    link_id: e.link_id.to_string(),
+                    operator_id: e.operator_id.to_string(),
+                    occurred_at_unix_ms: e.occurred_at.timestamp_millis(),
+                };
+                let mut buf = Vec::new();
+                prost::Message::encode(&proto, &mut buf).map_err(|e| e.to_string())?;
+                Ok(buf)
+            }
+            LinkEvent::Disabled(e) => {
+                let proto = platform_proto::connector::MerchantAcquirerLinkDisabledEvent {
+                    link_id: e.link_id.to_string(),
+                    operator_id: e.operator_id.to_string(),
+                    reason: e.reason.clone(),
+                    occurred_at_unix_ms: e.occurred_at.timestamp_millis(),
+                };
+                let mut buf = Vec::new();
+                prost::Message::encode(&proto, &mut buf).map_err(|e| e.to_string())?;
+                Ok(buf)
+            }
+            LinkEvent::CredentialsRotated(e) => {
+                let proto = platform_proto::connector::MerchantAcquirerCredentialsRotatedEvent {
+                    link_id: e.link_id.to_string(),
+                    operator_id: e.operator_id.to_string(),
+                    rotated_at_unix_ms: e.rotated_at.timestamp_millis(),
+                };
+                let mut buf = Vec::new();
+                prost::Message::encode(&proto, &mut buf).map_err(|e| e.to_string())?;
+                Ok(buf)
+            }
+            LinkEvent::ConnectionTested(e) => {
+                let proto = platform_proto::connector::ConnectorConnectionTestedEvent {
+                    link_id: e.link_id.to_string(),
+                    operator_id: e.operator_id.to_string(),
+                    success: e.success,
+                    latency_ms: e.latency_ms,
+                    occurred_at_unix_ms: e.occurred_at.timestamp_millis(),
+                };
+                let mut buf = Vec::new();
+                prost::Message::encode(&proto, &mut buf).map_err(|e| e.to_string())?;
+                Ok(buf)
+            }
+            LinkEvent::CredentialsExpiring(e) => {
+                let proto = platform_proto::connector::ConnectorCredentialsExpiringEvent {
+                    link_id: e.link_id.to_string(),
+                    operator_id: e.operator_id.to_string(),
+                    days_until_expiry: e.days_until_expiry,
+                    occurred_at_unix_ms: e.occurred_at.timestamp_millis(),
+                };
+                let mut buf = Vec::new();
+                prost::Message::encode(&proto, &mut buf).map_err(|e| e.to_string())?;
+                Ok(buf)
+            }
+            LinkEvent::CredentialsExpired(e) => {
+                let proto = platform_proto::connector::ConnectorCredentialsExpiredEvent {
+                    link_id: e.link_id.to_string(),
+                    operator_id: e.operator_id.to_string(),
+                    occurred_at_unix_ms: e.occurred_at.timestamp_millis(),
+                };
+                let mut buf = Vec::new();
+                prost::Message::encode(&proto, &mut buf).map_err(|e| e.to_string())?;
+                Ok(buf)
+            }
+            LinkEvent::HealthChanged(e) => {
+                let proto = platform_proto::connector::ConnectorHealthChangedEvent {
+                    link_id: e.link_id.to_string(),
+                    operator_id: e.operator_id.to_string(),
+                    old_health: e.old_health.clone(),
+                    new_health: e.new_health.clone(),
+                    occurred_at_unix_ms: e.occurred_at.timestamp_millis(),
+                };
+                let mut buf = Vec::new();
+                prost::Message::encode(&proto, &mut buf).map_err(|e| e.to_string())?;
+                Ok(buf)
+            }
+        }
     }
 }
 
