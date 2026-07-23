@@ -207,8 +207,7 @@ async fn test_find_pending() {
 #[tokio::test]
 async fn test_list_templates() {
     let pipeline = setup();
-    let templates = pipeline.api.list_templates().await;
-    assert_eq!(templates.len(), 5);
+    let templates = pipeline.api.list_templates().await;        assert_eq!(templates.len(), 7);
     assert!(templates.iter().any(|t| t.template_id == "payment_failed"));
     assert!(templates.iter().any(|t| t.template_id == "chargeback_received"));
     assert!(templates.iter().any(|t| t.template_id == "subscription_failed"));

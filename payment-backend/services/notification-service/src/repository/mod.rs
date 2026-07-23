@@ -9,7 +9,7 @@ use uuid::Uuid;
 use crate::domain::*;
 
 // ---------------------------------------------------------------------------
-// Repository trait
+// Notification repository trait
 // ---------------------------------------------------------------------------
 
 #[async_trait]
@@ -22,7 +22,19 @@ pub trait NotificationRepository: Send + Sync {
 }
 
 // ---------------------------------------------------------------------------
-// In-memory implementation
+// Webhook repository trait
+// ---------------------------------------------------------------------------
+
+#[async_trait]
+pub trait WebhookRepository: Send + Sync {
+    async fn save(&self, webhook: &Webhook) -> Result<(), NotificationError>;
+    async fn load(&self, id: Uuid) -> Result<Option<Webhook>, NotificationError>;
+    async fn find_by_operator(&self, operator_id: Uuid) -> Result<Vec<Webhook>, NotificationError>;
+    async fn delete(&self, id: Uuid) -> Result<(), NotificationError>;
+}
+
+// ---------------------------------------------------------------------------
+// In-memory notification repository
 // ---------------------------------------------------------------------------
 
 #[derive(Clone)]
@@ -79,5 +91,52 @@ impl NotificationRepository for InMemoryNotificationRepository {
             .cloned()
             .collect();
         Ok(results)
+    }
+}
+
+// ---------------------------------------------------------------------------
+// In-memory webhook repository
+// ---------------------------------------------------------------------------
+
+#[derive(Clone)]
+pub struct InMemoryWebhookRepository {
+    webhooks: Arc<RwLock<HashMap<Uuid, Webhook>>>,
+}
+
+impl InMemoryWebhookRepository {
+    pub fn new() -> Self {
+        Self {
+            webhooks: Arc::new(RwLock::new(HashMap::new())),
+        }
+    }
+}
+
+#[async_trait]
+impl WebhookRepository for InMemoryWebhookRepository {
+    async fn save(&self, webhook: &Webhook) -> Result<(), NotificationError> {
+        let mut map = self.webhooks.write().await;
+        map.insert(webhook.webhook_id, webhook.clone());
+        Ok(())
+    }
+
+    async fn load(&self, id: Uuid) -> Result<Option<Webhook>, NotificationError> {
+        let map = self.webhooks.read().await;
+        Ok(map.get(&id).cloned())
+    }
+
+    async fn find_by_operator(&self, operator_id: Uuid) -> Result<Vec<Webhook>, NotificationError> {
+        let map = self.webhooks.read().await;
+        let results: Vec<Webhook> = map
+            .values()
+            .filter(|w| w.operator_id == operator_id)
+            .cloned()
+            .collect();
+        Ok(results)
+    }
+
+    async fn delete(&self, id: Uuid) -> Result<(), NotificationError> {
+        let mut map = self.webhooks.write().await;
+        map.remove(&id);
+        Ok(())
     }
 }
