@@ -2,6 +2,7 @@
 //! Implements ADR-011 (Transactional Outbox) within each event-sourced service.
 
 pub mod domain;
+pub mod entities;
 pub mod commands;
 pub mod queries;
 pub mod events;

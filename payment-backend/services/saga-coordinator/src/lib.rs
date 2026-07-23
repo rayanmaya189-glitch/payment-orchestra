@@ -2,6 +2,7 @@
 //! BC-17: Durable state machine for compensation-capable business processes.
 
 pub mod domain;
+pub mod entities;
 pub mod commands;
 pub mod queries;
 pub mod events;
