@@ -1,100 +1,93 @@
-//! Connector Gateway gRPC client — payment routing operations.
+//! Connector Gateway gRPC client — merchant-acquirer link management.
 //!
-//! Used by Orchestration Service to authorize, capture, refund,
-//! and void transactions through the selected acquirer.
+//! Wraps the MerchantAcquirerLinkService (defined in connector.proto)
+//! for managing operator↔acquirer connections.
 
-use platform_proto::connector::connector_gateway_service_client::ConnectorGatewayServiceClient;
+use platform_proto::connector::merchant_acquirer_link_service_client::MerchantAcquirerLinkServiceClient;
 use platform_proto::connector::{
-    AuthorizeRequest, AuthorizeResponse,
-    CaptureRequest, CaptureResponse,
-    RefundRequest, RefundResponse,
-    VoidRequest, VoidResponse,
+    CreateLinkRequest, CreateLinkResponse,
+    TestConnectionRequest, TestConnectionResponse,
+    RotateCredentialsRequest, RotateCredentialsResponse,
+    DisableLinkRequest, DisableLinkResponse,
+    EnableLinkRequest, EnableLinkResponse,
+    UpdateLinkMetadataRequest, UpdateLinkMetadataResponse,
+    GetLinkRequest, GetLinkResponse,
+    ListLinksRequest, ListLinksResponse,
 };
 
 use crate::client::{ClientError, ServiceConnection};
 
-/// Client for the Connector Gateway service (BC-04).
-///
-/// Handles the low-level payment operations with acquirers.
+/// Client for the Merchant Acquirer Link service (connector gateway).
 #[derive(Debug, Clone)]
 pub struct ConnectorClient {
     conn: ServiceConnection,
 }
 
 impl ConnectorClient {
-    /// Create a new Connector client connecting to the given address.
     pub async fn connect(addr: &str) -> Result<Self, ClientError> {
         let conn = ServiceConnection::connect("connector-gateway", addr).await?;
         Ok(Self { conn })
     }
 
-    /// Create a lazy Connector client (connects on first RPC).
     pub fn connect_lazy(addr: &str) -> Result<Self, ClientError> {
         let conn = ServiceConnection::connect_lazy("connector-gateway", addr)?;
         Ok(Self { conn })
     }
 
-    /// Authorize a payment through the selected acquirer.
-    pub async fn authorize(
-        &self,
-        request: AuthorizeRequest,
-    ) -> Result<AuthorizeResponse, ClientError> {
-        let mut client = ConnectorGatewayServiceClient::new(self.conn.channel().clone());
-        let response = client
-            .authorize(tonic::Request::new(request))
-            .await
-            .map_err(|e| ClientError::RpcFailed {
-                service: "connector-gateway".into(),
-                source: e,
-            })?;
-        Ok(response.into_inner())
+    pub async fn connect_via_etcd(etcd_endpoints: &[String]) -> Result<Self, ClientError> {
+        let conn = ServiceConnection::connect_via_etcd("connector-gateway", etcd_endpoints).await?;
+        Ok(Self { conn })
     }
 
-    /// Capture an authorized payment.
-    pub async fn capture(
-        &self,
-        request: CaptureRequest,
-    ) -> Result<CaptureResponse, ClientError> {
-        let mut client = ConnectorGatewayServiceClient::new(self.conn.channel().clone());
-        let response = client
-            .capture(tonic::Request::new(request))
-            .await
-            .map_err(|e| ClientError::RpcFailed {
-                service: "connector-gateway".into(),
-                source: e,
-            })?;
-        Ok(response.into_inner())
+    async fn client(&self) -> MerchantAcquirerLinkServiceClient<tonic::transport::Channel> {
+        MerchantAcquirerLinkServiceClient::new(self.conn.channel().clone())
     }
 
-    /// Refund a captured payment.
-    pub async fn refund(
-        &self,
-        request: RefundRequest,
-    ) -> Result<RefundResponse, ClientError> {
-        let mut client = ConnectorGatewayServiceClient::new(self.conn.channel().clone());
-        let response = client
-            .refund(tonic::Request::new(request))
-            .await
-            .map_err(|e| ClientError::RpcFailed {
-                service: "connector-gateway".into(),
-                source: e,
-            })?;
-        Ok(response.into_inner())
+    pub async fn create_link(&self, req: CreateLinkRequest) -> Result<CreateLinkResponse, ClientError> {
+        self.client().await.create_link(tonic::Request::new(req)).await
+            .map(|r| r.into_inner())
+            .map_err(|e| ClientError::RpcFailed { service: "connector-gateway".into(), source: e })
     }
 
-    /// Void an authorized (uncaptured) payment.
-    pub async fn void(
-        &self,
-        request: VoidRequest,
-    ) -> Result<VoidResponse, ClientError> {
-        let mut client = ConnectorGatewayServiceClient::new(self.conn.channel().clone());
-        let response = client
-            .void(tonic::Request::new(request))
-            .await
-            .map_err(|e| ClientError::RpcFailed {
-                service: "connector-gateway".into(),
-                source: e,
-            })?;
-        Ok(response.into_inner())
+    pub async fn test_connection(&self, req: TestConnectionRequest) -> Result<TestConnectionResponse, ClientError> {
+        self.client().await.test_connection(tonic::Request::new(req)).await
+            .map(|r| r.into_inner())
+            .map_err(|e| ClientError::RpcFailed { service: "connector-gateway".into(), source: e })
+    }
+
+    pub async fn rotate_credentials(&self, req: RotateCredentialsRequest) -> Result<RotateCredentialsResponse, ClientError> {
+        self.client().await.rotate_credentials(tonic::Request::new(req)).await
+            .map(|r| r.into_inner())
+            .map_err(|e| ClientError::RpcFailed { service: "connector-gateway".into(), source: e })
+    }
+
+    pub async fn disable_link(&self, req: DisableLinkRequest) -> Result<DisableLinkResponse, ClientError> {
+        self.client().await.disable_link(tonic::Request::new(req)).await
+            .map(|r| r.into_inner())
+            .map_err(|e| ClientError::RpcFailed { service: "connector-gateway".into(), source: e })
+    }
+
+    pub async fn enable_link(&self, req: EnableLinkRequest) -> Result<EnableLinkResponse, ClientError> {
+        self.client().await.enable_link(tonic::Request::new(req)).await
+            .map(|r| r.into_inner())
+            .map_err(|e| ClientError::RpcFailed { service: "connector-gateway".into(), source: e })
+    }
+
+    pub async fn update_link_metadata(&self, req: UpdateLinkMetadataRequest) -> Result<UpdateLinkMetadataResponse, ClientError> {
+        self.client().await.update_link_metadata(tonic::Request::new(req)).await
+            .map(|r| r.into_inner())
+            .map_err(|e| ClientError::RpcFailed { service: "connector-gateway".into(), source: e })
+    }
+
+    pub async fn get_link(&self, req: GetLinkRequest) -> Result<GetLinkResponse, ClientError> {
+        self.client().await.get_link(tonic::Request::new(req)).await
+            .map(|r| r.into_inner())
+            .map_err(|e| ClientError::RpcFailed { service: "connector-gateway".into(), source: e })
+    }
+
+    pub async fn list_links(&self, req: ListLinksRequest) -> Result<ListLinksResponse, ClientError> {
+        self.client().await.list_links(tonic::Request::new(req)).await
+            .map(|r| r.into_inner())
+            .map_err(|e| ClientError::RpcFailed { service: "connector-gateway".into(), source: e })
     }
 }

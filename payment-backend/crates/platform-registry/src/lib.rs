@@ -157,6 +157,29 @@ impl Registry {
         Ok(())
     }
 
+    /// Resolve a service's gRPC address from etcd by service name.
+    /// Returns the first registered instance's gRPC address.
+    pub async fn resolve_service(&self, service_name: &str) -> Result<ServiceInstance, RegistryError> {
+        let key = format!("{}{}", self.config.key_prefix, service_name);
+
+        let resp = self
+            .client
+            .kv_client()
+            .get(key, Some(etcd_client::GetOptions::new().with_prefix()))
+            .await
+            .map_err(|e| RegistryError::OperationFailed(e.to_string()))?;
+
+        let kv = resp
+            .kvs()
+            .first()
+            .ok_or_else(|| RegistryError::ServiceNotFound(format!("No instance of {} registered", service_name)))?;
+
+        let instance: ServiceInstance = serde_json::from_slice(kv.value())
+            .map_err(|e| RegistryError::Serialization(e.to_string()))?;
+
+        Ok(instance)
+    }
+
     /// Deregister this service instance from etcd.
     pub async fn deregister(&mut self) -> Result<(), RegistryError> {
         if let Some(ref instance) = self.instance {
