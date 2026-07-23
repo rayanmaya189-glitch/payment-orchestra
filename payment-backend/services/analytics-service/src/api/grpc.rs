@@ -178,6 +178,10 @@ where
             },
         };
 
+        // Fetch events to determine the most common currency in the data
+        let events = self.repo.get_events_in_range(start, end).await;
+        let currency = events.as_ref().map_or("AED".to_string(), |e| resolve_currency(e));
+
         match self.queries.fee_analysis(query).await {
             Ok(rows) => {
                 let mut total_fees_minor: i64 = 0;
@@ -192,7 +196,7 @@ where
                             acquirer_name: r.acquirer_id,
                             total_fees: Some(ProtoMoney {
                                 amount_minor_units: r.total_fees_minor_units,
-                                currency_code: "AED".to_string(),
+                                currency_code: currency.clone(),
                             }),
                             transaction_count: r.transaction_count as i64,
                             effective_rate_bps: if r.transaction_count > 0 {
@@ -216,7 +220,7 @@ where
                     fees,
                     total_fees: Some(ProtoMoney {
                         amount_minor_units: total_fees_minor,
-                        currency_code: "AED".to_string(),
+                        currency_code: currency,
                     }),
                     effective_rate_bps: (effective_rate * 100.0).round() / 100.0,
                 }))
@@ -326,13 +330,15 @@ where
                     entry.1 += 1;
                 }
 
+                let currency = resolve_currency(&events);
+
                 let mut points: Vec<VolumePoint> = buckets
                     .into_iter()
                     .map(|(ts, (volume, count))| VolumePoint {
                         timestamp_unix_ms: ts,
                         volume: Some(ProtoMoney {
                             amount_minor_units: volume,
-                            currency_code: "AED".to_string(),
+                            currency_code: currency.clone(),
                         }),
                         transaction_count: count,
                     })
@@ -348,6 +354,22 @@ where
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
+
+/// Determine the most common currency from analytics events.
+/// Falls back to "AED" if no events have a currency set.
+fn resolve_currency(events: &[AnalyticsEvent]) -> String {
+    let mut counts: std::collections::HashMap<&str, usize> = std::collections::HashMap::new();
+    for event in events {
+        if let Some(ref currency) = event.currency {
+            *counts.entry(currency.as_str()).or_insert(0) += 1;
+        }
+    }
+    counts
+        .into_iter()
+        .max_by_key(|&(_, count)| count)
+        .map(|(currency, _)| currency.to_string())
+        .unwrap_or_else(|| "AED".to_string())
+}
 
 fn parse_timestamp(unix_ms: i64, field: &str) -> Result<DateTime<Utc>, Status> {
     chrono::DateTime::from_timestamp_millis(unix_ms)
