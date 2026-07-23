@@ -54,40 +54,28 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    // ── Step 2b: Create stub files for empty scaffold protos ──
-    // Prost-build skips protos with no messages/enums/services (empty scaffolds).
-    // We create minimal stub files so the include! directives in lib.rs compile.
-    let empty_scaffolds: Vec<&str> = vec![
-        "orchestration.v1.rs",
-        "invoice.v1.rs",
-        "subscription.v1.rs",
-        "payment_link.v1.rs",
-        "reconciliation.v1.rs",
-        "dispute.v1.rs",
-        "risk.v1.rs",
-        "ai_assistant.v1.rs",
-        "document.v1.rs",
-        "notification.v1.rs",
-        "analytics.v1.rs",
-        "saga.v1.rs",
-    ];
-    for stub in &empty_scaffolds {
-        let path = out_dir.join(stub);
-        if !path.exists() {
-            // Write an empty struct to ensure valid Rust syntax
-            std::fs::write(&path, b"// Auto-generated stub for empty scaffold proto\n")?;
-        }
-    }
-
-    // ── Step 3: Compile service protos with tonic-build for gRPC stubs ──
+    // ── Step 3: Compile ALL service protos with tonic-build for gRPC stubs ──
     // tonic_build wraps prost_build and adds gRPC server/client stubs.
     // It generates files using package-based naming (e.g., operator.v1.rs)
     // which will overwrite our renamed prost files with the gRPC stubs included.
+    // All protos with service definitions are listed here.
     let service_proto_files: Vec<&str> = vec![
         "operator.proto",
         "iam.proto",
         "compliance.proto",
         "connector.proto",
+        "orchestration.proto",
+        "invoice.proto",
+        "subscription.proto",
+        "payment-link.proto",
+        "reconciliation.proto",
+        "dispute.proto",
+        "risk.proto",
+        "ai_assistant.proto",
+        "document.proto",
+        "notification.proto",
+        "analytics.proto",
+        "saga.proto",
     ];
     let service_paths: Vec<std::path::PathBuf> = service_proto_files
         .iter()

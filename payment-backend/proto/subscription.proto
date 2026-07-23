@@ -1,6 +1,141 @@
-// subscription.proto — Protobuf service definition
+// subscription.proto — Subscription Billing Service (BC-08)
 // AI-Native Payment Orchestration Platform
-// Auto-generated scaffold — fill in service and message definitions per SRS Part 10
+// Event-sourced subscription lifecycle with proration, dunning, usage-based billing
 
 syntax = "proto3";
 package subscription.v1;
+
+import "common.proto";
+
+// ─── Service ────────────────────────────────────────────────────────────────
+
+service SubscriptionService {
+  rpc CreateSubscription(CreateSubscriptionRequest) returns (CreateSubscriptionResponse);
+  rpc GetSubscription(GetSubscriptionRequest) returns (SubscriptionView);
+  rpc CancelSubscription(CancelSubscriptionRequest) returns (CancelSubscriptionResponse);
+  rpc PauseSubscription(PauseSubscriptionRequest) returns (PauseSubscriptionResponse);
+  rpc ResumeSubscription(ResumeSubscriptionRequest) returns (ResumeSubscriptionResponse);
+  rpc ListSubscriptions(ListSubscriptionsRequest) returns (ListSubscriptionsResponse);
+}
+
+// ─── Messages ───────────────────────────────────────────────────────────────
+
+message CreateSubscriptionRequest {
+  string operator_id = 1;
+  string customer_id = 2;
+  string plan_id = 3;
+  common.v1.Money amount = 4;
+  string billing_interval = 5;    // 'monthly' | 'weekly' | 'yearly'
+  string payment_method_token_id = 6;
+  uint32 trial_days = 7;          // optional trial period
+}
+
+message CreateSubscriptionResponse {
+  string subscription_id = 1;
+  string status = 2;              // 'active' | 'trialing'
+  common.v1.Timestamp current_period_start = 3;
+  common.v1.Timestamp current_period_end = 4;
+}
+
+message GetSubscriptionRequest {
+  string subscription_id = 1;
+}
+
+message SubscriptionView {
+  string subscription_id = 1;
+  string operator_id = 2;
+  string customer_id = 3;
+  string plan_id = 4;
+  string status = 5;
+  common.v1.Money amount = 6;
+  string billing_interval = 7;
+  string payment_method_token_id = 8;
+  common.v1.Timestamp current_period_start = 9;
+  common.v1.Timestamp current_period_end = 10;
+  int32 dunning_retry_count = 11;
+  common.v1.Timestamp created_at = 12;
+  common.v1.Timestamp cancelled_at = 13;
+}
+
+message CancelSubscriptionRequest {
+  string subscription_id = 1;
+  string reason = 2;
+  bool cancel_at_period_end = 3;  // if true, cancels after current period
+}
+
+message CancelSubscriptionResponse {
+  string status = 1;              // 'cancelled' | 'active' (if cancel_at_period_end)
+  common.v1.Timestamp effective_end = 2;
+}
+
+message PauseSubscriptionRequest {
+  string subscription_id = 1;
+  string reason = 2;
+}
+
+message PauseSubscriptionResponse {
+  string status = 1;              // 'paused'
+}
+
+message ResumeSubscriptionRequest {
+  string subscription_id = 1;
+}
+
+message ResumeSubscriptionResponse {
+  string status = 1;              // 'active'
+}
+
+message ListSubscriptionsRequest {
+  string operator_id = 1;
+  string status_filter = 2;       // optional
+  common.v1.PaginationRequest pagination = 3;
+}
+
+message ListSubscriptionsResponse {
+  repeated SubscriptionView subscriptions = 1;
+  common.v1.PaginationResponse pagination = 2;
+}
+
+// ─── Domain Events ──────────────────────────────────────────────────────────
+
+message SubscriptionCreatedEvent {
+  string subscription_id = 1;
+  string operator_id = 2;
+  string customer_id = 3;
+  common.v1.Money amount = 4;
+  string billing_interval = 5;
+  int64 occurred_at_unix_ms = 6;
+}
+
+message SubscriptionRenewedEvent {
+  string subscription_id = 1;
+  string payment_intent_id = 2;
+  bool success = 3;
+  int64 occurred_at_unix_ms = 4;
+}
+
+message SubscriptionCancelledEvent {
+  string subscription_id = 1;
+  string reason = 2;
+  bool at_period_end = 3;
+  int64 occurred_at_unix_ms = 4;
+}
+
+message SubscriptionPausedEvent {
+  string subscription_id = 1;
+  string reason = 2;
+  int64 occurred_at_unix_ms = 3;
+}
+
+message SubscriptionResumedEvent {
+  string subscription_id = 1;
+  int64 occurred_at_unix_ms = 4;
+}
+
+message SubscriptionDunningEvent {
+  string subscription_id = 1;
+  int32 attempt_count = 2;
+  string last_decline_reason = 3;
+  int64 next_retry_at_unix_ms = 4;
+  int64 occurred_at_unix_ms = 5;
+}

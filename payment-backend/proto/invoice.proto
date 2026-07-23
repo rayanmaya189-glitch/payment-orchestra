@@ -1,6 +1,123 @@
-// invoice.proto — Protobuf service definition
+// invoice.proto — Invoice Service (BC-06)
 // AI-Native Payment Orchestration Platform
-// Auto-generated scaffold — fill in service and message definitions per SRS Part 10
+// Event-sourced invoice lifecycle from creation through payment
 
 syntax = "proto3";
 package invoice.v1;
+
+import "common.proto";
+
+// ─── Service ────────────────────────────────────────────────────────────────
+
+service InvoiceService {
+  rpc CreateInvoice(CreateInvoiceRequest) returns (CreateInvoiceResponse);
+  rpc GetInvoice(GetInvoiceRequest) returns (InvoiceView);
+  rpc ListInvoices(ListInvoicesRequest) returns (ListInvoicesResponse);
+  rpc SendInvoice(SendInvoiceRequest) returns (SendInvoiceResponse);
+  rpc CancelInvoice(CancelInvoiceRequest) returns (CancelInvoiceResponse);
+}
+
+// ─── Messages ───────────────────────────────────────────────────────────────
+
+message CreateInvoiceRequest {
+  string operator_id = 1;
+  string order_reference = 2;
+  repeated InvoiceLineItem line_items = 3;
+  string due_date = 4;            // ISO 8601 date string
+  string recipient_email = 5;
+  string recipient_name = 6;
+  string currency_code = 7;       // ISO 4217, default "AED"
+}
+
+message InvoiceLineItem {
+  string description = 1;
+  int64 amount_minor_units = 2;
+  string currency_code = 3;
+  uint32 quantity = 4;
+}
+
+message CreateInvoiceResponse {
+  string invoice_id = 1;
+  string status = 2;              // 'draft' | 'pending'
+  common.v1.Money total_amount = 3;
+  common.v1.Timestamp created_at = 4;
+}
+
+message GetInvoiceRequest {
+  string invoice_id = 1;
+}
+
+message InvoiceView {
+  string invoice_id = 1;
+  string operator_id = 2;
+  string order_reference = 3;
+  string status = 4;
+  common.v1.Money total_amount = 5;
+  common.v1.Money paid_amount = 6;
+  repeated InvoiceLineItem line_items = 7;
+  string due_date = 8;
+  string recipient_email = 9;
+  string recipient_name = 10;
+  repeated string payment_intent_ids = 11;
+  common.v1.Timestamp created_at = 12;
+  common.v1.Timestamp paid_at = 13;
+}
+
+message ListInvoicesRequest {
+  string operator_id = 1;
+  string status_filter = 2;       // optional
+  common.v1.PaginationRequest pagination = 3;
+}
+
+message ListInvoicesResponse {
+  repeated InvoiceView invoices = 1;
+  common.v1.PaginationResponse pagination = 2;
+}
+
+message SendInvoiceRequest {
+  string invoice_id = 1;
+  string send_to_email = 2;       // optional, defaults to recipient_email
+}
+
+message SendInvoiceResponse {
+  bool sent = 1;
+  string delivery_status = 2;     // 'sent' | 'failed'
+}
+
+message CancelInvoiceRequest {
+  string invoice_id = 1;
+  string reason = 2;
+}
+
+message CancelInvoiceResponse {
+  string status = 1;              // 'cancelled'
+}
+
+// ─── Domain Events ──────────────────────────────────────────────────────────
+
+message InvoiceCreatedEvent {
+  string invoice_id = 1;
+  string operator_id = 2;
+  string order_reference = 3;
+  common.v1.Money total_amount = 4;
+  int64 occurred_at_unix_ms = 5;
+}
+
+message InvoicePaidEvent {
+  string invoice_id = 1;
+  string payment_intent_id = 2;
+  common.v1.Money paid_amount = 3;
+  int64 occurred_at_unix_ms = 4;
+}
+
+message InvoiceCancelledEvent {
+  string invoice_id = 1;
+  string reason = 2;
+  int64 occurred_at_unix_ms = 3;
+}
+
+message InvoiceSentEvent {
+  string invoice_id = 1;
+  string recipient_email = 2;
+  int64 occurred_at_unix_ms = 3;
+}

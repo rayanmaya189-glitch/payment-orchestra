@@ -1,6 +1,132 @@
-// reconciliation.proto — Protobuf service definition
+// reconciliation.proto — Reconciliation & Settlement Service (BC-09)
 // AI-Native Payment Orchestration Platform
-// Auto-generated scaffold — fill in service and message definitions per SRS Part 10
+// Event-sourced settlement matching with T+N tracking, fee variance
 
 syntax = "proto3";
 package reconciliation.v1;
+
+import "common.proto";
+
+// ─── Service ────────────────────────────────────────────────────────────────
+
+service ReconciliationService {
+  rpc IngestSettlementFile(IngestSettlementFileRequest) returns (IngestSettlementFileResponse);
+  rpc GetReconciliationExceptions(GetExceptionsRequest) returns (GetExceptionsResponse);
+  rpc ResolveException(ResolveExceptionRequest) returns (ResolveExceptionResponse);
+  rpc GetSettlementBatches(GetBatchesRequest) returns (GetBatchesResponse);
+  rpc GetReconciliationStats(GetReconciliationStatsRequest) returns (GetReconciliationStatsResponse);
+}
+
+// ─── Messages ───────────────────────────────────────────────────────────────
+
+message IngestSettlementFileRequest {
+  string operator_id = 1;
+  string file_content = 2;         // raw file content
+  string file_format = 3;          // 'csv' | 'xml' | 'json'
+  string acquirer_link_id = 4;
+  string source = 5;               // 'sftp' | 'webhook' | 'api'
+}
+
+message IngestSettlementFileResponse {
+  string batch_id = 1;
+  int32 record_count = 2;
+  common.v1.Timestamp ingested_at = 3;
+}
+
+message GetExceptionsRequest {
+  string operator_id = 1;
+  string status = 2;               // 'unmatched' | 'amount_mismatch' | 'duplicate_reference'
+  common.v1.PaginationRequest pagination = 3;
+}
+
+message GetExceptionsResponse {
+  repeated ReconciliationException exceptions = 1;
+  common.v1.PaginationResponse pagination = 2;
+}
+
+message ReconciliationException {
+  string exception_id = 1;
+  string settlement_record_id = 2;
+  string payment_intent_id = 3;
+  common.v1.Money amount = 4;
+  string status = 5;
+  string classification = 6;
+  common.v1.Timestamp detected_at = 7;
+}
+
+message ResolveExceptionRequest {
+  string exception_id = 1;
+  string resolution = 2;           // 'linked' | 'flagged_discrepancy' | 'orphan'
+  string payment_intent_id = 3;
+  string note = 4;
+}
+
+message ResolveExceptionResponse {
+  string status = 1;               // 'resolved'
+}
+
+message GetBatchesRequest {
+  string operator_id = 1;
+  string status_filter = 2;        // 'pending' | 'matched' | 'exception'
+  common.v1.PaginationRequest pagination = 3;
+}
+
+message GetBatchesResponse {
+  repeated SettlementBatch batches = 1;
+  common.v1.PaginationResponse pagination = 2;
+}
+
+message SettlementBatch {
+  string batch_id = 1;
+  string acquirer_link_id = 2;
+  int32 total_records = 3;
+  int32 matched_records = 4;
+  int32 exception_count = 5;
+  common.v1.Timestamp settlement_date = 6;
+  common.v1.Timestamp ingested_at = 7;
+  common.v1.Timestamp reconciled_at = 8;
+  string status = 9;
+}
+
+message GetReconciliationStatsRequest {
+  string operator_id = 1;
+}
+
+message GetReconciliationStatsResponse {
+  int32 total_pending = 1;
+  int32 total_unmatched = 2;
+  int32 total_resolved = 3;
+  double match_rate = 4;
+}
+
+// ─── Domain Events ──────────────────────────────────────────────────────────
+
+message SettlementFileIngestedEvent {
+  string batch_id = 1;
+  string operator_id = 2;
+  int32 record_count = 3;
+  string acquirer_link_id = 4;
+  int64 occurred_at_unix_ms = 5;
+}
+
+message SettlementMatchedEvent {
+  string settlement_record_id = 1;
+  string payment_intent_id = 2;
+  common.v1.Money amount = 3;
+  int64 occurred_at_unix_ms = 4;
+}
+
+message SettlementUnmatchedEvent {
+  string exception_id = 1;
+  string settlement_record_id = 2;
+  string reason = 3;
+  int64 occurred_at_unix_ms = 4;
+}
+
+message SettlementOverdueEvent {
+  string payment_intent_id = 1;
+  string acquirer_link_id = 2;
+  string expected_settlement_date = 3;
+  int32 days_overdue = 4;
+  int64 occurred_at_unix_ms = 5;
+}

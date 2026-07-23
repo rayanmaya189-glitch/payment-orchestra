@@ -1,6 +1,96 @@
-// payment-link.proto — Protobuf service definition
+// payment-link.proto — Payment Link Service (BC-07)
 // AI-Native Payment Orchestration Platform
-// Auto-generated scaffold — fill in service and message definitions per SRS Part 10
+// Hosted checkout page generation with 3DS support, QR codes
 
 syntax = "proto3";
 package payment_link.v1;
+
+import "common.proto";
+
+// ─── Service ────────────────────────────────────────────────────────────────
+
+service PaymentLinkService {
+  rpc CreatePaymentLink(CreatePaymentLinkRequest) returns (CreatePaymentLinkResponse);
+  rpc GetPaymentLink(GetPaymentLinkRequest) returns (PaymentLinkView);
+  rpc ListPaymentLinks(ListPaymentLinksRequest) returns (ListPaymentLinksResponse);
+  rpc ExpirePaymentLink(ExpirePaymentLinkRequest) returns (ExpirePaymentLinkResponse);
+}
+
+// ─── Messages ───────────────────────────────────────────────────────────────
+
+message CreatePaymentLinkRequest {
+  string operator_id = 1;
+  common.v1.Money amount = 2;
+  string description = 3;
+  string success_redirect_url = 4;
+  string cancel_redirect_url = 5;
+  string webhook_url = 6;
+  string expiry_minutes = 7;      // default 1440 (24h)
+  string allowed_payment_methods = 8; // JSON array, null = all
+}
+
+message CreatePaymentLinkResponse {
+  string payment_link_id = 1;
+  string url = 2;                  // full checkout URL
+  string token = 3;                // URL-safe token (128-bit entropy)
+  common.v1.Timestamp expires_at = 4;
+  string status = 5;               // 'active'
+}
+
+message GetPaymentLinkRequest {
+  string payment_link_id = 1;
+}
+
+message PaymentLinkView {
+  string payment_link_id = 1;
+  string operator_id = 2;
+  common.v1.Money amount = 3;
+  string description = 4;
+  string status = 5;
+  string token = 6;
+  common.v1.Timestamp created_at = 7;
+  common.v1.Timestamp expires_at = 8;
+  common.v1.Timestamp completed_at = 9;
+  string payment_intent_id = 10;
+}
+
+message ListPaymentLinksRequest {
+  string operator_id = 1;
+  string status_filter = 2;       // optional
+  common.v1.PaginationRequest pagination = 3;
+}
+
+message ListPaymentLinksResponse {
+  repeated PaymentLinkView links = 1;
+  common.v1.PaginationResponse pagination = 2;
+}
+
+message ExpirePaymentLinkRequest {
+  string payment_link_id = 1;
+}
+
+message ExpirePaymentLinkResponse {
+  string status = 1;              // 'expired'
+}
+
+// ─── Domain Events ──────────────────────────────────────────────────────────
+
+message PaymentLinkCreatedEvent {
+  string payment_link_id = 1;
+  string operator_id = 2;
+  common.v1.Money amount = 3;
+  common.v1.Timestamp expires_at = 4;
+  int64 occurred_at_unix_ms = 5;
+}
+
+message PaymentLinkPaymentCompletedEvent {
+  string payment_link_id = 1;
+  string payment_intent_id = 2;
+  bool success = 3;
+  int64 occurred_at_unix_ms = 4;
+}
+
+message PaymentLinkExpiredEvent {
+  string payment_link_id = 1;
+  int64 occurred_at_unix_ms = 2;
+}

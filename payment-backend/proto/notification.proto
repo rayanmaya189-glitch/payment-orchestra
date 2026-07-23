@@ -1,6 +1,128 @@
-// notification.proto — Protobuf service definition
+// notification.proto — Notification & Webhook Delivery Service (BC-14)
 // AI-Native Payment Orchestration Platform
-// Auto-generated scaffold — fill in service and message definitions per SRS Part 10
+// Email/SMS notifications, outbound webhook delivery with retry
 
 syntax = "proto3";
 package notification.v1;
+
+import "common.proto";
+
+// ─── Service ────────────────────────────────────────────────────────────────
+
+service NotificationService {
+  rpc SendEmail(SendEmailRequest) returns (SendEmailResponse);
+  rpc SendSms(SendSmsRequest) returns (SendSmsResponse);
+  rpc GetDeliveryStatus(GetDeliveryStatusRequest) returns (GetDeliveryStatusResponse);
+  rpc RegisterWebhook(RegisterWebhookRequest) returns (RegisterWebhookResponse);
+  rpc ListWebhooks(ListWebhooksRequest) returns (ListWebhooksResponse);
+  rpc DeleteWebhook(DeleteWebhookRequest) returns (DeleteWebhookResponse);
+}
+
+// ─── Messages ───────────────────────────────────────────────────────────────
+
+message SendEmailRequest {
+  string operator_id = 1;
+  string to = 2;
+  string subject = 3;
+  string body_html = 4;
+  string body_text = 5;
+}
+
+message SendEmailResponse {
+  string notification_id = 1;
+  string status = 2;               // 'queued' | 'sent' | 'failed'
+}
+
+message SendSmsRequest {
+  string operator_id = 1;
+  string to = 2;
+  string message = 3;
+}
+
+message SendSmsResponse {
+  string notification_id = 1;
+  string status = 2;
+}
+
+message GetDeliveryStatusRequest {
+  string notification_id = 1;
+}
+
+message GetDeliveryStatusResponse {
+  string status = 1;
+  int32 attempt_count = 2;
+  common.v1.Timestamp last_attempted_at = 3;
+  common.v1.Timestamp next_retry_at = 4;
+}
+
+message RegisterWebhookRequest {
+  string operator_id = 1;
+  string url = 2;                  // HTTPS only
+  repeated string event_types = 3;
+}
+
+message RegisterWebhookResponse {
+  string webhook_id = 1;
+  string secret = 2;               // HMAC signing secret
+  string status = 3;               // 'active'
+}
+
+message ListWebhooksRequest {
+  string operator_id = 1;
+}
+
+message ListWebhooksResponse {
+  repeated WebhookView webhooks = 1;
+}
+
+message WebhookView {
+  string webhook_id = 1;
+  string url = 2;
+  repeated string event_types = 3;
+  string status = 4;
+  common.v1.Timestamp created_at = 5;
+}
+
+message DeleteWebhookRequest {
+  string webhook_id = 1;
+  string operator_id = 2;
+}
+
+message DeleteWebhookResponse {
+  bool deleted = 1;
+}
+
+// ─── Domain Events ──────────────────────────────────────────────────────────
+
+message EmailSentEvent {
+  string notification_id = 1;
+  string operator_id = 2;
+  string recipient = 3;
+  bool success = 4;
+  int64 occurred_at_unix_ms = 5;
+}
+
+message SmsSentEvent {
+  string notification_id = 1;
+  string operator_id = 2;
+  string recipient = 3;
+  bool success = 4;
+  int64 occurred_at_unix_ms = 5;
+}
+
+message WebhookDeliveredEvent {
+  string webhook_id = 1;
+  string event_type = 2;
+  bool success = 3;
+  int32 attempt_count = 4;
+  int64 occurred_at_unix_ms = 5;
+}
+
+message WebhookDeliveryFailedEvent {
+  string webhook_id = 1;
+  string event_type = 2;
+  int32 attempt_count = 3;
+  string last_error = 4;
+  int64 next_retry_at_unix_ms = 5;
+  int64 occurred_at_unix_ms = 6;
+}

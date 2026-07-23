@@ -1,6 +1,98 @@
-// saga.proto — Protobuf service definition
+// saga.proto — Saga Coordinator (BC-17)
 // AI-Native Payment Orchestration Platform
-// Auto-generated scaffold — fill in service and message definitions per SRS Part 10
+// Distributed transaction orchestration with compensation
 
 syntax = "proto3";
 package saga.v1;
+
+import "common.proto";
+
+// ─── Service ────────────────────────────────────────────────────────────────
+
+service SagaService {
+  rpc GetSagaInstance(GetSagaInstanceRequest) returns (SagaInstanceView);
+  rpc ListSagaInstances(ListSagaInstancesRequest) returns (ListSagaInstancesResponse);
+  rpc RetrySagaStep(RetrySagaStepRequest) returns (RetrySagaStepResponse);
+  rpc CompensateSaga(CompensateSagaRequest) returns (CompensateSagaResponse);
+}
+
+// ─── Messages ───────────────────────────────────────────────────────────────
+
+message GetSagaInstanceRequest {
+  string saga_id = 1;
+}
+
+message SagaInstanceView {
+  string saga_id = 1;
+  string saga_type = 2;            // 'payment_lifecycle' | 'subscription_renewal' | 'onboarding'
+  string status = 3;               // 'running' | 'completed' | 'failed' | 'compensating' | 'compensated'
+  string aggregate_id = 4;
+  repeated SagaStepResult steps = 5;
+  common.v1.Timestamp started_at = 6;
+  common.v1.Timestamp completed_at = 7;
+}
+
+message SagaStepResult {
+  string step_name = 1;
+  string status = 2;               // 'pending' | 'completed' | 'failed' | 'compensated'
+  string result_json = 3;
+  common.v1.Timestamp executed_at = 4;
+  uint32 retry_count = 5;
+}
+
+message ListSagaInstancesRequest {
+  string aggregate_id = 1;
+  string status_filter = 2;        // optional
+}
+
+message ListSagaInstancesResponse {
+  repeated SagaInstanceView sagas = 1;
+}
+
+message RetrySagaStepRequest {
+  string saga_id = 1;
+  string step_name = 2;
+}
+
+message RetrySagaStepResponse {
+  bool accepted = 1;
+  string status = 2;
+}
+
+message CompensateSagaRequest {
+  string saga_id = 1;
+  string reason = 2;
+}
+
+message CompensateSagaResponse {
+  bool accepted = 1;
+  string status = 2;               // 'compensating'
+}
+
+// ─── Domain Events ──────────────────────────────────────────────────────────
+
+message SagaStartedEvent {
+  string saga_id = 1;
+  string saga_type = 2;
+  string aggregate_id = 3;
+  int64 occurred_at_unix_ms = 4;
+}
+
+message SagaStepCompletedEvent {
+  string saga_id = 1;
+  string step_name = 2;
+  bool success = 3;
+  int64 occurred_at_unix_ms = 4;
+}
+
+message SagaCompletedEvent {
+  string saga_id = 1;
+  bool success = 2;
+  int64 occurred_at_unix_ms = 3;
+}
+
+message SagaCompensatedEvent {
+  string saga_id = 1;
+  string reason = 2;
+  int64 occurred_at_unix_ms = 3;
+}
