@@ -52,6 +52,23 @@ impl ChargebackStatus {
     }
 }
 
+impl std::str::FromStr for ChargebackStatus {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "received" => Ok(ChargebackStatus::Received),
+            "under_review" => Ok(ChargebackStatus::UnderReview),
+            "representment_submitted" => Ok(ChargebackStatus::RepresentmentSubmitted),
+            "won" => Ok(ChargebackStatus::Won),
+            "lost" => Ok(ChargebackStatus::Lost),
+            "accepted" => Ok(ChargebackStatus::Accepted),
+            "escalated" => Ok(ChargebackStatus::Escalated),
+            _ => Err(format!("Invalid chargeback status: {}", s)),
+        }
+    }
+}
+
 impl std::fmt::Display for ChargebackStatus {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -124,9 +141,9 @@ pub struct RepresentmentEvidence {
 
 impl RepresentmentEvidence {
     /// Validate that the evidence package meets minimum requirements.
-    /// Must include at least a transaction receipt and a description.
+    /// Must include at least a description and some supporting documents.
     pub fn is_valid(&self) -> bool {
-        self.transaction_receipt.is_some() && !self.description.trim().is_empty()
+        !self.description.trim().is_empty() && !self.supporting_documents.is_empty()
     }
 }
 

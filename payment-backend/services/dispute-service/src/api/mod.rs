@@ -6,6 +6,8 @@ use crate::queries::*;
 use uuid::Uuid;
 
 /// Public API facade for the dispute service.
+pub mod grpc;
+
 pub struct DisputeApi {
     command_handler: Box<dyn CommandHandler>,
     query_handler: Box<dyn QueryHandler>,
