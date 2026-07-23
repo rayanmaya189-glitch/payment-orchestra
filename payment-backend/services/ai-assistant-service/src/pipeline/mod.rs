@@ -16,19 +16,7 @@ pub struct AiAssistantPipeline {
     pub session_repo: Arc<RwLock<InMemoryConversationSessionRepository>>,
 }
 
-#[async_trait::async_trait]
-pub trait EventBus: Send + Sync {
-    async fn publish(&self, event: AiAssistantEvent) -> Result<(), AiError>;
-}
-
-pub struct NoopEventBus;
-
-#[async_trait::async_trait]
-impl EventBus for NoopEventBus {
-    async fn publish(&self, _event: AiAssistantEvent) -> Result<(), AiError> {
-        Ok(())
-    }
-}
+use platform_messaging::event_bus::{EventBus, NoopEventBus};
 
 impl AiAssistantPipeline {
     pub fn new() -> Self {

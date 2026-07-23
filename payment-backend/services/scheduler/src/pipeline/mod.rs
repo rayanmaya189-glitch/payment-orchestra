@@ -16,15 +16,7 @@ pub struct SchedulerPipeline {
     pub repo: Arc<RwLock<InMemorySchedulerRepository>>,
 }
 
-pub trait EventBus: Send + Sync {
-    fn publish(&self, event: SchedulerEvent);
-}
-
-pub struct NoopEventBus;
-
-impl EventBus for NoopEventBus {
-    fn publish(&self, _event: SchedulerEvent) {}
-}
+use platform_messaging::event_bus::{EventBus, NoopEventBus};
 
 impl SchedulerPipeline {
     pub fn new() -> Self {

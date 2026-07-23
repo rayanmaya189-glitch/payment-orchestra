@@ -10,22 +10,7 @@ use crate::repository::*;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
-/// Optional event bus for publishing domain events.
-/// In a full implementation, this would publish to NATS JetStream.
-#[async_trait::async_trait]
-pub trait EventBus: Send + Sync {
-    async fn publish(&self, event: PaymentLinkEvent) -> Result<(), PaymentLinkError>;
-}
-
-/// No-op event bus for testing.
-pub struct NoopEventBus;
-
-#[async_trait::async_trait]
-impl EventBus for NoopEventBus {
-    async fn publish(&self, _event: PaymentLinkEvent) -> Result<(), PaymentLinkError> {
-        Ok(())
-    }
-}
+use platform_messaging::event_bus::{EventBus, NoopEventBus};
 
 // ---------------------------------------------------------------------------
 // Pipeline

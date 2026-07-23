@@ -16,15 +16,7 @@ pub struct AiGatewayPipeline {
     pub repo: Arc<RwLock<InMemoryAiGatewayRepository>>,
 }
 
-pub trait EventBus: Send + Sync {
-    fn publish(&self, event: AiGatewayEvent);
-}
-
-pub struct NoopEventBus;
-
-impl EventBus for NoopEventBus {
-    fn publish(&self, _event: AiGatewayEvent) {}
-}
+use platform_messaging::event_bus::{EventBus, NoopEventBus};
 
 impl AiGatewayPipeline {
     pub fn new() -> Self {

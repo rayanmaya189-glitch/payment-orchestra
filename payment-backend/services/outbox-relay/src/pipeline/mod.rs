@@ -16,15 +16,7 @@ pub struct OutboxRelayPipeline {
     pub repo: Arc<RwLock<InMemoryOutboxRepository>>,
 }
 
-pub trait EventBus: Send + Sync {
-    fn publish(&self, event: OutboxRelayEvent);
-}
-
-pub struct NoopEventBus;
-
-impl EventBus for NoopEventBus {
-    fn publish(&self, _event: OutboxRelayEvent) {}
-}
+use platform_messaging::event_bus::{EventBus, NoopEventBus};
 
 impl OutboxRelayPipeline {
     pub fn new() -> Self {

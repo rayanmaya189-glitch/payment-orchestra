@@ -16,15 +16,7 @@ pub struct GatewayPipeline {
     pub repo: Arc<RwLock<InMemoryGatewayRepository>>,
 }
 
-pub trait EventBus: Send + Sync {
-    fn publish(&self, event: GatewayEvent);
-}
-
-pub struct NoopEventBus;
-
-impl EventBus for NoopEventBus {
-    fn publish(&self, _event: GatewayEvent) {}
-}
+use platform_messaging::event_bus::{EventBus, NoopEventBus};
 
 impl GatewayPipeline {
     pub fn new() -> Self {

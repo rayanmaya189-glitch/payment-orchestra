@@ -10,6 +10,8 @@ use crate::repository::*;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
+use platform_messaging::event_bus::{EventBus, NoopEventBus};
+
 pub struct AnalyticsPipeline {
     pub api: AnalyticsApi,
     pub event_bus: Box<dyn EventBus>,

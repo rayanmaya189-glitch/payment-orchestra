@@ -10,21 +10,7 @@ use crate::repository::*;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
-/// Optional event bus for publishing domain events.
-#[async_trait::async_trait]
-pub trait EventBus: Send + Sync {
-    async fn publish(&self, event: RiskEvent) -> Result<(), RiskError>;
-}
-
-/// No-op event bus for testing.
-pub struct NoopEventBus;
-
-#[async_trait::async_trait]
-impl EventBus for NoopEventBus {
-    async fn publish(&self, _event: RiskEvent) -> Result<(), RiskError> {
-        Ok(())
-    }
-}
+use platform_messaging::event_bus::{EventBus, NoopEventBus};
 
 // ---------------------------------------------------------------------------
 // Pipeline

@@ -13,3 +13,4 @@ serde_json.workspace = true
 uuid.workspace = true
 chrono.workspace = true
 platform-error.workspace = true
+async-trait.workspace = true

@@ -10,19 +10,7 @@ use crate::repository::*;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
-#[async_trait::async_trait]
-pub trait EventBus: Send + Sync {
-    async fn publish(&self, event: SagaEvent) -> Result<(), SagaError>;
-}
-
-pub struct NoopEventBus;
-
-#[async_trait::async_trait]
-impl EventBus for NoopEventBus {
-    async fn publish(&self, _event: SagaEvent) -> Result<(), SagaError> {
-        Ok(())
-    }
-}
+use platform_messaging::event_bus::{EventBus, NoopEventBus};
 
 pub struct SagaPipeline {
     pub api: SagaApi,

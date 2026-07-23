@@ -60,7 +60,8 @@ pub struct UpdateOperatorStatusResult {
 
 pub struct OperatorCommandHandler<R: OperatorRepository> {
     repository: R,
-    event_bus: Option<platform_messaging::event_bus::EventBus>,
+    event_bus: Option<platform_messaging::event_bus::ChannelEventBus>,
+        
 }
 
 impl<R: OperatorRepository> OperatorCommandHandler<R> {
@@ -69,7 +70,7 @@ impl<R: OperatorRepository> OperatorCommandHandler<R> {
     }
 
     #[allow(dead_code)]
-    pub fn with_event_bus(mut self, event_bus: platform_messaging::event_bus::EventBus) -> Self {
+    pub fn with_event_bus(mut self, event_bus: platform_messaging::event_bus::ChannelEventBus) -> Self {
         self.event_bus = Some(event_bus);
         self
     }
@@ -246,7 +247,7 @@ impl<R: OperatorRepository> OperatorCommandHandler<R> {
             match serde_json::to_vec(&event) {
                 Ok(payload) => {
                     let subject = format!("operator.{}", event.event_type());
-                    if let Err(e) = bus.publish(&subject, payload) {
+                    if let Err(e) = bus.publish_sync(&subject, payload) {
                         tracing::warn!(subject = %subject, error = %e, "Failed to publish event");
                     }
                 }
