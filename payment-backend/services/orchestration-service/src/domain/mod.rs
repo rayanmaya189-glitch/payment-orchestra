@@ -551,6 +551,15 @@ pub enum PolicyStatus {
     Inactive,
 }
 
+impl std::fmt::Display for PolicyStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            PolicyStatus::Active => write!(f, "active"),
+            PolicyStatus::Inactive => write!(f, "inactive"),
+        }
+    }
+}
+
 impl RoutingPolicy {
     pub fn new(routing_policy_id: Uuid, operator_id: Uuid, rules: Vec<RoutingRule>) -> Self {
         Self {

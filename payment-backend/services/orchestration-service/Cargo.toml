@@ -29,6 +29,7 @@ platform-event-store.workspace = true
 platform-outbox.workspace = true
 platform-health.workspace = true
 platform-metrics.workspace = true
+platform-clients.workspace = true
 
 [dev-dependencies]
 proptest.workspace = true

@@ -1,5 +1,6 @@
 //! Orchestration-service API — handler exports for the modular monolith.
-//! In a modular monolith, modules communicate via in-process traits (not network gRPC).
+
+pub mod grpc;
 
 pub use crate::commands::{CommandHandler, OrchestrationCommandHandler};
 pub use crate::queries::{QueryHandler, OrchestrationQueryHandler};

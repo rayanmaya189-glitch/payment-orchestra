@@ -5,12 +5,15 @@
 //! Pure Router: This platform NEVER holds funds. It routes transaction *instructions*
 //! between merchants, their acquirers/PSPs, and their customers.
 
+use std::net::SocketAddr;
+use tonic::transport::Server;
 use tracing::info;
 
+use orchestration_service::api::grpc::OrchestrationGrpcService;
 use orchestration_service::commands::OrchestrationCommandHandler;
 use orchestration_service::queries::OrchestrationQueryHandler;
 use orchestration_service::repository::InMemoryOrchestrationRepository;
-use orchestration_service::pipeline::OrchestrationPipeline;
+use platform_proto::orchestration::orchestration_service_server::OrchestrationServiceServer;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -23,14 +26,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let repo = InMemoryOrchestrationRepository::new();
     let command_handler = OrchestrationCommandHandler::new(repo.clone());
     let query_handler = OrchestrationQueryHandler::new(repo.clone());
-    let _pipeline = OrchestrationPipeline::new(command_handler, query_handler);
 
-    info!("Orchestration service gRPC server listening on {}", runner.grpc_addr);
+    let grpc_addr: SocketAddr = runner.grpc_addr;
+    let orchestration_service = OrchestrationGrpcService::new(command_handler, query_handler);
 
-    // Keep the process alive until shutdown signal
-    platform_health::serve::serve_health(&runner).await?;
+    info!("Orchestration service gRPC server listening on {grpc_addr}");
+
+    let server = Server::builder()
+        .add_service(OrchestrationServiceServer::new(orchestration_service))
+        .serve(grpc_addr);
+
+    tokio::select! {
+        result = server => {
+            result?;
+        }
+        _ = tokio::signal::ctrl_c() => {
+            info!("Shutdown signal received");
+        }
+    }
+
     runner.deregister().await;
-
     info!("Orchestration service stopped");
     Ok(())
 }
