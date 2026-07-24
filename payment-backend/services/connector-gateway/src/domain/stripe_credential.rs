@@ -5,7 +5,6 @@ use serde_json::Value;
 use super::error::ConnectorError;
 use super::stripe_connector::StripeConnector;
 use super::types::{ConnectionTestResult, ConnectorConfig, CredentialValidationResult, TestCardNumber};
-use super::connector::DeclineMappingTable;
 use super::types::CardScheme;
 
 impl StripeConnector {

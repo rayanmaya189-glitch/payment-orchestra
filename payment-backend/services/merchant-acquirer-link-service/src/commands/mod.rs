@@ -8,7 +8,7 @@ pub use types::*;
 
 use std::sync::Arc;
 use platform_messaging::{event_bus::{EventBus, publish_event_fire_and_forget}, encode_proto};
-use crate::domain::LinkEvent;
+use crate::events::LinkEvent;
 use crate::repository::LinkRepository;
 
 #[async_trait::async_trait]

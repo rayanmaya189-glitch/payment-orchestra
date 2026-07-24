@@ -11,10 +11,14 @@ pub mod kyb_case;
 pub mod sar_report;
 
 // Re-export all types for convenience
-pub use aml_alert::{AlertStatus, AmlAlert, AmlAlertType};
+pub use aml_alert::{AlertStatus, AmlAlert};
+#[allow(unused_imports)]
+pub use aml_alert::AmlAlertType;
 pub use aml_monitor::{AmlMonitor, RecentTransaction};
 pub use error::ComplianceError;
-pub use kyb_case::{KybCase, KybStatus};
+pub use kyb_case::KybCase;
+#[allow(unused_imports)]
+pub use kyb_case::KybStatus;
 
 
 // ─── Tests ─────────────────────────────────────────────────────────────────

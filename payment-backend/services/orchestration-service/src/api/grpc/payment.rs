@@ -2,7 +2,7 @@ use tonic::{Request, Response, Status};
 use uuid::Uuid;
 
 use super::{OrchestrationGrpcService, parse_uuid, orchestration_error_to_status};
-use crate::commands::{CommandHandler, CreatePaymentIntent, AuthorizePaymentIntent, CapturePaymentIntent, VoidPaymentIntent, RefundPaymentIntent};
+use crate::commands::{CommandHandler, CreatePaymentIntent, AuthorizePaymentIntent, CapturePaymentIntent, VoidPaymentIntent, RefundPaymentIntent, ActivateRoutingPolicy};
 use crate::domain::{self, PaymentStatus, SourceType};
 
 use platform_proto::orchestration::orchestration_service_server::OrchestrationService;
@@ -231,15 +231,78 @@ where
 
     async fn activate_routing_policy(
         &self,
-        _request: Request<ActivateRoutingPolicyRequest>,
+        request: Request<ActivateRoutingPolicyRequest>,
     ) -> Result<Response<ActivateRoutingPolicyResponse>, Status> {
-        unreachable!("implemented in routing module")
+        let req = request.into_inner();
+        let operator_id = parse_uuid(&req.operator_id, "operator_id")?;
+        let rules: Vec<domain::RoutingRule> = req.rules.into_iter().map(|r| {
+            let link_id = parse_uuid(&r.acquirer_link_id, "acquirer_link_id").unwrap_or_default();
+            domain::RoutingRule {
+                acquirer_link_id: link_id,
+                priority: r.priority as i32,
+                condition: domain::RoutingCondition::all(),
+            }
+        }).collect();
+
+        let failover_config = req.failover_config.map(|f| domain::FailoverConfig {
+            max_hops: f.max_hops as u8,
+            latency_budget_ms: f.latency_budget_ms,
+        }).unwrap_or_default();
+
+        let cmd = ActivateRoutingPolicy {
+            operator_id,
+            rules,
+            failover_config,
+            partial_auth_strategy: domain::PartialAuthStrategy::AcceptPartial,
+            rotation_strategy: domain::RotationStrategy::Priority,
+            max_transaction_amount_minor: None,
+        };
+
+        match self.commands.activate_routing_policy(cmd).await {
+            Ok(result) => {
+                Ok(Response::new(ActivateRoutingPolicyResponse {
+                    routing_policy_id: result.routing_policy_id.to_string(),
+                    version: result.version,
+                    status: result.status.to_string(),
+                }))
+            }
+            Err(e) => Err(orchestration_error_to_status(e)),
+        }
     }
 
     async fn get_routing_policy(
         &self,
-        _request: Request<GetRoutingPolicyRequest>,
+        request: Request<GetRoutingPolicyRequest>,
     ) -> Result<Response<RoutingPolicyView>, Status> {
-        unreachable!("implemented in routing module")
+        let req = request.into_inner();
+        let policy_id = parse_uuid(&req.policy_id, "policy_id")?;
+
+        match self.queries.get_active_routing_policy(crate::queries::GetActiveRoutingPolicyQuery { operator_id: policy_id }).await {
+            Ok(Some(policy)) => {
+                let proto_rules: Vec<RoutingRule> = policy.rules.iter().map(|r| RoutingRule {
+                    acquirer_link_id: r.acquirer_link_id.to_string(),
+                    priority: r.priority as u32,
+                    condition_json: String::new(),
+                    rotation_strategy: "priority".into(),
+                }).collect();
+
+                Ok(Response::new(RoutingPolicyView {
+                    policy_id: policy.routing_policy_id.to_string(),
+                    operator_id: policy.operator_id.to_string(),
+                    rules: proto_rules,
+                    failover_config: Some(platform_proto::orchestration::FailoverConfig {
+                        max_hops: policy.failover_config.max_hops as u32,
+                        latency_budget_ms: policy.failover_config.latency_budget_ms,
+                        retryable_decline_codes: vec![],
+                        retry_unknown_as_fallback: false,
+                    }),
+                    version: policy.version,
+                    status: policy.status.to_string(),
+                    created_at: Some(Timestamp { unix_ms: policy.created_at.timestamp_millis() }),
+                }))
+            }
+            Ok(None) => Err(Status::not_found("Routing policy not found")),
+            Err(e) => Err(orchestration_error_to_status(e)),
+        }
     }
 }

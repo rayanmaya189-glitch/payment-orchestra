@@ -16,8 +16,6 @@ use crate::domain::*;
 use crate::repository::*;
 
 pub mod financial;
-pub mod fraud;
-pub mod other;
 
 // ---------------------------------------------------------------------------
 // QueryHandler trait

@@ -13,19 +13,11 @@
 
 use std::collections::HashMap;
 use std::sync::Mutex;
-use std::time::Instant;
 
-use chrono::Utc;
-use ring::hmac;
 use serde_json::Value;
 
-use async_trait::async_trait;
 
 use super::*;
-
-/// Stripe API version used for all requests.
-/// Update this when Stripe deprecates the current version.
-const STRIPE_API_VERSION: &str = "2025-02-24.acacia";
 
 /// Stripe connector for processing payments through Stripe's REST API.
 ///

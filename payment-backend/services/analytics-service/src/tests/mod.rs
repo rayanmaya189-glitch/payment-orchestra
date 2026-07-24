@@ -17,10 +17,7 @@ mod fraud_tests;
 mod other_tests;
 
 use crate::commands::*;
-use crate::domain::*;
 use crate::pipeline::*;
-use crate::repository::AnalyticsRepository;
-use chrono::{Duration, Utc};
 use uuid::Uuid;
 
 pub(crate) fn setup() -> AnalyticsPipeline {

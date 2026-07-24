@@ -10,6 +10,8 @@ use crate::commands::types::*;
 pub mod conversation;
 pub mod rag;
 pub mod rate_limiter;
+pub use rag::SimulatedRagEngine;
+pub use rate_limiter::NoopRateLimiter;
 
 #[async_trait]
 pub trait CommandHandler: Send + Sync {

@@ -8,22 +8,17 @@
 //! - Connector discovery: list, schema
 //! - Credential operations: validate, test connection
 
-use tonic::{Request, Response, Status};
+use tonic::Status;
 use uuid::Uuid;
 
-use crate::commands::{self, CommandHandler};
-use crate::queries::QueryHandler;
 use crate::domain::{
-    CardScheme, ConnectorConfig, FeeStructure, GatewayProfile,
-    MonitoringThresholds, RateLimitConfig, TransactionLimits,
+    CardScheme, GatewayProfile,
 };
 
-use platform_proto::gateway_profile::gateway_profile_service_server::GatewayProfileService;
 use platform_proto::gateway_profile::*;
 use platform_proto::common::Timestamp;
 
 pub mod profile;
-pub mod connection;
 
 pub struct GatewayProfileGrpcService<C, Q> {
     commands: C,

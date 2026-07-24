@@ -6,12 +6,10 @@ pub(crate) mod status;
 
 pub use types::*;
 
-use chrono::Utc;
-use uuid::Uuid;
 
 use std::sync::Arc;
 use platform_messaging::{event_bus::{EventBus, publish_event_fire_and_forget}, encode_proto};
-use crate::domain::OperatorEvent;
+use crate::events::OperatorEvent;
 use crate::repository::OperatorRepository;
 
 // ─── Command Trait ─────────────────────────────────────────────────────────
@@ -148,6 +146,7 @@ impl<R: OperatorRepository + Send + Sync> CommandHandler for OperatorCommandHand
 #[cfg(test)]
 mod tests {
     use super::*;
+    use uuid::Uuid;
     use crate::repository::InMemoryOperatorRepository;
     use crate::domain::OperatorStatus;
 

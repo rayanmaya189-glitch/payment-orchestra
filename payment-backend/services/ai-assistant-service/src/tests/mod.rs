@@ -16,15 +16,7 @@ mod conversation_tests;
 mod guardrail_tests;
 mod rag_tests;
 
-use crate::api::AiAssistantApi;
-use crate::commands::*;
-use crate::domain::*;
 use crate::pipeline::*;
-use crate::queries::{AiQueryHandler, QueryHandler};
-use crate::repository::*;
-use std::sync::Arc;
-use tokio::sync::RwLock;
-use uuid::Uuid;
 
 pub(crate) fn setup() -> AiAssistantPipeline {
     AiAssistantPipeline::new()

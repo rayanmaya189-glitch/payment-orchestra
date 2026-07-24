@@ -4,7 +4,6 @@ use uuid::Uuid;
 
 use crate::domain::*;
 use crate::commands::*;
-use crate::repository::*;
 
 use super::{setup_handler, setup_authorized_intent};
 

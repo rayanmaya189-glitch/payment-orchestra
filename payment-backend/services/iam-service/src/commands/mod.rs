@@ -164,7 +164,7 @@ impl<R: IamRepository + Send + Sync> CommandHandler for IamCommandHandler<R> {
 mod tests {
     use super::*;
     use uuid::Uuid;
-    use crate::domain::{ChangeStatus, Principal};
+    use crate::domain::{ApiKeyStatus, ChangeStatus, Principal};
     use crate::repository::InMemoryIamRepository;
 
     fn create_handler() -> IamCommandHandler<InMemoryIamRepository> {

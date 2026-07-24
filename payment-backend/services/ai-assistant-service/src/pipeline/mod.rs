@@ -2,6 +2,8 @@
 
 use crate::api::*;
 use crate::commands::*;
+use crate::commands::handler::rag::SimulatedRagEngine;
+use crate::commands::handler::rate_limiter::NoopRateLimiter;
 use crate::domain::*;
 use crate::queries::*;
 use crate::repository::*;

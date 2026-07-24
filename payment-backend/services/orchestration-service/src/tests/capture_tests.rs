@@ -4,9 +4,8 @@ use uuid::Uuid;
 
 use crate::domain::*;
 use crate::commands::*;
-use crate::repository::*;
 
-use super::{make_create_cmd, make_activate_policy_cmd, make_authorize_cmd, setup_handler, setup_authorized_intent};
+use super::{make_create_cmd, setup_handler, setup_authorized_intent};
 
 #[tokio::test]
 async fn test_capture_full_amount() {

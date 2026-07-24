@@ -2,19 +2,12 @@
 //! Translates between protobuf types and domain types for analytics queries.
 
 use chrono::{DateTime, Utc};
-use tonic::{Request, Response, Status};
+use tonic::Status;
 
-use crate::commands::CommandHandler;
 use crate::domain::*;
-use crate::queries::QueryHandler;
-use crate::repository::AnalyticsRepository;
 
-use platform_proto::analytics::analytics_service_server::AnalyticsService;
-use platform_proto::analytics::*;
-use platform_proto::common::Money as ProtoMoney;
 
 pub mod financial;
-pub mod fraud;
 
 pub struct AnalyticsGrpcService<C, Q, R> {
     _commands: C,

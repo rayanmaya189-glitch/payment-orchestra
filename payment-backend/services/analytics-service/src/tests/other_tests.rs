@@ -1,8 +1,7 @@
 //! Other tests: revenue recovery, event ingestion, health check.
 
 use crate::commands::*;
-use crate::domain::*;
-use crate::pipeline::*;
+use crate::repository::*;
 use chrono::{Duration, Utc};
 use uuid::Uuid;
 

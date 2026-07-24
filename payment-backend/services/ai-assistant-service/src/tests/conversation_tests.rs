@@ -1,11 +1,8 @@
 //! Conversation tests: start, ask, history.
 
-use crate::api::AiAssistantApi;
 use crate::commands::*;
 use crate::domain::*;
-use crate::pipeline::*;
-use crate::queries::{AiQueryHandler, QueryHandler};
-use crate::repository::*;
+use crate::queries::QueryHandler;
 use uuid::Uuid;
 
 use super::setup;

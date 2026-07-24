@@ -8,7 +8,7 @@ mod integration_tests {
         DisableLink, EnableLink, UpdateMetadata, CommandHandler,
     };
     use crate::queries::{LinkQueries, QueryHandler};
-    use crate::domain::{LinkEnvironment, LinkStatus, HealthStatus, MerchantAcquirerLink};
+    use crate::domain::{LinkEnvironment, LinkStatus, HealthStatus};
     use crate::repository::InMemoryLinkRepository;
     use std::collections::HashMap;
 

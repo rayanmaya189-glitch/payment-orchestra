@@ -13,8 +13,10 @@ pub mod principal;
 // Re-export all types for convenience
 pub use api_key::{ApiKey, ApiKeyStatus};
 pub use error::{AuthError, IamError};
-pub use pending_change::{ChangeStatus, PendingChange};
-pub use principal::{MfaMethod, Principal, PrincipalStatus, PrincipalType};
+pub use pending_change::PendingChange;
+#[allow(unused_imports)]
+pub use pending_change::ChangeStatus;
+pub use principal::Principal;
 
 // ─── Tests ─────────────────────────────────────────────────────────────────
 

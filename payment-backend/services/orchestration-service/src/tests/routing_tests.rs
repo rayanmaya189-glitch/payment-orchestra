@@ -7,7 +7,7 @@ use crate::commands::*;
 use crate::queries::*;
 use crate::repository::*;
 
-use super::{make_create_cmd, make_activate_policy_cmd, setup_handler, setup_authorized_intent};
+use super::{make_create_cmd, make_activate_policy_cmd, setup_handler};
 
 #[tokio::test]
 async fn test_activate_routing_policy_success() {

@@ -1,9 +1,9 @@
 //! Guardrail tests: rate limiting, cross-operator isolation.
 
-use crate::api::AiAssistantApi;
 use crate::commands::*;
+use crate::commands::handler::rag::SimulatedRagEngine;
+use crate::commands::handler::rate_limiter::TokenBucketRateLimiter;
 use crate::domain::*;
-use crate::pipeline::*;
 use crate::queries::{AiQueryHandler, QueryHandler};
 use crate::repository::*;
 use uuid::Uuid;

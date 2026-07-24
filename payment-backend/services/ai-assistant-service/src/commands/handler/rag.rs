@@ -3,7 +3,6 @@ use uuid::Uuid;
 
 use super::RagEngine;
 use crate::domain::*;
-use crate::commands::types::*;
 
 pub fn classify_query(question: &str) -> QueryClassification {
     let lower = question.to_lowercase();

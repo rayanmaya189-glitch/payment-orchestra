@@ -1,17 +1,13 @@
 //! gRPC service implementation for orchestration-service.
 //! Translates between protobuf types and domain types for payment intent lifecycle.
 
-use tonic::{Request, Response, Status};
+use tonic::Status;
 use uuid::Uuid;
 
-use crate::commands::CommandHandler;
 use crate::domain::OrchestrationError;
 
-use platform_proto::orchestration::orchestration_service_server::OrchestrationService;
-use platform_proto::orchestration::*;
 
 pub mod payment;
-pub mod routing;
 
 pub struct OrchestrationGrpcService<C, Q> {
     commands: C,

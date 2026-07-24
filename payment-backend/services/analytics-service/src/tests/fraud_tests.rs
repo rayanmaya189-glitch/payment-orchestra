@@ -2,7 +2,6 @@
 
 use crate::commands::*;
 use crate::domain::*;
-use crate::pipeline::*;
 use chrono::{Duration, Utc};
 use uuid::Uuid;
 

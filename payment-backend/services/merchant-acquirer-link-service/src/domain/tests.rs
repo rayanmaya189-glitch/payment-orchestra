@@ -1,6 +1,7 @@
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use crate::domain::*;
+    use uuid::Uuid;
 
     fn create_test_link() -> MerchantAcquirerLink {
         MerchantAcquirerLink::new(
