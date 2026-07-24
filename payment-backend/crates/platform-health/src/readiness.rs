@@ -15,6 +15,12 @@ pub struct Readiness {
     pub checks: Vec<ReadinessCheck>,
 }
 
+impl Default for Readiness {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Readiness {
     pub fn new() -> Self {
         Self { checks: Vec::new() }

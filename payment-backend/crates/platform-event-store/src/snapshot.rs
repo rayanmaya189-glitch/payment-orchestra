@@ -97,7 +97,7 @@ fn model_to_snapshot(m: SnapshotModel) -> AggregateSnapshot {
         aggregate_id: m.aggregate_id,
         as_of_sequence: m.as_of_sequence,
         state: m.state,
-        created_at: m.created_at.into(),
+        created_at: m.created_at,
     }
 }
 

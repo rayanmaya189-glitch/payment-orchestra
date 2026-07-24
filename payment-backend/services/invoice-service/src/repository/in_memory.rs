@@ -17,6 +17,12 @@ pub struct InMemoryInvoiceRepository {
     pub(super) payment_intent_refs: Arc<RwLock<HashMap<Uuid, Uuid>>>,
 }
 
+impl Default for InMemoryInvoiceRepository {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl InMemoryInvoiceRepository {
     pub fn new() -> Self {
         Self {

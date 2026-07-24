@@ -14,6 +14,12 @@ pub struct InMemoryNotificationRepository {
     pub(super) notifications: Arc<RwLock<HashMap<Uuid, NotificationRequest>>>,
 }
 
+impl Default for InMemoryNotificationRepository {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl InMemoryNotificationRepository {
     pub fn new() -> Self {
         Self { notifications: Arc::new(RwLock::new(HashMap::new())) }
@@ -64,6 +70,12 @@ impl NotificationRepository for InMemoryNotificationRepository {
 #[derive(Clone)]
 pub struct InMemoryWebhookRepository {
     pub(super) webhooks: Arc<RwLock<HashMap<Uuid, Webhook>>>,
+}
+
+impl Default for InMemoryWebhookRepository {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl InMemoryWebhookRepository {

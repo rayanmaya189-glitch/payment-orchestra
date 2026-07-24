@@ -94,7 +94,7 @@ impl<R: GatewayRepository + Send + Sync> CommandHandler for GatewayCommandHandle
         };
 
         let result = ProcessedRequest {
-            request_id: request_id.clone(),
+            request_id,
             route: Some(route.clone()),
             authenticated: true,
             actor_id: auth_result.actor_id,

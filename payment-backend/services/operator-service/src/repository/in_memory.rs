@@ -85,7 +85,7 @@ impl OperatorRepository for InMemoryOperatorRepository {
             Some(s) => ops.values().filter(|o| o.status.as_str() == s).cloned().collect(),
             None => ops.values().cloned().collect(),
         };
-        result.sort_by(|a, b| a.created_at.cmp(&b.created_at));
+        result.sort_by_key(|a| a.created_at);
         Ok(result)
     }
 }

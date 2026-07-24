@@ -42,7 +42,7 @@ impl KybStatus {
     }
 
     #[allow(dead_code)]
-    pub fn from_str(s: &str) -> Option<Self> {
+    pub fn parse_str(s: &str) -> Option<Self> {
         match s {
             "submitted" => Some(Self::Submitted),
             "under_review" => Some(Self::UnderReview),
@@ -137,7 +137,7 @@ impl AmlAlertType {
     }
 
     #[allow(dead_code)]
-    pub fn from_str(s: &str) -> Option<Self> {
+    pub fn parse_str(s: &str) -> Option<Self> {
         match s {
             "structuring" => Some(Self::Structuring),
             "velocity" => Some(Self::Velocity),
@@ -167,7 +167,7 @@ impl AlertSeverity {
     }
 
     #[allow(dead_code)]
-    pub fn from_str(s: &str) -> Option<Self> {
+    pub fn parse_str(s: &str) -> Option<Self> {
         match s {
             "low" => Some(Self::Low),
             "medium" => Some(Self::Medium),
@@ -197,7 +197,7 @@ impl AlertStatus {
     }
 
     #[allow(dead_code)]
-    pub fn from_str(s: &str) -> Option<Self> {
+    pub fn parse_str(s: &str) -> Option<Self> {
         match s {
             "open" => Some(Self::Open),
             "under_review" => Some(Self::UnderReview),
@@ -357,8 +357,8 @@ impl AmlMonitor {
                             AmlAlertType::AmountAnomaly,
                             format!("Transaction amount {} AED exceeds absolute threshold {} AED", amount_minor_units / 100, max_amount_minor_units / 100),
                         ));
-                    } else if recent_txns.len() >= *min_sample_size as usize && avg_amount > 0.0 {
-                        if amount_minor_units as f64 > avg_amount * multiplier {
+                    } else if recent_txns.len() >= *min_sample_size as usize && avg_amount > 0.0
+                        && amount_minor_units as f64 > avg_amount * multiplier {
                             alerts.push(self.create_alert(
                                 transaction_id, operator_id, rule,
                                 AmlAlertType::AmountAnomaly,
@@ -368,7 +368,6 @@ impl AmlMonitor {
                                     avg_amount / 100.0),
                             ));
                         }
-                    }
                 }
                 AmlRuleType::RapidSuccession {
                     max_count,

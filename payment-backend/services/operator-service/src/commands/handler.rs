@@ -104,7 +104,7 @@ impl<R: OperatorRepository + Send + Sync> CommandHandler for OperatorCommandHand
             .as_ref()
             .ok_or_else(|| OperatorError::EmailVerificationFailed("No verification token found".into()))?;
 
-        if !Self::verify_token(&cmd.verification_token, &stored_hash) {
+        if !Self::verify_token(&cmd.verification_token, stored_hash) {
             return Err(OperatorError::EmailVerificationFailed("Invalid verification token".into()));
         }
 

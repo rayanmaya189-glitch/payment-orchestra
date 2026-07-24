@@ -14,6 +14,12 @@ pub struct InMemoryDisputeRepository {
     pub(super) cases: Arc<RwLock<HashMap<Uuid, ChargebackCase>>>,
 }
 
+impl Default for InMemoryDisputeRepository {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl InMemoryDisputeRepository {
     pub fn new() -> Self {
         Self { cases: Arc::new(RwLock::new(HashMap::new())) }

@@ -286,15 +286,13 @@ fn mock_lookup_response(question: &str) -> (String, Vec<GroundingCitation>, Answ
         )
     } else {
         (
-            format!(
-                "I found the following information related to your query:\n\n\
+            "I found the following information related to your query:\n\n\
                  Based on your transaction data for the current period, \
                  there are relevant records available. Here's a summary of what I found:\n\n\
                  - Total transactions: 12,450\n\
                  - Success rate: 94.2%\n\
                  - Average transaction value: $85.32\n\n\
-                 Would you like me to drill down into any specific aspect?"
-            ),
+                 Would you like me to drill down into any specific aspect?".to_string(),
             vec![GroundingCitation {
                 citation_id: Uuid::now_v7(),
                 source_type: CitationSourceType::KnowledgeBase,

@@ -22,6 +22,12 @@ pub struct SubscriptionPipeline {
     pub repo: Arc<RwLock<InMemorySubscriptionRepository>>,
 }
 
+impl Default for SubscriptionPipeline {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SubscriptionPipeline {
     pub fn new() -> Self {
         let repo = Arc::new(RwLock::new(InMemorySubscriptionRepository::new()));

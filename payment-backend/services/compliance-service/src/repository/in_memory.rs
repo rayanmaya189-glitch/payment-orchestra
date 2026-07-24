@@ -63,7 +63,7 @@ impl ComplianceRepository for InMemoryComplianceRepository {
             .filter(|c| !c.status.is_terminal())
             .cloned()
             .collect();
-        cases.sort_by(|a, b| a.submitted_at.cmp(&b.submitted_at));
+        cases.sort_by_key(|a| a.submitted_at);
         Ok(cases)
     }
 
@@ -91,7 +91,7 @@ impl ComplianceRepository for InMemoryComplianceRepository {
         let map = self.aml_alerts.read().await;
         let alerts: Vec<AmlAlert> = map.values()
             .filter(|a| a.operator_id == operator_id)
-            .filter(|a| status_filter.map_or(true, |s| a.status.as_str() == s))
+            .filter(|a| status_filter.is_none_or(|s| a.status.as_str() == s))
             .cloned()
             .collect();
         Ok(alerts)

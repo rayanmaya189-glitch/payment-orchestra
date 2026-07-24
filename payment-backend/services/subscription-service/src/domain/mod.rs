@@ -241,7 +241,7 @@ impl Subscription {
         // Adjust period end to account for pause duration
         if let Some(paused_at) = self.paused_at {
             let pause_duration = Utc::now() - paused_at;
-            self.current_period_end = self.current_period_end + pause_duration;
+            self.current_period_end += pause_duration;
         }
         Ok(())
     }

@@ -15,6 +15,12 @@ pub struct OnboardingPipeline {
     pub repo: Arc<RwLock<InMemoryOnboardingRepository>>,
 }
 
+impl Default for OnboardingPipeline {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl OnboardingPipeline {
     pub fn new() -> Self {
         let repo = Arc::new(RwLock::new(InMemoryOnboardingRepository::new()));

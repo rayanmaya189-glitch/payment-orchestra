@@ -16,6 +16,12 @@ pub struct InMemoryPaymentLinkRepository {
     pub(super) token_index: Arc<RwLock<HashMap<String, Uuid>>>,
 }
 
+impl Default for InMemoryPaymentLinkRepository {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl InMemoryPaymentLinkRepository {
     pub fn new() -> Self {
         Self {

@@ -22,6 +22,12 @@ pub struct DisputePipeline {
     pub repo: Arc<RwLock<InMemoryDisputeRepository>>,
 }
 
+impl Default for DisputePipeline {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl DisputePipeline {
     pub fn new() -> Self {
         let repo = Arc::new(RwLock::new(InMemoryDisputeRepository::new()));

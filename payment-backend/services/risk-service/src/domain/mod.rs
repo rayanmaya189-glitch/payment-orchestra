@@ -145,6 +145,12 @@ pub struct RiskEngine {
     rules: Vec<RiskRule>,
 }
 
+impl Default for RiskEngine {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl RiskEngine {
     pub fn new() -> Self {
         Self {

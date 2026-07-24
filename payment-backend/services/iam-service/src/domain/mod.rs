@@ -42,7 +42,7 @@ impl PrincipalType {
     }
 
     #[allow(dead_code)]
-    pub fn from_str(s: &str) -> Option<Self> {
+    pub fn parse_str(s: &str) -> Option<Self> {
         match s {
             "human" => Some(Self::Human),
             "api_key" => Some(Self::ApiKey),
@@ -67,7 +67,7 @@ impl MfaMethod {
     }
 
     #[allow(dead_code)]
-    pub fn from_str(s: &str) -> Option<Self> {
+    pub fn parse_str(s: &str) -> Option<Self> {
         match s {
             "webauthn" => Some(Self::WebAuthn),
             "totp" => Some(Self::Totp),
@@ -93,7 +93,7 @@ impl PrincipalStatus {
     }
 
     #[allow(dead_code)]
-    pub fn from_str(s: &str) -> Option<Self> {
+    pub fn parse_str(s: &str) -> Option<Self> {
         match s {
             "active" => Some(Self::Active),
             "suspended" => Some(Self::Suspended),
@@ -213,7 +213,7 @@ impl ChangeStatus {
     }
 
     #[allow(dead_code)]
-    pub fn from_str(s: &str) -> Option<Self> {
+    pub fn parse_str(s: &str) -> Option<Self> {
         match s {
             "pending" => Some(Self::Pending),
             "approved" => Some(Self::Approved),
@@ -305,7 +305,7 @@ impl ApiKeyStatus {
     }
 
     #[allow(dead_code)]
-    pub fn from_str(s: &str) -> Option<Self> {
+    pub fn parse_str(s: &str) -> Option<Self> {
         match s {
             "active" => Some(Self::Active),
             "revoked" => Some(Self::Revoked),

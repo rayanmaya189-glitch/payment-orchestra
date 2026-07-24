@@ -39,7 +39,7 @@ impl LinkEnvironment {
     }
 
     #[allow(dead_code)]
-    pub fn from_str(s: &str) -> Option<Self> {
+    pub fn parse_str(s: &str) -> Option<Self> {
         match s {
             "sandbox" => Some(Self::Sandbox),
             "production" => Some(Self::Production),
@@ -67,7 +67,7 @@ impl LinkStatus {
     }
 
     #[allow(dead_code)]
-    pub fn from_str(s: &str) -> Option<Self> {
+    pub fn parse_str(s: &str) -> Option<Self> {
         match s {
             "testing" => Some(Self::Testing),
             "active" => Some(Self::Active),
@@ -101,7 +101,7 @@ impl HealthStatus {
     }
 
     #[allow(dead_code)]
-    pub fn from_str(s: &str) -> Option<Self> {
+    pub fn parse_str(s: &str) -> Option<Self> {
         match s {
             "healthy" => Some(Self::Healthy),
             "degraded" => Some(Self::Degraded),

@@ -22,6 +22,12 @@ pub struct PaymentLinkPipeline {
     pub repo: Arc<RwLock<InMemoryPaymentLinkRepository>>,
 }
 
+impl Default for PaymentLinkPipeline {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl PaymentLinkPipeline {
     pub fn new() -> Self {
         let repo = Arc::new(RwLock::new(InMemoryPaymentLinkRepository::new()));

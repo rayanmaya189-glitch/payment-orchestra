@@ -21,6 +21,12 @@ pub struct NotificationPipeline {
     pub repo: Arc<RwLock<InMemoryNotificationRepository>>,
 }
 
+impl Default for NotificationPipeline {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl NotificationPipeline {
     pub fn new() -> Self {
         let repo = Arc::new(RwLock::new(InMemoryNotificationRepository::new()));

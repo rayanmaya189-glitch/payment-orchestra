@@ -42,7 +42,7 @@ impl OperatorStatus {
         }
     }
 
-    pub fn from_str(s: &str) -> Option<Self> {
+    pub fn parse_str(s: &str) -> Option<Self> {
         match s {
             "pending" => Some(Self::Pending),
             "active_unverified" => Some(Self::ActiveUnverified),
@@ -294,7 +294,7 @@ mod tests {
             OperatorStatus::ExpiredUnverified,
         ] {
             let s = status.as_str();
-            let parsed = OperatorStatus::from_str(s);
+            let parsed = OperatorStatus::parse_str(s);
             assert_eq!(parsed, Some(status.clone()));
         }
     }

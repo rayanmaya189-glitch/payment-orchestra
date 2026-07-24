@@ -17,6 +17,12 @@ pub struct DocumentPipeline {
     pub repo: Arc<RwLock<InMemoryDocumentRepository>>,
 }
 
+impl Default for DocumentPipeline {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl DocumentPipeline {
     pub fn new() -> Self {
         let repo = Arc::new(RwLock::new(InMemoryDocumentRepository::new()));

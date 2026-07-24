@@ -17,6 +17,12 @@ pub struct AiGatewayPipeline {
 
 use platform_messaging::event_bus::{EventBus, NoopEventBus};
 
+impl Default for AiGatewayPipeline {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl AiGatewayPipeline {
     pub fn new() -> Self {
         let repo = Arc::new(RwLock::new(InMemoryAiGatewayRepository::new()));

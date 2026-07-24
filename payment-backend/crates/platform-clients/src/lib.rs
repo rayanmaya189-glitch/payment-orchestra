@@ -3,6 +3,10 @@
 //! Each client wraps the tonic-generated `*ServiceClient` from `platform-proto`
 //! and provides a clean, typed API for inter-service communication.
 
+// gRPC client functions return platform_error::PlatformError which aggregates
+// all possible failure modes into a single large enum. This is intentional.
+#![allow(clippy::result_large_err)]
+
 pub mod client;
 pub mod iam;
 pub mod risk;

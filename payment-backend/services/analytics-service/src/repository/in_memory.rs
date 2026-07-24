@@ -13,6 +13,12 @@ pub struct InMemoryAnalyticsStore {
     pub(super) events: Arc<RwLock<Vec<AnalyticsEvent>>>,
 }
 
+impl Default for InMemoryAnalyticsStore {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl InMemoryAnalyticsStore {
     pub fn new() -> Self {
         Self { events: Arc::new(RwLock::new(Vec::new())) }

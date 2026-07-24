@@ -19,7 +19,6 @@ too-many-lines-threshold = 300
 cognitive-complexity-threshold = 25
 
 # Warn if a struct has more than 5 bool fields (indicates poor cohesion).
-struct-excessive-bools-threshold = 5
 
 # ─── Function Signatures ─────────────────────────────────────────────────────
 

@@ -14,6 +14,12 @@ pub struct InMemoryOnboardingRepository {
     pub(super) requests: Arc<RwLock<HashMap<Uuid, OnboardingRequest>>>,
 }
 
+impl Default for InMemoryOnboardingRepository {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl InMemoryOnboardingRepository {
     pub fn new() -> Self {
         Self { requests: Arc::new(RwLock::new(HashMap::new())) }

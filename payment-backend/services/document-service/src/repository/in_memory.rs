@@ -14,6 +14,12 @@ pub struct InMemoryDocumentRepository {
     pub(super) records: Arc<RwLock<HashMap<Uuid, DocumentRecord>>>,
 }
 
+impl Default for InMemoryDocumentRepository {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl InMemoryDocumentRepository {
     pub fn new() -> Self {
         Self { records: Arc::new(RwLock::new(HashMap::new())) }

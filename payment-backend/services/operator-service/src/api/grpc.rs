@@ -88,7 +88,7 @@ where
         let req = request.into_inner();
         let operator_id = Uuid::parse_str(&req.operator_id)
             .map_err(|_| Status::invalid_argument("Invalid operator_id"))?;
-        let new_status = OperatorStatus::from_str(&req.new_status)
+        let new_status = OperatorStatus::parse_str(&req.new_status)
             .ok_or_else(|| Status::invalid_argument(format!("Invalid status: {}", req.new_status)))?;
         let changed_by = Uuid::parse_str(&req.changed_by)
             .map_err(|_| Status::invalid_argument("Invalid changed_by"))?;

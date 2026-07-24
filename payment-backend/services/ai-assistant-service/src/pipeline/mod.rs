@@ -17,6 +17,12 @@ pub struct AiAssistantPipeline {
 
 use platform_messaging::event_bus::{EventBus, NoopEventBus};
 
+impl Default for AiAssistantPipeline {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl AiAssistantPipeline {
     pub fn new() -> Self {
         let session_repo = Arc::new(RwLock::new(InMemoryConversationSessionRepository::new()));

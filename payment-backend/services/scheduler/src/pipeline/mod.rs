@@ -17,6 +17,12 @@ pub struct SchedulerPipeline {
 
 use platform_messaging::event_bus::{EventBus, NoopEventBus};
 
+impl Default for SchedulerPipeline {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SchedulerPipeline {
     pub fn new() -> Self {
         let repo = Arc::new(RwLock::new(InMemorySchedulerRepository::new()));

@@ -90,7 +90,7 @@ impl EventStore {
             .await
             .map_err(|e| format!("Failed to read events: {}", e))?;
 
-        models.into_iter().map(|m| model_to_stored_event(m)).collect()
+        models.into_iter().map(model_to_stored_event).collect()
     }
 
     /// Read all events for an aggregate (full event stream).
@@ -107,7 +107,7 @@ impl EventStore {
             .await
             .map_err(|e| format!("Failed to read all events: {}", e))?;
 
-        models.into_iter().map(|m| model_to_stored_event(m)).collect()
+        models.into_iter().map(model_to_stored_event).collect()
     }
 
     /// Read a range of events for an aggregate (for partial replay).
@@ -127,7 +127,7 @@ impl EventStore {
             .await
             .map_err(|e| format!("Failed to read event range: {}", e))?;
 
-        models.into_iter().map(|m| model_to_stored_event(m)).collect()
+        models.into_iter().map(model_to_stored_event).collect()
     }
 
     /// Get the latest sequence number for an aggregate.
@@ -185,7 +185,7 @@ fn model_to_stored_event(m: EventStoreModel) -> Result<StoredEvent, String> {
         event_type: m.event_type,
         event_sequence: m.event_sequence,
         event_version: m.event_version as u16,
-        occurred_at: m.occurred_at.into(),
+        occurred_at: m.occurred_at,
         actor_type: m.actor_type,
         actor_id: m.actor_id,
         causation_id: m.causation_id,

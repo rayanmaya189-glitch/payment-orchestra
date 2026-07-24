@@ -17,6 +17,12 @@ pub struct AnalyticsPipeline {
     pub repo: Arc<RwLock<InMemoryAnalyticsStore>>,
 }
 
+impl Default for AnalyticsPipeline {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl AnalyticsPipeline {
     pub fn new() -> Self {
         let repo = Arc::new(RwLock::new(InMemoryAnalyticsStore::new()));

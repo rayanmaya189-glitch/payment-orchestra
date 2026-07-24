@@ -113,7 +113,7 @@ impl<R: AnalyticsRepository + Send + Sync> QueryHandler for AnalyticsQueryHandle
             });
         }
 
-        rows.sort_by(|a, b| a.hour.cmp(&b.hour));
+        rows.sort_by_key(|a| a.hour);
         Ok(rows)
     }
 

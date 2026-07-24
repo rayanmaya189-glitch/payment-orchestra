@@ -17,6 +17,12 @@ pub struct OutboxRelayPipeline {
 
 use platform_messaging::event_bus::{EventBus, NoopEventBus};
 
+impl Default for OutboxRelayPipeline {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl OutboxRelayPipeline {
     pub fn new() -> Self {
         let repo = Arc::new(RwLock::new(InMemoryOutboxRepository::new()));

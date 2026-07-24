@@ -14,6 +14,12 @@ pub struct InMemoryConversationSessionRepository {
     pub(super) sessions: Arc<RwLock<HashMap<Uuid, ConversationSession>>>,
 }
 
+impl Default for InMemoryConversationSessionRepository {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl InMemoryConversationSessionRepository {
     pub fn new() -> Self {
         Self {

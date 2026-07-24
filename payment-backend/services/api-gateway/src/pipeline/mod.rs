@@ -17,6 +17,12 @@ pub struct GatewayPipeline {
 
 use platform_messaging::event_bus::{EventBus, NoopEventBus};
 
+impl Default for GatewayPipeline {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl GatewayPipeline {
     pub fn new() -> Self {
         let repo = Arc::new(RwLock::new(InMemoryGatewayRepository::new()));

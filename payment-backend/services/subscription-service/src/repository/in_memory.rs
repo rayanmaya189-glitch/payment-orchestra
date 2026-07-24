@@ -14,6 +14,12 @@ pub struct InMemorySubscriptionRepository {
     pub(super) subscriptions: Arc<RwLock<HashMap<Uuid, Subscription>>>,
 }
 
+impl Default for InMemorySubscriptionRepository {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl InMemorySubscriptionRepository {
     pub fn new() -> Self {
         Self {

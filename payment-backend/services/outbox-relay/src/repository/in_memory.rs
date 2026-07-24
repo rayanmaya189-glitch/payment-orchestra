@@ -15,6 +15,12 @@ pub struct InMemoryOutboxRepository {
     pub(super) entries: Arc<RwLock<HashMap<Uuid, OutboxEntry>>>,
 }
 
+impl Default for InMemoryOutboxRepository {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl InMemoryOutboxRepository {
     pub fn new() -> Self {
         Self { entries: Arc::new(RwLock::new(HashMap::new())) }

@@ -17,6 +17,12 @@ pub struct SagaPipeline {
     pub repo: Arc<RwLock<InMemorySagaRepository>>,
 }
 
+impl Default for SagaPipeline {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SagaPipeline {
     pub fn new() -> Self {
         let repo = Arc::new(RwLock::new(InMemorySagaRepository::new()));

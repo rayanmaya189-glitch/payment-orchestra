@@ -115,7 +115,7 @@ impl EventConsumer {
                                 );
 
                                 // Get delivery count from message info
-                                let delivered = msg.info().map(|i| i.delivered).unwrap_or(0) as i64;
+                                let delivered = msg.info().map(|i| i.delivered).unwrap_or(0);
 
                                 if delivered >= self.max_deliver {
                                     // Publish to DLQ subject

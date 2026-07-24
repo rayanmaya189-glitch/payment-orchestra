@@ -17,6 +17,12 @@ pub struct InMemorySchedulerRepository {
     pub(super) leases: Arc<RwLock<HashMap<String, LeaderLease>>>,
 }
 
+impl Default for InMemorySchedulerRepository {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl InMemorySchedulerRepository {
     pub fn new() -> Self {
         Self {

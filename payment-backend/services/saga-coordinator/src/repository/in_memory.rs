@@ -15,6 +15,12 @@ pub struct InMemorySagaRepository {
     pub(super) sagas: Arc<RwLock<HashMap<Uuid, SagaInstance>>>,
 }
 
+impl Default for InMemorySagaRepository {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl InMemorySagaRepository {
     pub fn new() -> Self {
         Self { sagas: Arc::new(RwLock::new(HashMap::new())) }

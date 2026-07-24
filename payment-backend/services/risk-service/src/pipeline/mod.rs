@@ -22,6 +22,12 @@ pub struct RiskPipeline {
     pub repo: Arc<RwLock<InMemoryRiskRepository>>,
 }
 
+impl Default for RiskPipeline {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl RiskPipeline {
     pub fn new() -> Self {
         let repo = Arc::new(RwLock::new(InMemoryRiskRepository::new()));

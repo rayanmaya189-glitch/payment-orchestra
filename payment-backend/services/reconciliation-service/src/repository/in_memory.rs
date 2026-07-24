@@ -19,6 +19,12 @@ pub struct InMemoryReconciliationRepository {
     pub(super) fee_variances: Arc<RwLock<HashMap<Uuid, FeeVariance>>>,
 }
 
+impl Default for InMemoryReconciliationRepository {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl InMemoryReconciliationRepository {
     pub fn new() -> Self {
         Self {

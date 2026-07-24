@@ -116,7 +116,7 @@ impl SettlementBatchRepository for PostgresReconciliationRepository {
             .into_iter()
             .map(settlement_batch_model_to_domain)
             .collect::<Result<Vec<_>, _>>()?;
-        batches.sort_by(|a, b| a.ingested_at.cmp(&b.ingested_at));
+        batches.sort_by_key(|a| a.ingested_at);
         Ok(batches)
     }
 }

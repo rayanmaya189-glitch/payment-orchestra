@@ -46,7 +46,7 @@ impl LinkRepository for InMemoryLinkRepository {
             .filter(|l| l.operator_id == operator_id)
             .cloned()
             .collect();
-        links.sort_by(|a, b| a.created_at.cmp(&b.created_at));
+        links.sort_by_key(|a| a.created_at);
         Ok(links)
     }
 
@@ -77,7 +77,7 @@ impl LinkRepository for InMemoryLinkRepository {
         let map = self.links.read().await;
         let now = chrono::Utc::now();
         let links: Vec<MerchantAcquirerLink> = map.values()
-            .filter(|l| l.credentials_expires_at.map_or(false, |exp| exp < now))
+            .filter(|l| l.credentials_expires_at.is_some_and(|exp| exp < now))
             .cloned()
             .collect();
         Ok(links)

@@ -16,6 +16,12 @@ pub struct InMemoryRiskRepository {
     pub(super) payment_index: Arc<RwLock<HashMap<Uuid, Uuid>>>,
 }
 
+impl Default for InMemoryRiskRepository {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl InMemoryRiskRepository {
     pub fn new() -> Self {
         Self {

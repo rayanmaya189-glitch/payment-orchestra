@@ -5,6 +5,12 @@ pub struct DedupStore {
     processed: HashSet<Uuid>,
 }
 
+impl Default for DedupStore {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl DedupStore {
     pub fn new() -> Self {
         Self { processed: HashSet::new() }

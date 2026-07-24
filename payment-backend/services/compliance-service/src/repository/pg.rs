@@ -237,7 +237,7 @@ fn kyb_domain_to_model(k: &KybCase) -> Result<KybCaseModel, ComplianceError> {
 }
 
 fn kyb_model_to_domain(m: KybCaseModel) -> Result<KybCase, ComplianceError> {
-    let status = KybStatus::from_str(&m.status)
+    let status = KybStatus::parse_str(&m.status)
         .ok_or_else(|| ComplianceError::InvalidRequest(format!("Unknown status: {}", m.status)))?;
 
     let document_ids: Vec<Uuid> = serde_json::from_value(m.document_ids)
@@ -277,13 +277,13 @@ fn aml_domain_to_model(a: &AmlAlert) -> Result<AmlAlertModel, ComplianceError> {
 }
 
 fn aml_model_to_domain(m: AmlAlertModel) -> Result<AmlAlert, ComplianceError> {
-    let alert_type = AmlAlertType::from_str(&m.alert_type)
+    let alert_type = AmlAlertType::parse_str(&m.alert_type)
         .ok_or_else(|| ComplianceError::InvalidRequest(format!("Unknown alert_type: {}", m.alert_type)))?;
 
-    let severity = AlertSeverity::from_str(&m.severity)
+    let severity = AlertSeverity::parse_str(&m.severity)
         .ok_or_else(|| ComplianceError::InvalidRequest(format!("Unknown severity: {}", m.severity)))?;
 
-    let status = AlertStatus::from_str(&m.status)
+    let status = AlertStatus::parse_str(&m.status)
         .ok_or_else(|| ComplianceError::InvalidRequest(format!("Unknown status: {}", m.status)))?;
 
     Ok(AmlAlert {

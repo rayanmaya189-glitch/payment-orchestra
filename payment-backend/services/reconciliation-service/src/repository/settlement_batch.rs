@@ -34,7 +34,7 @@ impl SettlementBatchRepository for InMemoryReconciliationRepository {
     async fn list_all_batches(&self) -> Result<Vec<SettlementBatch>, ReconciliationError> {
         let store = self.batches.read().await;
         let mut batches: Vec<SettlementBatch> = store.values().cloned().collect();
-        batches.sort_by(|a, b| a.ingested_at.cmp(&b.ingested_at));
+        batches.sort_by_key(|a| a.ingested_at);
         Ok(batches)
     }
 }

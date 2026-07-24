@@ -344,7 +344,7 @@ where
                     })
                     .collect();
 
-                points.sort_by(|a, b| a.timestamp_unix_ms.cmp(&b.timestamp_unix_ms));
+                points.sort_by_key(|a| a.timestamp_unix_ms);
 
                 Ok(Response::new(GetVolumeOverTimeResponse { points }))
             }

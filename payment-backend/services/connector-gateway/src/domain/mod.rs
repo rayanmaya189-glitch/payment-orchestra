@@ -450,7 +450,7 @@ impl FeeStructure {
         if let Some(tiers) = &self.tiered_pricing {
             if let Some(tier) = tiers.iter().find(|t| {
                 daily_volume >= t.min_volume_minor
-                    && t.max_volume_minor.map_or(true, |max| daily_volume < max)
+                    && t.max_volume_minor.is_none_or(|max| daily_volume < max)
             }) {
                 total = self.fixed_fee_minor
                     + (amount.amount_minor_units * tier.percentage_fee_bps as i64) / 10000

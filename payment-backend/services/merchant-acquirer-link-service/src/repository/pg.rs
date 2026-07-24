@@ -144,11 +144,11 @@ fn domain_to_model(l: &MerchantAcquirerLink) -> LinkModel {
 }
 
 fn model_to_domain(m: LinkModel) -> Result<MerchantAcquirerLink, LinkError> {
-    let environment = LinkEnvironment::from_str(&m.environment)
+    let environment = LinkEnvironment::parse_str(&m.environment)
         .ok_or_else(|| LinkError::InvalidRequest(format!("Unknown environment: {}", m.environment)))?;
-    let status = LinkStatus::from_str(&m.status)
+    let status = LinkStatus::parse_str(&m.status)
         .ok_or_else(|| LinkError::InvalidRequest(format!("Unknown status: {}", m.status)))?;
-    let health_status = HealthStatus::from_str(&m.health_status)
+    let health_status = HealthStatus::parse_str(&m.health_status)
         .ok_or_else(|| LinkError::InvalidRequest(format!("Unknown health_status: {}", m.health_status)))?;
 
     Ok(MerchantAcquirerLink {

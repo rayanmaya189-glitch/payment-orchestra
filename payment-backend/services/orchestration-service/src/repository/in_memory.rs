@@ -20,6 +20,12 @@ pub struct InMemoryOrchestrationRepository {
     pub(super) active_links: Arc<RwLock<HashMap<Uuid, Vec<Uuid>>>>,
 }
 
+impl Default for InMemoryOrchestrationRepository {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl InMemoryOrchestrationRepository {
     pub fn new() -> Self {
         Self {

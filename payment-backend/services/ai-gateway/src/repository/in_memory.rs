@@ -16,6 +16,12 @@ pub struct InMemoryAiGatewayRepository {
     pub(super) circuit_breaker: Arc<RwLock<CircuitBreakerState>>,
 }
 
+impl Default for InMemoryAiGatewayRepository {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl InMemoryAiGatewayRepository {
     pub fn new() -> Self {
         Self {

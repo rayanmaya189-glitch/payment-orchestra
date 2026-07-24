@@ -127,7 +127,7 @@ fn domain_to_model(op: &Operator) -> Result<OperatorModel, OperatorError> {
 }
 
 fn model_to_domain(m: OperatorModel) -> Result<Operator, OperatorError> {
-    let status = OperatorStatus::from_str(&m.status)
+    let status = OperatorStatus::parse_str(&m.status)
         .ok_or_else(|| OperatorError::NotFound(m.id))?;
 
     Ok(Operator {

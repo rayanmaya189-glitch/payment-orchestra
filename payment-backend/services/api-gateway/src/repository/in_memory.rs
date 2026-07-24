@@ -17,6 +17,12 @@ pub struct InMemoryGatewayRepository {
     pub(super) request_log: Arc<RwLock<HashMap<Uuid, ProcessedRequest>>>,
 }
 
+impl Default for InMemoryGatewayRepository {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl InMemoryGatewayRepository {
     pub fn new() -> Self {
         let mut keys = HashMap::new();
