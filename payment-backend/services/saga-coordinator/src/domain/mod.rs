@@ -2,363 +2,185 @@
 //!
 //! Durable state machine for multi-step, cross-aggregate workflows
 //! with automatic compensation on failure.
+//!
+//! File structure (one concept per file per CONVENTIONS.md):
+//!
+//! - [`error`]       — [`SagaError`]
+//! - [`status`]      — [`SagaStatus`] state machine
+//! - [`saga_type`]   — [`SagaType`] known saga definitions
+//! - [`step`]        — [`SagaStep`], [`StepStatus`]
+//! - [`instance`]    — [`SagaInstance`] aggregate root
 
-use chrono::{DateTime, Duration, Utc};
-use serde::{Deserialize, Serialize};
-use uuid::Uuid;
+pub mod error;
+pub mod instance;
+pub mod saga_type;
+pub mod status;
+pub mod step;
 
-// ---------------------------------------------------------------------------
-// SagaStatus — full state machine
-// ---------------------------------------------------------------------------
-// created → running → completed
-//                   → compensating → compensated
-//                   → failed → requires_manual_intervention
+pub use error::*;
+pub use instance::*;
+pub use saga_type::*;
+pub use status::*;
+pub use step::*;
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub enum SagaStatus {
-    /// Saga created, not yet started.
-    Created,
-    /// Saga is actively executing steps.
-    Running,
-    /// All steps completed successfully.
-    Completed,
-    /// Saga is compensating (undoing) completed steps.
-    Compensating,
-    /// All steps have been compensated.
-    Compensated,
-    /// Saga execution failed (non-compensated).
-    Failed,
-    /// Saga requires manual intervention (after failed compensation).
-    RequiresManualIntervention,
-}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use uuid::Uuid;
 
-impl SagaStatus {
-    pub fn can_transition_to(&self, target: &Self) -> bool {
-        use SagaStatus::*;
-        matches!(
-            (self, target),
-            (Created, Running)
-                | (Running, Completed)
-                | (Running, Compensating)
-                | (Running, Failed)
-                | (Compensating, Compensated)
-                | (Compensating, RequiresManualIntervention)
-                | (Failed, RequiresManualIntervention)
+    #[test]
+    fn test_saga_status_valid_transitions() {
+        assert!(SagaStatus::Created.can_transition_to(&SagaStatus::Running));
+        assert!(SagaStatus::Running.can_transition_to(&SagaStatus::Completed));
+        assert!(SagaStatus::Running.can_transition_to(&SagaStatus::Compensating));
+        assert!(SagaStatus::Running.can_transition_to(&SagaStatus::Failed));
+        assert!(SagaStatus::Compensating.can_transition_to(&SagaStatus::Compensated));
+        assert!(SagaStatus::Compensating.can_transition_to(&SagaStatus::RequiresManualIntervention));
+        assert!(SagaStatus::Failed.can_transition_to(&SagaStatus::RequiresManualIntervention));
+    }
+
+    #[test]
+    fn test_saga_status_invalid_transitions() {
+        assert!(!SagaStatus::Created.can_transition_to(&SagaStatus::Completed));
+        assert!(!SagaStatus::Created.can_transition_to(&SagaStatus::Compensated));
+        assert!(!SagaStatus::Completed.can_transition_to(&SagaStatus::Running));
+        assert!(!SagaStatus::Compensated.can_transition_to(&SagaStatus::Running));
+        assert!(!SagaStatus::RequiresManualIntervention.can_transition_to(&SagaStatus::Running));
+    }
+
+    #[test]
+    fn test_saga_status_is_terminal() {
+        assert!(!SagaStatus::Created.is_terminal());
+        assert!(!SagaStatus::Running.is_terminal());
+        assert!(SagaStatus::Completed.is_terminal());
+        assert!(!SagaStatus::Compensating.is_terminal());
+        assert!(SagaStatus::Compensated.is_terminal());
+        assert!(!SagaStatus::Failed.is_terminal());
+        assert!(SagaStatus::RequiresManualIntervention.is_terminal());
+    }
+
+    #[test]
+    fn test_saga_status_display() {
+        assert_eq!(format!("{}", SagaStatus::Created), "created");
+        assert_eq!(format!("{}", SagaStatus::Running), "running");
+        assert_eq!(format!("{}", SagaStatus::Completed), "completed");
+        assert_eq!(format!("{}", SagaStatus::Compensating), "compensating");
+        assert_eq!(format!("{}", SagaStatus::Compensated), "compensated");
+        assert_eq!(format!("{}", SagaStatus::Failed), "failed");
+        assert_eq!(
+            format!("{}", SagaStatus::RequiresManualIntervention),
+            "requires_manual_intervention"
+        );
+    }
+
+    #[test]
+    fn test_saga_type_display() {
+        assert_eq!(format!("{}", SagaType::PaymentLifecycle), "payment_lifecycle");
+        assert_eq!(format!("{}", SagaType::SubscriptionRenewal), "subscription_renewal");
+        assert_eq!(
+            format!("{}", SagaType::ReconciliationResolution),
+            "reconciliation_resolution"
+        );
+        assert_eq!(format!("{}", SagaType::InvoicePayment), "invoice_payment");
+    }
+
+    #[test]
+    fn test_saga_instance_new() {
+        let steps = SagaInstance::payment_lifecycle_steps();
+        let saga = SagaInstance::new(
+            SagaType::PaymentLifecycle,
+            Uuid::now_v7(),
+            steps.clone(),
         )
+        .unwrap();
+
+        assert_eq!(saga.saga_type, SagaType::PaymentLifecycle);
+        assert_eq!(saga.status, SagaStatus::Created);
+        assert_eq!(saga.steps.len(), 4);
+        assert_eq!(saga.compensation_attempts, 0);
+        assert_eq!(saga.max_compensation_retries, 3);
+        assert!(saga.deadline_at.is_some());
     }
 
-    pub fn is_terminal(&self) -> bool {
-        matches!(self, Self::Completed | Self::Compensated | Self::RequiresManualIntervention)
+    #[test]
+    fn test_saga_instance_no_steps_rejected() {
+        let result = SagaInstance::new(SagaType::PaymentLifecycle, Uuid::now_v7(), vec![]);
+        assert!(result.is_err());
+        assert!(matches!(result, Err(SagaError::NoStepsDefined)));
     }
-}
 
-impl std::fmt::Display for SagaStatus {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Created => write!(f, "created"),
-            Self::Running => write!(f, "running"),
-            Self::Completed => write!(f, "completed"),
-            Self::Compensating => write!(f, "compensating"),
-            Self::Compensated => write!(f, "compensated"),
-            Self::Failed => write!(f, "failed"),
-            Self::RequiresManualIntervention => write!(f, "requires_manual_intervention"),
-        }
-    }
-}
+    #[test]
+    fn test_saga_lifecycle_happy_path() {
+        let mut saga = SagaInstance::new(
+            SagaType::PaymentLifecycle,
+            Uuid::now_v7(),
+            SagaInstance::payment_lifecycle_steps(),
+        )
+        .unwrap();
 
-// ---------------------------------------------------------------------------
-// SagaType — known saga definitions
-// ---------------------------------------------------------------------------
+        // Start
+        saga.start().unwrap();
+        assert_eq!(saga.status, SagaStatus::Running);
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub enum SagaType {
-    PaymentLifecycle,
-    SubscriptionRenewal,
-    ReconciliationResolution,
-    InvoicePayment,
-}
+        // Execute each step
+        for i in 0..4 {
+            let step_idx = saga.next_pending_step_index().unwrap();
+            assert_eq!(step_idx, i);
 
-impl std::fmt::Display for SagaType {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::PaymentLifecycle => write!(f, "payment_lifecycle"),
-            Self::SubscriptionRenewal => write!(f, "subscription_renewal"),
-            Self::ReconciliationResolution => write!(f, "reconciliation_resolution"),
-            Self::InvoicePayment => write!(f, "invoice_payment"),
-        }
-    }
-}
-
-// ---------------------------------------------------------------------------
-// SagaStep — a single step within a saga
-// ---------------------------------------------------------------------------
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SagaStep {
-    pub step_id: Uuid,
-    pub step_name: String,
-    pub action: String,       // e.g., "authorize", "capture", "void"
-    pub compensation_action: String, // e.g., "void", "refund"
-    pub status: StepStatus,
-    pub output: Option<String>,
-    pub error: Option<String>,
-    pub started_at: Option<DateTime<Utc>>,
-    pub completed_at: Option<DateTime<Utc>>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub enum StepStatus {
-    Pending,
-    Executing,
-    Succeeded,
-    Failed,
-    Compensated,
-}
-
-// ---------------------------------------------------------------------------
-// SagaInstance aggregate
-// ---------------------------------------------------------------------------
-
-/// Core SagaInstance aggregate root.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SagaInstance {
-    pub saga_id: Uuid,
-    pub saga_type: SagaType,
-    pub aggregate_id: Uuid,
-    pub status: SagaStatus,
-    pub steps: Vec<SagaStep>,
-    pub compensation_attempts: i32,
-    pub max_compensation_retries: i32,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
-    pub deadline_at: Option<DateTime<Utc>>,
-}
-
-impl SagaInstance {
-    /// Max compensation retries before manual intervention.
-    pub const MAX_COMPENSATION_RETRIES: i32 = 3;
-
-    /// Default step timeout: 30 seconds.
-    pub const DEFAULT_STEP_TIMEOUT_SECONDS: i64 = 30;
-
-    /// Create a new saga in `Created` status.
-    pub fn new(
-        saga_type: SagaType,
-        aggregate_id: Uuid,
-        steps: Vec<SagaStep>,
-    ) -> Result<Self, SagaError> {
-        if steps.is_empty() {
-            return Err(SagaError::NoStepsDefined);
+            saga.start_step(step_idx).unwrap();
+            saga.complete_step(step_idx, format!("output_{}", i)).unwrap();
         }
 
-        let now = Utc::now();
-        Ok(Self {
-            saga_id: Uuid::now_v7(),
-            saga_type,
-            aggregate_id,
-            status: SagaStatus::Created,
-            steps,
-            compensation_attempts: 0,
-            max_compensation_retries: Self::MAX_COMPENSATION_RETRIES,
-            created_at: now,
-            updated_at: now,
-            deadline_at: Some(now + Duration::seconds(Self::DEFAULT_STEP_TIMEOUT_SECONDS)),
-        })
+        assert_eq!(saga.status, SagaStatus::Completed);
+        assert!(saga.next_pending_step().is_none());
     }
 
-    /// Start the saga: transition from Created → Running.
-    pub fn start(&mut self) -> Result<(), SagaError> {
-        if !self.status.can_transition_to(&SagaStatus::Running) {
-            return Err(SagaError::InvalidTransition);
-        }
-        self.status = SagaStatus::Running;
-        self.updated_at = Utc::now();
-        Ok(())
+    #[test]
+    fn test_saga_compensation_on_failure() {
+        let mut saga = SagaInstance::new(
+            SagaType::PaymentLifecycle,
+            Uuid::now_v7(),
+            SagaInstance::payment_lifecycle_steps(),
+        )
+        .unwrap();
+
+        saga.start().unwrap();
+
+        // Complete first two steps
+        saga.start_step(0).unwrap();
+        saga.complete_step(0, "ok".into()).unwrap();
+
+        saga.start_step(1).unwrap();
+        saga.complete_step(1, "ok".into()).unwrap();
+
+        // Fail on third step
+        saga.start_step(2).unwrap();
+        saga.fail_step(2, "provider_error".into()).unwrap();
+
+        assert_eq!(saga.status, SagaStatus::Compensating);
+
+        // Compensate all succeeded steps (reverse order)
+        let compensated = saga.compensate_next_step().unwrap();
+        assert_eq!(compensated, Some(1)); // step 1 compensated
+
+        let compensated = saga.compensate_next_step().unwrap();
+        assert_eq!(compensated, Some(0)); // step 0 compensated
+
+        let compensated = saga.compensate_next_step().unwrap();
+        assert_eq!(compensated, None); // all done
+        assert_eq!(saga.status, SagaStatus::Compensated);
     }
 
-    /// Get the next pending step to execute.
-    pub fn next_pending_step(&self) -> Option<&SagaStep> {
-        self.steps.iter().find(|s| s.status == StepStatus::Pending)
+    #[test]
+    fn test_saga_timeout() {
+        let saga = SagaInstance::new(
+            SagaType::PaymentLifecycle,
+            Uuid::now_v7(),
+            SagaInstance::payment_lifecycle_steps(),
+        )
+        .unwrap();
+
+        // Not started yet → not timed out
+        assert!(!saga.is_timed_out());
     }
-
-    /// Get the next pending step index.
-    pub fn next_pending_step_index(&self) -> Option<usize> {
-        self.steps.iter().position(|s| s.status == StepStatus::Pending)
-    }
-
-    /// Mark a step as executing.
-    pub fn start_step(&mut self, step_index: usize) -> Result<(), SagaError> {
-        let step = self
-            .steps
-            .get_mut(step_index)
-            .ok_or(SagaError::StepNotFound)?;
-
-        if step.status != StepStatus::Pending {
-            return Err(SagaError::InvalidStepTransition);
-        }
-
-        step.status = StepStatus::Executing;
-        step.started_at = Some(Utc::now());
-        self.updated_at = Utc::now();
-        Ok(())
-    }
-
-    /// Mark a step as succeeded. If all steps done → Completed.
-    pub fn complete_step(&mut self, step_index: usize, output: String) -> Result<(), SagaError> {
-        let step = self
-            .steps
-            .get_mut(step_index)
-            .ok_or(SagaError::StepNotFound)?;
-
-        if step.status != StepStatus::Executing {
-            return Err(SagaError::InvalidStepTransition);
-        }
-
-        step.status = StepStatus::Succeeded;
-        step.output = Some(output);
-        step.completed_at = Some(Utc::now());
-        self.updated_at = Utc::now();
-
-        // Check if all steps are done
-        if self.steps.iter().all(|s| s.status == StepStatus::Succeeded || s.status == StepStatus::Compensated) {
-            self.status = SagaStatus::Completed;
-        }
-
-        Ok(())
-    }
-
-    /// Mark a step as failed → begin compensation.
-    pub fn fail_step(&mut self, step_index: usize, error: String) -> Result<(), SagaError> {
-        let step = self
-            .steps
-            .get_mut(step_index)
-            .ok_or(SagaError::StepNotFound)?;
-
-        if step.status != StepStatus::Executing {
-            return Err(SagaError::InvalidStepTransition);
-        }
-
-        step.status = StepStatus::Failed;
-        step.error = Some(error);
-        self.updated_at = Utc::now();
-
-        // Begin compensation (reverse-order)
-        self.status = SagaStatus::Compensating;
-        Ok(())
-    }
-
-    /// Compensate the next succeeded step (reverse order).
-    /// SAGA-006: Reverse-order compensation (stack-based).
-    pub fn compensate_next_step(&mut self) -> Result<Option<usize>, SagaError> {
-        // Find the last succeeded step
-        let compensate_index = self
-            .steps
-            .iter()
-            .rposition(|s| s.status == StepStatus::Succeeded);
-
-        if let Some(idx) = compensate_index {
-            self.steps[idx].status = StepStatus::Compensated;
-            self.compensation_attempts += 1;
-            self.updated_at = Utc::now();
-
-            // Check if all steps are handled (pending steps never reached are ok)
-            if self.steps.iter().all(|s| {
-                s.status == StepStatus::Pending
-                    || s.status == StepStatus::Compensated
-                    || s.status == StepStatus::Failed
-            }) {
-                self.status = SagaStatus::Compensated;
-            }
-
-            Ok(Some(idx))
-        } else {
-            // All succeeded steps compensated
-            self.status = SagaStatus::Compensated;
-            Ok(None)
-        }
-    }
-
-    /// Mark compensation as failed → requires manual intervention.
-    pub fn fail_compensation(&mut self, error: String) -> Result<(), SagaError> {
-        if self.compensation_attempts >= self.max_compensation_retries {
-            self.status = SagaStatus::RequiresManualIntervention;
-            self.updated_at = Utc::now();
-            return Err(SagaError::CompensationFailed(error));
-        }
-        self.updated_at = Utc::now();
-        Ok(())
-    }
-
-    /// Mark saga as failed (non-compensated).
-    pub fn mark_failed(&mut self, error: String) -> Result<(), SagaError> {
-        if !self.status.can_transition_to(&SagaStatus::Failed) {
-            return Err(SagaError::InvalidTransition);
-        }
-        self.status = SagaStatus::Failed;
-        self.updated_at = Utc::now();
-        // Add error to the last executing step
-        if let Some(step) = self.steps.iter_mut().find(|s| s.status == StepStatus::Executing) {
-            step.error = Some(error);
-        }
-        Ok(())
-    }
-
-    /// Check if the saga has timed out.
-    pub fn is_timed_out(&self) -> bool {
-        if let Some(deadline) = self.deadline_at {
-            self.status == SagaStatus::Running && Utc::now() > deadline
-        } else {
-            false
-        }
-    }
-
-    /// Get default steps for payment lifecycle saga.
-    pub fn payment_lifecycle_steps() -> Vec<SagaStep> {
-        vec![
-            Self::make_step("authorize", "authorize", "void"),
-            Self::make_step("capture", "capture", "void"),
-            Self::make_step("settle", "settle", "refund"),
-            Self::make_step("reconcile", "reconcile", "unreconcile"),
-        ]
-    }
-
-    fn make_step(name: &str, action: &str, compensation: &str) -> SagaStep {
-        SagaStep {
-            step_id: Uuid::now_v7(),
-            step_name: name.into(),
-            action: action.into(),
-            compensation_action: compensation.into(),
-            status: StepStatus::Pending,
-            output: None,
-            error: None,
-            started_at: None,
-            completed_at: None,
-        }
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Errors
-// ---------------------------------------------------------------------------
-
-#[derive(Debug, Clone, thiserror::Error)]
-pub enum SagaError {
-    #[error("Saga not found: {0}")]
-    NotFound(Uuid),
-    #[error("Saga already completed")]
-    AlreadyCompleted,
-    #[error("Invalid saga status transition")]
-    InvalidTransition,
-    #[error("Invalid step transition")]
-    InvalidStepTransition,
-    #[error("No steps defined for saga")]
-    NoStepsDefined,
-    #[error("Step not found")]
-    StepNotFound,
-    #[error("Saga step execution failed: {0}")]
-    StepFailed(String),
-    #[error("Compensation failed after retries: {0}")]
-    CompensationFailed(String),
-    #[error("Saga timed out")]
-    Timeout,
 }
