@@ -1,5 +1,7 @@
 //! PostgreSQL-backed ComplianceRepository using SeaORM.
 
+#![allow(clippy::too_many_lines)]
+
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, Set};

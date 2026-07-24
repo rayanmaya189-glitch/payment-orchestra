@@ -5,6 +5,7 @@ use super::{AnalyticsQueryHandler, QueryHandler};
 use crate::domain::*;
 use crate::repository::*;
 
+#[allow(clippy::too_many_lines)]
 #[async_trait]
 impl<R: AnalyticsRepository + Send + Sync> QueryHandler for AnalyticsQueryHandler<R> {
     async fn authorization_rates(&self, query: AuthRateQuery) -> Result<Vec<AuthRateRow>, AnalyticsError> {

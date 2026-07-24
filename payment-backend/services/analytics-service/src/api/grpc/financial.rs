@@ -11,6 +11,7 @@ use platform_proto::analytics::analytics_service_server::AnalyticsService;
 use platform_proto::analytics::*;
 use platform_proto::common::Money as ProtoMoney;
 
+#[allow(clippy::too_many_lines)]
 #[tonic::async_trait]
 impl<C, Q, R> AnalyticsService for AnalyticsGrpcService<C, Q, R>
 where

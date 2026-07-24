@@ -39,6 +39,7 @@ impl PostgresIamRepository {
 }
 
 #[async_trait]
+#[allow(clippy::too_many_lines)]
 impl IamRepository for PostgresIamRepository {
     // ── Principal operations ──────────────────────────────────────────────
 

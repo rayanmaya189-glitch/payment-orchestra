@@ -1,3 +1,5 @@
+#![allow(clippy::too_many_lines)]
+
 //! Dispute Management TDD tests — BC-10
 //!
 //! Spec test cases:

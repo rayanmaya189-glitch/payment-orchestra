@@ -1,3 +1,4 @@
+#![allow(clippy::too_many_lines)]
 //! Dispute Management domain model — BC-10
 //!
 //! Event-sourced ChargebackCase aggregate with representment lifecycle.

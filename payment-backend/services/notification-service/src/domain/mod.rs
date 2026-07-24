@@ -1,3 +1,4 @@
+#![allow(clippy::too_many_lines)]
 //! Notification Service domain model — BC-14
 //!
 //! At-least-once delivery of email/SMS/webhook notifications.

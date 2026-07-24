@@ -8,6 +8,7 @@ use crate::repository::*;
 use super::types::*;
 use super::OrchestrationCommandHandler;
 
+#[allow(clippy::too_many_lines)]
 impl<R: OrchestrationRepository + Send + Sync> OrchestrationCommandHandler<R> {
     pub(crate) async fn create_payment_intent_impl(&self, cmd: CreatePaymentIntent) -> Result<PaymentIntentResult, OrchestrationError> {
         let idem_key = format!("create_pi:{}", cmd.idempotency_key);

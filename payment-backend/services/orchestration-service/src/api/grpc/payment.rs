@@ -9,6 +9,7 @@ use platform_proto::orchestration::orchestration_service_server::OrchestrationSe
 use platform_proto::orchestration::*;
 use platform_proto::common::{Money as ProtoMoney, Timestamp};
 
+#[allow(clippy::too_many_lines)]
 #[tonic::async_trait]
 impl<C, Q> OrchestrationService for OrchestrationGrpcService<C, Q>
 where

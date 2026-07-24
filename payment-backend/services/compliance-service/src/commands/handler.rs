@@ -1,3 +1,4 @@
+#![allow(clippy::too_many_lines)]
 //! Command handlers for BC-03 Merchant Compliance.
 
 use chrono::Utc;

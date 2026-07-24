@@ -1,3 +1,4 @@
+#![allow(clippy::too_many_lines)]
 //! Command handlers for BC-02 Identity & Access Management.
 
 pub mod types;

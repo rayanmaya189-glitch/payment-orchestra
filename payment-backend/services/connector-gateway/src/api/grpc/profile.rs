@@ -13,6 +13,7 @@ use platform_proto::gateway_profile::gateway_profile_service_server::GatewayProf
 use platform_proto::gateway_profile::*;
 use platform_proto::common::Timestamp;
 
+#[allow(clippy::too_many_lines)]
 #[tonic::async_trait]
 impl<C, Q> GatewayProfileService for GatewayProfileGrpcService<C, Q>
 where

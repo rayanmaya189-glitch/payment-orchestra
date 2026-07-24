@@ -1,3 +1,4 @@
+#![allow(clippy::too_many_lines)]
 //! Command handlers for BYOK Core — MerchantAcquirerLink lifecycle management.
 
 pub mod types;

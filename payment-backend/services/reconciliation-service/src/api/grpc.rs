@@ -1,3 +1,4 @@
+#![allow(clippy::too_many_lines)]
 //! gRPC service implementation for reconciliation-service (BC-09).
 //! Translates between protobuf types and domain types for settlement matching.
 

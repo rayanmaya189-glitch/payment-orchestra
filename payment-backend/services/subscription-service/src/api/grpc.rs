@@ -1,3 +1,4 @@
+#![allow(clippy::too_many_lines)]
 //! gRPC service implementation for subscription-service (BC-08).
 //! Translates between protobuf types and domain types for subscription lifecycle.
 

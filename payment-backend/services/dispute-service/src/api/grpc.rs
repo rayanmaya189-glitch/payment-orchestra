@@ -1,3 +1,4 @@
+#![allow(clippy::too_many_lines)]
 //! gRPC service implementation for dispute-service (BC-10).
 //! Translates between protobuf types and domain types for chargeback lifecycle.
 

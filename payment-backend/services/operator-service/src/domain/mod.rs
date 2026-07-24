@@ -1,3 +1,4 @@
+#![allow(clippy::too_many_lines)]
 //! Domain model for BC-01 Operator Management.
 //! Owns Operator aggregate and OperatorMember entity.
 

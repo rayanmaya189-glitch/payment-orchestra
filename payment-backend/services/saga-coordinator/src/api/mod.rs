@@ -1,4 +1,8 @@
 //! Saga Coordinator API surface — BC-17
+//!
+//! Includes both the local API struct and the gRPC service implementation.
+
+pub mod grpc;
 
 use crate::commands::*;
 use crate::domain::{SagaError, SagaInstance};
