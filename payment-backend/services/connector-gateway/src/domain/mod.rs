@@ -8,13 +8,23 @@ pub mod connector;
 pub mod connector_registry;
 pub mod error;
 pub mod gateway_profile;
-pub mod mock_connectors;
 pub mod routing;
 pub mod types;
 
-// Existing sub-modules (not extracted)
-pub mod onboarding;
+// Mock connectors — split per CONVENTIONS.md
+pub mod mock_network_intl;
+pub mod mock_checkout_com;
+pub mod mock_telr;
+pub mod mock_connectors;
+
+// Stripe connector — split per CONVENTIONS.md
 pub mod stripe_connector;
+pub mod stripe_impl;
+pub mod stripe_webhook;
+pub mod stripe_credential;
+
+// Existing sub-modules
+pub mod onboarding;
 
 // Re-exports for convenience
 pub use circuit_breaker::{CircuitBreaker, CircuitState};

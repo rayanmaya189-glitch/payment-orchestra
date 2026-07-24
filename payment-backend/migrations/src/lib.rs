@@ -6,7 +6,13 @@ pub use sea_orm_migration::prelude::*;
 
 mod m20260101_000001_create_core_tables;
 mod m20260101_000002_create_business_tables;
+mod m20260101_000002a_payment_core;
+mod m20260101_000002b_identity;
+mod m20260101_000002c_gateway_products;
 mod m20260101_000003_create_supporting_tables;
+mod m20260101_000003a_reconciliation;
+mod m20260101_000003b_compliance_notifications;
+mod m20260101_000003c_operations;
 
 pub struct Migrator;
 
@@ -15,7 +21,13 @@ impl MigratorTrait for Migrator {
     fn migrations() -> Vec<Box<dyn MigrationTrait>> {
         vec![
             Box::new(m20260101_000001_create_core_tables::Migration),
+            Box::new(m20260101_000002a_payment_core::Migration),
+            Box::new(m20260101_000002b_identity::Migration),
+            Box::new(m20260101_000002c_gateway_products::Migration),
             Box::new(m20260101_000002_create_business_tables::Migration),
+            Box::new(m20260101_000003a_reconciliation::Migration),
+            Box::new(m20260101_000003b_compliance_notifications::Migration),
+            Box::new(m20260101_000003c_operations::Migration),
             Box::new(m20260101_000003_create_supporting_tables::Migration),
         ]
     }

@@ -1,355 +1,231 @@
 //! Reconciliation-service domain model — settlement matching engine.
+//!
 //! Event-sourced aggregates: SettlementBatch, LedgerEntry.
 //! CRUD + events aggregates: SettlementExpectation, FeeVariance.
+//!
+//! File structure (one concept per file per CONVENTIONS.md):
+//!
+//! - [`error`]                  — [`ReconciliationError`]
+//! - [`money`]                  — [`Money`] value object
+//! - [`types`]                  — small shared enums ([`BatchStatus`], [`EntryType`], [`ExpectationStatus`], [`FeeVarianceStatus`], [`SettlementFormat`], [`SettlementFileChecksum`])
+//! - [`match_result`]           — [`MatchResult`], [`SettlementMatchOutcome`], [`MatchStrategy`], [`PaymentIntentRef`]
+//! - [`settlement_batch`]       — [`SettlementBatch`], [`SettlementRecord`] (AGG-01)
+//! - [`ledger_entry`]           — [`LedgerEntry`] (AGG-02)
+//! - [`settlement_expectation`] — [`SettlementExpectation`] (AGG-03)
+//! - [`fee_variance`]           — [`FeeVariance`] (AGG-04)
+//! - [`matcher`]                — [`ReconciliationMatcher`]
 
-use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
-use uuid::Uuid;
+pub mod error;
+pub mod fee_variance;
+pub mod ledger_entry;
+pub mod match_result;
+pub mod matcher;
+pub mod money;
+pub mod settlement_batch;
+pub mod settlement_expectation;
+pub mod types;
 
-// ─── Value Objects ───────────────────────────────────────────────────────────
+pub use error::*;
+pub use fee_variance::*;
+pub use ledger_entry::*;
+pub use match_result::*;
+pub use matcher::*;
+pub use money::*;
+pub use settlement_batch::*;
+pub use settlement_expectation::*;
+pub use types::*;
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Money {
-    pub amount_minor_units: i64,
-    pub currency: String,
-}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use uuid::Uuid;
 
-impl Money {
-    pub fn zero(currency: &str) -> Self {
-        Self { amount_minor_units: 0, currency: currency.to_string() }
+    #[test]
+    fn test_money_zero() {
+        let m = Money::zero("USD");
+        assert_eq!(m.amount_minor_units, 0);
+        assert_eq!(m.currency, "USD");
     }
 
-    pub fn checked_add(&self, other: &Money) -> Result<Self, ReconciliationError> {
-        if self.currency != other.currency {
-            return Err(ReconciliationError::Validation("Currency mismatch".into()));
-        }
-        let sum = self.amount_minor_units.checked_add(other.amount_minor_units)
-            .ok_or_else(|| ReconciliationError::Validation("Amount overflow".into()))?;
-        Ok(Self { amount_minor_units: sum, currency: self.currency.clone() })
+    #[test]
+    fn test_money_checked_add() {
+        let a = Money {
+            amount_minor_units: 100,
+            currency: "USD".into(),
+        };
+        let b = Money {
+            amount_minor_units: 50,
+            currency: "USD".into(),
+        };
+        let sum = a.checked_add(&b).unwrap();
+        assert_eq!(sum.amount_minor_units, 150);
     }
 
-    pub fn checked_sub(&self, other: &Money) -> Result<Self, ReconciliationError> {
-        if self.currency != other.currency {
-            return Err(ReconciliationError::Validation("Currency mismatch".into()));
-        }
-        if self.amount_minor_units < other.amount_minor_units {
-            return Err(ReconciliationError::Validation("Insufficient amount".into()));
-        }
-        Ok(Self { amount_minor_units: self.amount_minor_units - other.amount_minor_units, currency: self.currency.clone() })
+    #[test]
+    fn test_money_checked_add_currency_mismatch() {
+        let a = Money {
+            amount_minor_units: 100,
+            currency: "USD".into(),
+        };
+        let b = Money {
+            amount_minor_units: 50,
+            currency: "EUR".into(),
+        };
+        assert!(a.checked_add(&b).is_err());
     }
-}
 
-/// SHA-256 checksum of settlement file content
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct SettlementFileChecksum(pub String);
-
-/// Settlement file format
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub enum SettlementFormat {
-    Webhook,
-    PollingApi,
-    Sftp,
-    Csv,
-    ScannedDocument,
-}
-
-/// Entry type for double-entry ledger
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub enum EntryType {
-    Debit,
-    Credit,
-}
-
-// ─── Settlement Match Outcome ────────────────────────────────────────────────
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct MatchResult {
-    pub settlement_record_id: Uuid,
-    pub payment_intent_id: Option<Uuid>,
-    pub confidence: f64,
-    pub strategy: MatchStrategy,
-    pub outcome: SettlementMatchOutcome,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub enum SettlementMatchOutcome {
-    AutoConfirmed,
-    Matched,
-    AmountMismatch,
-    Unmatched,
-    DuplicateReference,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub enum MatchStrategy {
-    Exact,
-    Fuzzy,
-    AiAssisted,
-}
-
-// ─── AGG-01: SettlementBatch (Aggregate Root, Event-Sourced) ─────────────────
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SettlementBatch {
-    pub settlement_batch_id: Uuid,
-    pub operator_id: Uuid,
-    pub acquirer_link_id: Uuid,
-    pub file_checksum: String,
-    pub file_format: String,
-    pub status: BatchStatus,
-    pub total_records: i32,
-    pub matched_count: i32,
-    pub unmatched_count: i32,
-    pub total_amount_minor: i64,
-    pub records: Vec<SettlementRecord>,
-    pub ingested_at: DateTime<Utc>,
-    pub processed_at: Option<DateTime<Utc>>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub enum BatchStatus {
-    Ingesting,
-    Processed,
-    Quarantined,
-}
-
-impl std::fmt::Display for BatchStatus {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Ingesting => write!(f, "pending"),
-            Self::Processed => write!(f, "matched"),
-            Self::Quarantined => write!(f, "exception"),
-        }
+    #[test]
+    fn test_money_checked_sub() {
+        let a = Money {
+            amount_minor_units: 100,
+            currency: "USD".into(),
+        };
+        let b = Money {
+            amount_minor_units: 30,
+            currency: "USD".into(),
+        };
+        let diff = a.checked_sub(&b).unwrap();
+        assert_eq!(diff.amount_minor_units, 70);
     }
-}
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SettlementRecord {
-    pub record_id: Uuid,
-    pub settlement_batch_id: Uuid,
-    pub transaction_id: String,
-    pub acquirer_reference: Option<String>,
-    pub amount_minor: i64,
-    pub currency: String,
-    pub fee_minor: Option<i64>,
-    pub settlement_date: Option<DateTime<Utc>>,
-    pub status: String,
-    pub match_outcome: Option<SettlementMatchOutcome>,
-    pub matched_payment_intent_id: Option<Uuid>,
-}
-
-impl SettlementBatch {
-    pub fn new(
-        settlement_batch_id: Uuid,
-        operator_id: Uuid,
-        acquirer_link_id: Uuid,
-        file_checksum: String,
-        file_format: String,
-        records: Vec<SettlementRecord>,
-    ) -> Self {
-        let total_minor: i64 = records.iter().map(|r| r.amount_minor).sum();
-        Self {
-            settlement_batch_id,
-            operator_id,
-            acquirer_link_id,
-            file_checksum,
-            file_format,
-            status: BatchStatus::Ingesting,
-            total_records: records.len() as i32,
-            matched_count: 0,
-            unmatched_count: 0,
-            total_amount_minor: total_minor,
-            records,
-            ingested_at: Utc::now(),
-            processed_at: None,
-        }
+    #[test]
+    fn test_money_checked_sub_insufficient() {
+        let a = Money {
+            amount_minor_units: 30,
+            currency: "USD".into(),
+        };
+        let b = Money {
+            amount_minor_units: 100,
+            currency: "USD".into(),
+        };
+        assert!(a.checked_sub(&b).is_err());
     }
-}
 
-// ─── AGG-02: LedgerEntry (Append-Only) ───────────────────────────────────────
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct LedgerEntry {
-    pub entry_id: Uuid,
-    pub transaction_id: Uuid,
-    pub entry_type: EntryType,
-    pub amount_minor: i64,
-    pub currency: String,
-    pub source_acquirer: String,
-    pub reconciliation_batch_id: Option<Uuid>,
-    pub reconciled: bool,
-    pub created_at: DateTime<Utc>,
-}
-
-// ─── AGG-03: SettlementExpectation ───────────────────────────────────────────
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SettlementExpectation {
-    pub expectation_id: Uuid,
-    pub payment_intent_id: Uuid,
-    pub acquirer_link_id: Uuid,
-    pub expected_settlement_date: DateTime<Utc>,
-    pub settlement_cycle: String,
-    pub status: ExpectationStatus,
-    pub settled_amount_minor: Option<i64>,
-    pub settled_at: Option<DateTime<Utc>>,
-    pub created_at: DateTime<Utc>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub enum ExpectationStatus {
-    Pending,
-    Settled,
-    Overdue,
-    Adjusted,
-}
-
-// ─── AGG-04: FeeVariance ─────────────────────────────────────────────────────
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FeeVariance {
-    pub variance_id: Uuid,
-    pub payment_intent_id: Uuid,
-    pub acquirer_link_id: Uuid,
-    pub estimated_fee_minor: i64,
-    pub actual_fee_minor: i64,
-    pub variance_minor: i64,
-    pub variance_percent: f64,
-    pub is_within_tolerance: bool,
-    pub tolerance_threshold_percent: f64,
-    pub status: FeeVarianceStatus,
-    pub detected_at: DateTime<Utc>,
-    pub resolved_at: Option<DateTime<Utc>>,
-    pub resolution_note: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub enum FeeVarianceStatus {
-    WithinTolerance,
-    VarianceDetected,
-    Disputed,
-    Resolved,
-}
-
-// ─── Reconciliation Matcher ──────────────────────────────────────────────────
-
-pub struct ReconciliationMatcher {
-    pub auto_confirm_threshold: f64,
-    pub review_threshold: f64,
-}
-
-impl Default for ReconciliationMatcher {
-    fn default() -> Self {
-        Self { auto_confirm_threshold: 0.95, review_threshold: 0.70 }
+    #[test]
+    fn test_batch_status_display() {
+        assert_eq!(format!("{}", BatchStatus::Ingesting), "pending");
+        assert_eq!(format!("{}", BatchStatus::Processed), "matched");
+        assert_eq!(format!("{}", BatchStatus::Quarantined), "exception");
     }
-}
 
-impl ReconciliationMatcher {
-    pub fn match_record(
-        &self,
-        record: &SettlementRecord,
-        payment_intents: &[PaymentIntentRef],
-    ) -> MatchResult {
-        let record_id = record.record_id;
+    #[test]
+    fn test_settlement_batch_new() {
+        let record = SettlementRecord {
+            record_id: Uuid::now_v7(),
+            settlement_batch_id: Uuid::now_v7(),
+            transaction_id: "txn_001".into(),
+            acquirer_reference: Some("acq_ref_001".into()),
+            amount_minor: 1000,
+            currency: "USD".into(),
+            fee_minor: Some(30),
+            settlement_date: None,
+            status: "pending".into(),
+            match_outcome: None,
+            matched_payment_intent_id: None,
+        };
 
-        // Strategy 1: Exact match by acquirer_reference
-        if let Some(ref acquirer_ref) = record.acquirer_reference {
-            let exact_matches: Vec<&PaymentIntentRef> = payment_intents.iter()
-                .filter(|pi| pi.acquirer_reference.as_deref() == Some(acquirer_ref.as_str()))
-                .collect();
+        let batch = SettlementBatch::new(
+            Uuid::now_v7(),
+            Uuid::now_v7(),
+            Uuid::now_v7(),
+            "sha256-checksum".into(),
+            "csv".into(),
+            vec![record],
+        );
 
-            match exact_matches.len() {
-                0 => { /* fall through to fuzzy */ }
-                1 => {
-                    return MatchResult {
-                        settlement_record_id: record_id,
-                        payment_intent_id: Some(exact_matches[0].payment_intent_id),
-                        confidence: 1.0,
-                        strategy: MatchStrategy::Exact,
-                        outcome: if exact_matches[0].amount_minor == record.amount_minor {
-                            SettlementMatchOutcome::AutoConfirmed
-                        } else {
-                            SettlementMatchOutcome::AmountMismatch
-                        },
-                    };
-                }
-                _ => {
-                    return MatchResult {
-                        settlement_record_id: record_id,
-                        payment_intent_id: None,
-                        confidence: 0.0,
-                        strategy: MatchStrategy::Exact,
-                        outcome: SettlementMatchOutcome::DuplicateReference,
-                    };
-                }
-            }
-        }
-
-        // Strategy 2: Fuzzy match by amount + date proximity
-        let amount_matches: Vec<&PaymentIntentRef> = payment_intents.iter()
-            .filter(|pi| {
-                let amount_diff = (pi.amount_minor - record.amount_minor).abs();
-                // Within fee tolerance: allow up to 10% difference for fee
-                amount_diff <= (pi.amount_minor as f64 * 0.10) as i64
-            })
-            .collect();
-
-        if amount_matches.len() == 1 {
-            let confidence = 0.85;
-            return MatchResult {
-                settlement_record_id: record_id,
-                payment_intent_id: Some(amount_matches[0].payment_intent_id),
-                confidence,
-                strategy: MatchStrategy::Fuzzy,
-                outcome: if confidence >= self.auto_confirm_threshold {
-                    SettlementMatchOutcome::AutoConfirmed
-                } else if confidence >= self.review_threshold {
-                    SettlementMatchOutcome::Matched
-                } else {
-                    SettlementMatchOutcome::Unmatched
-                },
-            };
-        }
-
-        // No match found
-        MatchResult {
-            settlement_record_id: record_id,
-            payment_intent_id: None,
-            confidence: 0.0,
-            strategy: MatchStrategy::Fuzzy,
-            outcome: SettlementMatchOutcome::Unmatched,
-        }
+        assert_eq!(batch.status, BatchStatus::Ingesting);
+        assert_eq!(batch.total_records, 1);
+        assert_eq!(batch.total_amount_minor, 1000);
+        assert!(batch.processed_at.is_none());
     }
-}
 
-/// Lightweight payment intent reference for matching
-#[derive(Debug, Clone)]
-pub struct PaymentIntentRef {
-    pub payment_intent_id: Uuid,
-    pub acquirer_reference: Option<String>,
-    pub amount_minor: i64,
-    pub currency: String,
-}
+    #[test]
+    fn test_matcher_exact_match() {
+        let matcher = ReconciliationMatcher::default();
+        let record = SettlementRecord {
+            record_id: Uuid::now_v7(),
+            settlement_batch_id: Uuid::now_v7(),
+            transaction_id: "txn_001".into(),
+            acquirer_reference: Some("acq_ref_001".into()),
+            amount_minor: 1000,
+            currency: "USD".into(),
+            fee_minor: Some(30),
+            settlement_date: None,
+            status: "pending".into(),
+            match_outcome: None,
+            matched_payment_intent_id: None,
+        };
 
-// ─── Errors ──────────────────────────────────────────────────────────────────
+        let payment_intents = vec![PaymentIntentRef {
+            payment_intent_id: Uuid::now_v7(),
+            acquirer_reference: Some("acq_ref_001".into()),
+            amount_minor: 1000,
+            currency: "USD".into(),
+        }];
 
-#[derive(Debug, Clone, thiserror::Error)]
-pub enum ReconciliationError {
-    #[error("Settlement batch not found: {0}")]
-    NotFound(Uuid),
+        let result = matcher.match_record(&record, &payment_intents);
+        assert_eq!(result.strategy, MatchStrategy::Exact);
+        assert_eq!(result.outcome, SettlementMatchOutcome::AutoConfirmed);
+        assert_eq!(result.confidence, 1.0);
+        assert!(result.payment_intent_id.is_some());
+    }
 
-    #[error("Validation error: {0}")]
-    Validation(String),
+    #[test]
+    fn test_matcher_fuzzy_match() {
+        let matcher = ReconciliationMatcher::default();
+        let record = SettlementRecord {
+            record_id: Uuid::now_v7(),
+            settlement_batch_id: Uuid::now_v7(),
+            transaction_id: "txn_002".into(),
+            acquirer_reference: None, // No ref — forces fuzzy
+            amount_minor: 950,
+            currency: "USD".into(),
+            fee_minor: None,
+            settlement_date: None,
+            status: "pending".into(),
+            match_outcome: None,
+            matched_payment_intent_id: None,
+        };
 
-    #[error("Duplicate batch: checksum {0} already ingested")]
-    DuplicateBatch(String),
+        let payment_intents = vec![PaymentIntentRef {
+            payment_intent_id: Uuid::now_v7(),
+            acquirer_reference: None,
+            amount_minor: 1000,
+            currency: "USD".into(),
+        }];
 
-    #[error("Invariant violation: {0}")]
-    InvariantViolation(String),
+        let result = matcher.match_record(&record, &payment_intents);
+        assert_eq!(result.strategy, MatchStrategy::Fuzzy);
+        // 950 vs 1000 → diff of 50, within 10% of 1000 (100)
+        assert!(result.payment_intent_id.is_some());
+    }
 
-    #[error("Ledger imbalance detected for transaction {0}")]
-    LedgerImbalance(Uuid),
+    #[test]
+    fn test_matcher_unmatched() {
+        let matcher = ReconciliationMatcher::default();
+        let record = SettlementRecord {
+            record_id: Uuid::now_v7(),
+            settlement_batch_id: Uuid::now_v7(),
+            transaction_id: "txn_003".into(),
+            acquirer_reference: None,
+            amount_minor: 5000,
+            currency: "USD".into(),
+            fee_minor: None,
+            settlement_date: None,
+            status: "pending".into(),
+            match_outcome: None,
+            matched_payment_intent_id: None,
+        };
 
-    #[error("Database error: {0}")]
-    DatabaseError(String),
+        let payment_intents = vec![PaymentIntentRef {
+            payment_intent_id: Uuid::now_v7(),
+            acquirer_reference: None,
+            amount_minor: 1000,
+            currency: "USD".into(),
+        }];
+
+        let result = matcher.match_record(&record, &payment_intents);
+        assert_eq!(result.outcome, SettlementMatchOutcome::Unmatched);
+        assert!(result.payment_intent_id.is_none());
+    }
 }
