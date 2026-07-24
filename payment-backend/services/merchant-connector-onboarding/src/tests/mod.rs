@@ -18,16 +18,16 @@ async fn create_link(pipeline: &OnboardingPipeline) -> OnboardingRequest {
 
 fn valid_creds() -> HashMap<String, String> {
     let mut m = HashMap::new();
-    m.insert("merchant_id".into(), "MERCHANT12345".into());
-    m.insert("api_key".into(), "ni_live_abc123def4567890".into());
+    m.insert("merchant_id".into(), "MER-12345".into());
+    m.insert("api_key".into(), "ni_live_abc123def4567890abc123def45678".into());
     m.insert("environment".into(), "sandbox".into());
     m
 }
 
 fn short_creds() -> HashMap<String, String> {
     let mut m = HashMap::new();
-    m.insert("merchant_id".into(), "MERCH12345".into());
-    m.insert("api_key".into(), "ni_live_abc123def456".into());
+    m.insert("merchant_id".into(), "MER-12345".into());
+    m.insert("api_key".into(), "ni_live_abc123def4567890abc123def45678".into());
     m.insert("environment".into(), "sandbox".into());
     m
 }

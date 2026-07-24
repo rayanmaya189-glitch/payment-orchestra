@@ -1,410 +1,234 @@
-//! Merchant Connector Onboarding domain model — BC-22
+//! Domain module — merchant-connector-onboarding concepts.
 //!
-//! BYOK (Bring Your Own Key) onboarding flow: connector selection,
-//! credential schema, validation, testing, and activation.
+//! File structure (one concept per file per CONVENTIONS.md):
+//!
+//! - [`error`]               — [`OnboardingError`]
+//! - [`status`]              — [`OnboardingStatus`] state machine
+//! - [`types`]               — [`ConnectorConfiguration`], [`ApiCredentials`],
+//!                             [`WebhookConfiguration`], [`BusinessDetails`]
+//! - [`onboarding_request`]  — [`OnboardingRequest`] + validation + defaults
 
-use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
-use uuid::Uuid;
+pub mod error;
+pub mod onboarding_request;
+pub mod status;
+pub mod types;
 
-// ---------------------------------------------------------------------------
-// OnboardingStatus
-// ---------------------------------------------------------------------------
+pub use error::*;
+pub use onboarding_request::*;
+pub use status::*;
+pub use types::*;
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub enum OnboardingStatus {
-    /// Onboarding initiated, waiting for credential submission.
-    Draft,
-    /// Credentials submitted but not yet tested.
-    CredentialsSubmitted,
-    /// Connection test in progress.
-    Testing,
-    /// Connection test passed, link is active.
-    Active,
-    /// Link deactivated (manual).
-    Deactivated,
-    /// Credentials revoked / invalidated.
-    Revoked,
-}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+    use uuid::Uuid;
 
-impl OnboardingStatus {
-    pub fn can_transition_to(&self, target: &Self) -> bool {
-        use OnboardingStatus::*;
-        matches!(
-            (self, target),
-            (Draft, CredentialsSubmitted)
-                | (CredentialsSubmitted, Testing)
-                | (Testing, Active)
-                | (Testing, CredentialsSubmitted) // retry
-                | (Active, Deactivated)
-                | (Active, Revoked)
-                | (Deactivated, Active) // re-activate
-                | (Deactivated, Revoked)
-        )
+    #[test]
+    fn test_onboarding_status_valid_transitions() {
+        assert!(OnboardingStatus::Draft.can_transition_to(&OnboardingStatus::CredentialsSubmitted));
+        assert!(OnboardingStatus::CredentialsSubmitted.can_transition_to(&OnboardingStatus::Testing));
+        assert!(OnboardingStatus::Testing.can_transition_to(&OnboardingStatus::Active));
+        assert!(OnboardingStatus::Testing.can_transition_to(&OnboardingStatus::CredentialsSubmitted));
+        assert!(OnboardingStatus::Active.can_transition_to(&OnboardingStatus::Deactivated));
+        assert!(OnboardingStatus::Active.can_transition_to(&OnboardingStatus::Revoked));
+        assert!(OnboardingStatus::Deactivated.can_transition_to(&OnboardingStatus::Active));
+        assert!(OnboardingStatus::Deactivated.can_transition_to(&OnboardingStatus::Revoked));
     }
 
-    pub fn is_terminal(&self) -> bool {
-        matches!(self, Self::Revoked)
+    #[test]
+    fn test_onboarding_status_invalid_transitions() {
+        assert!(!OnboardingStatus::Draft.can_transition_to(&OnboardingStatus::Active));
+        assert!(!OnboardingStatus::Draft.can_transition_to(&OnboardingStatus::Revoked));
+        assert!(!OnboardingStatus::CredentialsSubmitted.can_transition_to(&OnboardingStatus::Draft));
+        assert!(!OnboardingStatus::Active.can_transition_to(&OnboardingStatus::Draft));
+        assert!(!OnboardingStatus::Active.can_transition_to(&OnboardingStatus::Testing));
+        assert!(!OnboardingStatus::Active.can_transition_to(&OnboardingStatus::CredentialsSubmitted));
     }
-}
 
-impl std::fmt::Display for OnboardingStatus {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Draft => write!(f, "draft"),
-            Self::CredentialsSubmitted => write!(f, "credentials_submitted"),
-            Self::Testing => write!(f, "testing"),
-            Self::Active => write!(f, "active"),
-            Self::Deactivated => write!(f, "deactivated"),
-            Self::Revoked => write!(f, "revoked"),
-        }
+    #[test]
+    fn test_onboarding_status_is_terminal() {
+        assert!(!OnboardingStatus::Draft.is_terminal());
+        assert!(!OnboardingStatus::CredentialsSubmitted.is_terminal());
+        assert!(!OnboardingStatus::Testing.is_terminal());
+        assert!(!OnboardingStatus::Active.is_terminal());
+        assert!(!OnboardingStatus::Deactivated.is_terminal());
+        assert!(OnboardingStatus::Revoked.is_terminal());
     }
-}
 
-// ---------------------------------------------------------------------------
-// CredentialField — schema for a single credential field
-// ---------------------------------------------------------------------------
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CredentialField {
-    pub name: String,
-    pub field_type: String,
-    pub required: bool,
-    pub label: String,
-    pub placeholder: Option<String>,
-    pub validation_regex: Option<String>,
-    pub min_length: Option<u32>,
-    pub max_length: Option<u32>,
-    pub options: Vec<FieldOption>,
-    pub help_text: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FieldOption {
-    pub value: String,
-    pub label: String,
-}
-
-// ---------------------------------------------------------------------------
-// ConnectorInfo — available connectors with their schemas
-// ---------------------------------------------------------------------------
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ConnectorInfo {
-    pub connector_id: String,
-    pub display_name: String,
-    pub description: String,
-    pub supported_environments: Vec<String>,
-    pub supported_card_schemes: Vec<String>,
-    pub supported_currencies: Vec<String>,
-    pub fields: Vec<CredentialField>,
-}
-
-// ---------------------------------------------------------------------------
-// HealthStatus
-// ---------------------------------------------------------------------------
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub enum HealthStatus {
-    Unknown,
-    Healthy,
-    Degraded,
-    Down,
-}
-
-impl std::fmt::Display for HealthStatus {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Unknown => write!(f, "unknown"),
-            Self::Healthy => write!(f, "healthy"),
-            Self::Degraded => write!(f, "degraded"),
-            Self::Down => write!(f, "down"),
-        }
+    #[test]
+    fn test_health_status_display() {
+        assert_eq!(format!("{}", HealthStatus::Unknown), "unknown");
+        assert_eq!(format!("{}", HealthStatus::Healthy), "healthy");
+        assert_eq!(format!("{}", HealthStatus::Degraded), "degraded");
+        assert_eq!(format!("{}", HealthStatus::Down), "down");
     }
-}
 
-// ---------------------------------------------------------------------------
-// ConnectionTestResult
-// ---------------------------------------------------------------------------
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ConnectionTestResult {
-    pub success: bool,
-    pub latency_ms: u64,
-    pub error: Option<String>,
-    pub merchant_name: Option<String>,
-    pub permissions: Vec<String>,
-}
-
-// ---------------------------------------------------------------------------
-// OnboardingRequest aggregate
-// ---------------------------------------------------------------------------
-
-/// Core OnboardingRequest aggregate root.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct OnboardingRequest {
-    pub link_id: Uuid,
-    pub operator_id: Uuid,
-    pub connector_id: String,
-    pub display_name: String,
-    pub environment: String,
-    pub status: OnboardingStatus,
-    pub health_status: HealthStatus,
-    pub credentials: HashMap<String, String>,
-    pub encrypted_credentials: Vec<u8>,
-    pub last_tested_at: Option<DateTime<Utc>>,
-    pub last_test_result: Option<ConnectionTestResult>,
-    pub credential_expires_at: Option<DateTime<Utc>>,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
-}
-
-impl OnboardingRequest {
-    /// Initiate a new onboarding request in `Draft` status.
-    pub fn new(
-        operator_id: Uuid,
-        connector_id: String,
-        display_name: String,
-        environment: String,
-    ) -> Self {
-        let now = Utc::now();
-        Self {
-            link_id: Uuid::now_v7(),
+    #[test]
+    fn test_onboarding_request_new() {
+        let operator_id = Uuid::now_v7();
+        let request = OnboardingRequest::new(
             operator_id,
-            connector_id,
-            display_name,
-            environment,
-            status: OnboardingStatus::Draft,
-            health_status: HealthStatus::Unknown,
-            credentials: HashMap::new(),
-            encrypted_credentials: Vec::new(),
-            last_tested_at: None,
-            last_test_result: None,
-            credential_expires_at: None,
-            created_at: now,
-            updated_at: now,
-        }
+            "network_international".into(),
+            "Test Connector".into(),
+            "sandbox".into(),
+        );
+
+        assert_eq!(request.operator_id, operator_id);
+        assert_eq!(request.connector_id, "network_international");
+        assert_eq!(request.display_name, "Test Connector");
+        assert_eq!(request.environment, "sandbox");
+        assert_eq!(request.status, OnboardingStatus::Draft);
+        assert_eq!(request.health_status, HealthStatus::Unknown);
+        assert!(request.credentials.is_empty());
+        assert!(request.encrypted_credentials.is_empty());
+        assert!(request.last_tested_at.is_none());
+        assert!(request.last_test_result.is_none());
     }
 
-    /// Submit credentials for the link.
-    pub fn submit_credentials(
-        &mut self,
-        credentials: HashMap<String, String>,
-        schema: &ConnectorInfo,
-    ) -> Result<(), OnboardingError> {
-        // Validate required fields
-        for field in &schema.fields {
-            if field.required && !credentials.contains_key(&field.name) {
-                return Err(OnboardingError::MissingRequiredField(field.name.clone()));
-            }
-            // Validate regex if present
-            if let Some(ref _regex) = field.validation_regex {
-                if let Some(value) = credentials.get(&field.name) {
-                    if value.is_empty() && field.required {
-                        return Err(OnboardingError::InvalidFieldValue(field.name.clone()));
-                    }
-                    if !value.is_empty() {
-                        // For Phase 1, use length-based validation only
-                        if value.len() < (field.min_length.unwrap_or(0) as usize) {
-                            return Err(OnboardingError::InvalidFieldValue(field.name.clone()));
-                        }
-                    }
-                }
-            }
-        }
+    #[test]
+    fn test_submit_credentials_success() {
+        let operator_id = Uuid::now_v7();
+        let mut request = OnboardingRequest::new(
+            operator_id,
+            "network_international".into(),
+            "Test".into(),
+            "sandbox".into(),
+        );
 
-        // Store credentials (in production, would encrypt via KMS)
-        self.credentials = credentials;
-        self.status = OnboardingStatus::CredentialsSubmitted;
-        self.updated_at = Utc::now();
-        Ok(())
+        let connectors = default_connectors();
+        let schema = connectors.iter().find(|c| c.connector_id == "network_international").unwrap();
+
+        let mut credentials = HashMap::new();
+        credentials.insert("merchant_id".into(), "MER-12345".into());
+        credentials.insert("api_key".into(), "abc123def456abc123def456abc12345".into());
+        credentials.insert("environment".into(), "sandbox".into());
+
+        assert!(request.submit_credentials(credentials, schema).is_ok());
+        assert_eq!(request.status, OnboardingStatus::CredentialsSubmitted);
     }
 
-    /// Start connection testing.
-    pub fn start_test(&mut self) -> Result<(), OnboardingError> {
-        if self.status != OnboardingStatus::CredentialsSubmitted {
-            return Err(OnboardingError::InvalidTransition);
-        }
-        self.status = OnboardingStatus::Testing;
-        self.updated_at = Utc::now();
-        Ok(())
+    #[test]
+    fn test_submit_credentials_missing_field() {
+        let operator_id = Uuid::now_v7();
+        let mut request = OnboardingRequest::new(
+            operator_id,
+            "network_international".into(),
+            "Test".into(),
+            "sandbox".into(),
+        );
+
+        let connectors = default_connectors();
+        let schema = connectors.iter().find(|c| c.connector_id == "network_international").unwrap();
+
+        let credentials = HashMap::new(); // Empty — missing required fields
+        assert!(request.submit_credentials(credentials, schema).is_err());
+        assert_eq!(request.status, OnboardingStatus::Draft); // unchanged
     }
 
-    /// Record a successful connection test.
-    pub fn record_test_success(&mut self, result: ConnectionTestResult) -> Result<(), OnboardingError> {
-        if self.status != OnboardingStatus::Testing {
-            return Err(OnboardingError::InvalidTransition);
-        }
-        self.status = OnboardingStatus::Active;
-        self.health_status = HealthStatus::Healthy;
-        self.last_tested_at = Some(Utc::now());
-        self.last_test_result = Some(result);
-        self.updated_at = Utc::now();
-        Ok(())
+    #[test]
+    fn test_onboarding_lifecycle() {
+        let operator_id = Uuid::now_v7();
+        let mut request = OnboardingRequest::new(
+            operator_id,
+            "checkout_com".into(),
+            "My Checkout.com".into(),
+            "production".into(),
+        );
+
+        // Submit credentials
+        let connectors = default_connectors();
+        let schema = connectors.iter().find(|c| c.connector_id == "checkout_com").unwrap();
+        let mut credentials = HashMap::new();
+        credentials.insert("secret_key".into(), "sk_live_abcdef123456".into());
+        credentials.insert("public_key".into(), "pk_live_abcdef123456".into());
+        credentials.insert("environment".into(), "production".into());
+        assert!(request.submit_credentials(credentials, schema).is_ok());
+        assert_eq!(request.status, OnboardingStatus::CredentialsSubmitted);
+
+        // Start testing
+        assert!(request.start_test().is_ok());
+        assert_eq!(request.status, OnboardingStatus::Testing);
+
+        // Record test success
+        let result = ConnectionTestResult {
+            success: true,
+            latency_ms: 150,
+            error: None,
+            merchant_name: Some("Test Merchant".into()),
+            permissions: vec!["authorize".into(), "capture".into()],
+        };
+        assert!(request.record_test_success(result).is_ok());
+        assert_eq!(request.status, OnboardingStatus::Active);
+        assert_eq!(request.health_status, HealthStatus::Healthy);
+        assert!(request.last_tested_at.is_some());
+        assert!(request.last_test_result.is_some());
     }
 
-    /// Record a failed connection test.
-    pub fn record_test_failure(&mut self, result: ConnectionTestResult) -> Result<(), OnboardingError> {
-        if self.status != OnboardingStatus::Testing {
-            return Err(OnboardingError::InvalidTransition);
-        }
-        // Stay in testing status for retry
-        self.health_status = HealthStatus::Degraded;
-        self.last_tested_at = Some(Utc::now());
-        self.last_test_result = Some(result);
-        self.updated_at = Utc::now();
-        Ok(())
+    #[test]
+    fn test_deactivate_and_revoke() {
+        let operator_id = Uuid::now_v7();
+
+        // Start with an active onboarding
+        let connectors = default_connectors();
+        let schema = connectors.iter().find(|c| c.connector_id == "network_international").unwrap();
+        let mut credentials = HashMap::new();
+        credentials.insert("merchant_id".into(), "MER-12345".into());
+        credentials.insert("api_key".into(), "abc123def456abc123def456abc12345".into());
+        credentials.insert("environment".into(), "sandbox".into());
+
+        let mut request = OnboardingRequest::new(
+            operator_id,
+            "network_international".into(),
+            "Test".into(),
+            "sandbox".into(),
+        );
+        request.submit_credentials(credentials, schema).unwrap();
+        request.start_test().unwrap();
+        request.record_test_success(ConnectionTestResult {
+            success: true,
+            latency_ms: 100,
+            error: None,
+            merchant_name: None,
+            permissions: vec![],
+        }).unwrap();
+
+        assert_eq!(request.status, OnboardingStatus::Active);
+
+        // Deactivate
+        assert!(request.deactivate().is_ok());
+        assert_eq!(request.status, OnboardingStatus::Deactivated);
+        assert_eq!(request.health_status, HealthStatus::Down);
+
+        // Reactivate from Deactivated
+        assert!(OnboardingStatus::Deactivated.can_transition_to(&OnboardingStatus::Active));
+
+        // Revoke
+        assert!(request.revoke().is_ok());
+        assert_eq!(request.status, OnboardingStatus::Revoked);
+        assert!(request.status.is_terminal());
     }
 
-    /// Deactivate the link.
-    pub fn deactivate(&mut self) -> Result<(), OnboardingError> {
-        if !self.status.can_transition_to(&OnboardingStatus::Deactivated) {
-            return Err(OnboardingError::InvalidTransition);
-        }
-        self.status = OnboardingStatus::Deactivated;
-        self.health_status = HealthStatus::Down;
-        self.updated_at = Utc::now();
-        Ok(())
+    #[test]
+    fn test_invalid_state_transitions_return_error() {
+        let operator_id = Uuid::now_v7();
+        let mut request = OnboardingRequest::new(
+            operator_id,
+            "network_international".into(),
+            "Test".into(),
+            "sandbox".into(),
+        );
+
+        // Can't test before submitting credentials
+        assert!(request.start_test().is_err());
+
+        // Can't record success without testing
+        assert!(request.record_test_success(ConnectionTestResult {
+            success: true,
+            latency_ms: 0,
+            error: None,
+            merchant_name: None,
+            permissions: vec![],
+        }).is_err());
     }
-
-    /// Revoke the link credentials.
-    pub fn revoke(&mut self) -> Result<(), OnboardingError> {
-        if !self.status.can_transition_to(&OnboardingStatus::Revoked) {
-            return Err(OnboardingError::InvalidTransition);
-        }
-        self.status = OnboardingStatus::Revoked;
-        self.health_status = HealthStatus::Down;
-        self.updated_at = Utc::now();
-        Ok(())
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Default connectors registry
-// ---------------------------------------------------------------------------
-
-pub fn default_connectors() -> Vec<ConnectorInfo> {
-    vec![
-        ConnectorInfo {
-            connector_id: "network_international".into(),
-            display_name: "Network International".into(),
-            description: "UAE's leading acquirer — best for local card processing".into(),
-            supported_environments: vec!["sandbox".into(), "production".into()],
-            supported_card_schemes: vec!["visa".into(), "mastercard".into()],
-            supported_currencies: vec!["AED".into()],
-            fields: vec![
-                CredentialField {
-                    name: "merchant_id".into(),
-                    field_type: "text".into(),
-                    required: true,
-                    label: "Merchant ID".into(),
-                    placeholder: Some("MERCHANT12345".into()),
-                    validation_regex: Some("^[A-Z0-9]{8,20}$".into()),
-                    min_length: Some(8),
-                    max_length: Some(20),
-                    options: vec![],
-                    help_text: Some("Your Network International merchant ID".into()),
-                },
-                CredentialField {
-                    name: "api_key".into(),
-                    field_type: "password".into(),
-                    required: true,
-                    label: "API Key".into(),
-                    placeholder: Some("ni_live_...".into()),
-                    validation_regex: Some("^ni_(live|test)_[a-zA-Z0-9]+$".into()),
-                    min_length: Some(16),
-                    max_length: Some(64),
-                    options: vec![],
-                    help_text: Some("Find this in your NI dashboard under API Keys".into()),
-                },
-                CredentialField {
-                    name: "environment".into(),
-                    field_type: "select".into(),
-                    required: true,
-                    label: "Environment".into(),
-                    placeholder: None,
-                    validation_regex: None,
-                    min_length: None,
-                    max_length: None,
-                    options: vec![
-                        FieldOption { value: "sandbox".into(), label: "Sandbox (Testing)".into() },
-                        FieldOption { value: "production".into(), label: "Production (Live)".into() },
-                    ],
-                    help_text: Some("Use Sandbox for testing".into()),
-                },
-            ],
-        },
-        ConnectorInfo {
-            connector_id: "checkout_com".into(),
-            display_name: "Checkout.com".into(),
-            description: "Global PSP — multi-currency, strong fraud tools".into(),
-            supported_environments: vec!["sandbox".into(), "production".into()],
-            supported_card_schemes: vec!["visa".into(), "mastercard".into(), "amex".into()],
-            supported_currencies: vec!["AED".into(), "USD".into(), "EUR".into(), "GBP".into()],
-            fields: vec![
-                CredentialField {
-                    name: "secret_key".into(),
-                    field_type: "password".into(),
-                    required: true,
-                    label: "Secret Key".into(),
-                    placeholder: Some("sk_live_...".into()),
-                    validation_regex: Some("^sk_(test|live)_[a-zA-Z0-9]+$".into()),
-                    min_length: Some(32),
-                    max_length: Some(128),
-                    options: vec![],
-                    help_text: Some("Find this in your Checkout.com dashboard under Settings > API Keys".into()),
-                },
-                CredentialField {
-                    name: "public_key".into(),
-                    field_type: "password".into(),
-                    required: true,
-                    label: "Public Key".into(),
-                    placeholder: Some("pk_live_...".into()),
-                    validation_regex: Some("^pk_(test|live)_[a-zA-Z0-9]+$".into()),
-                    min_length: Some(24),
-                    max_length: Some(64),
-                    options: vec![],
-                    help_text: Some("Your public key from the same API Keys section".into()),
-                },
-                CredentialField {
-                    name: "environment".into(),
-                    field_type: "select".into(),
-                    required: true,
-                    label: "Environment".into(),
-                    placeholder: None,
-                    validation_regex: None,
-                    min_length: None,
-                    max_length: None,
-                    options: vec![
-                        FieldOption { value: "sandbox".into(), label: "Sandbox (Testing)".into() },
-                        FieldOption { value: "production".into(), label: "Production (Live)".into() },
-                    ],
-                    help_text: Some("Use Sandbox for testing. Switch to Production when ready".into()),
-                },
-            ],
-        },
-    ]
-}
-
-// ---------------------------------------------------------------------------
-// Errors
-// ---------------------------------------------------------------------------
-
-#[derive(Debug, Clone, thiserror::Error)]
-pub enum OnboardingError {
-    #[error("Onboarding request not found: {0}")]
-    NotFound(Uuid),
-    #[error("Invalid status transition")]
-    InvalidTransition,
-    #[error("Missing required field: {0}")]
-    MissingRequiredField(String),
-    #[error("Invalid field value: {0}")]
-    InvalidFieldValue(String),
-    #[error("Connector not found: {0}")]
-    ConnectorNotFound(String),
-    #[error("Invalid credentials")]
-    InvalidCredentials,
-    #[error("Duplicate credentials: already in use")]
-    DuplicateCredentials,
 }
