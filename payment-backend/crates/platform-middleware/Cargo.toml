@@ -17,4 +17,5 @@ argon2.workspace = true
 sea-orm.workspace = true
 platform-error.workspace = true
 platform-config.workspace = true
+shared-types.workspace = true
 url = "2"

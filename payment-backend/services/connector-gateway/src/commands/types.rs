@@ -32,6 +32,9 @@ pub struct UpdateGatewayProfile {
     pub monitoring: Option<MonitoringThresholds>,
     pub status: Option<ProfileStatus>,
     pub routing_priority: Option<i32>,
+    pub enabled_card_schemes: Option<Vec<CardScheme>>,
+    pub enabled_currencies: Option<Vec<String>>,
+    pub enabled_countries: Option<Vec<String>>,
 }
 
 pub struct TestConnection {

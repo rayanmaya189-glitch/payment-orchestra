@@ -1,7 +1,7 @@
 //! PostgreSQL-backed SubscriptionRepository using SeaORM + platform-db entities.
 
 use async_trait::async_trait;
-use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, Set, ActiveModelTrait};
+use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
 use uuid::Uuid;
 
 use crate::domain::*;

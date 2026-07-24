@@ -2,11 +2,10 @@
 
 use chrono::Utc;
 use tracing::info;
-use uuid::Uuid;
 
 use std::sync::Arc;
 use platform_messaging::{event_bus::{EventBus, publish_event_fire_and_forget}, encode_proto};
-use crate::domain::{KybCase, AmlAlert, AmlMonitor, ComplianceError};
+use crate::domain::{KybCase, AmlMonitor, ComplianceError};
 use crate::events::{ComplianceEvent, KybCaseSubmitted, KybCaseApproved, KybCaseRejected, AmlAlertCreated};
 use crate::repository::ComplianceRepository;
 use crate::commands::types::*;
@@ -235,6 +234,7 @@ impl<R: ComplianceRepository + Send + Sync> CommandHandler for ComplianceCommand
 #[cfg(test)]
 mod tests {
     use super::*;
+    use uuid::Uuid;
     use crate::domain::AlertStatus;
     use crate::repository::InMemoryComplianceRepository;
 

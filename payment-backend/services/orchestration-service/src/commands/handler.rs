@@ -7,7 +7,6 @@ use uuid::Uuid;
 
 use crate::domain::*;
 use crate::repository::*;
-use crate::events::*;
 use super::types::*;
 
 // ─── Command Handler Trait ───────────────────────────────────────────────────

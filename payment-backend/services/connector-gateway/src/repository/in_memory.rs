@@ -10,6 +10,7 @@ use uuid::Uuid;
 use crate::domain::{GatewayProfile, Money, ProfileStatus};
 use crate::repository::traits::GatewayProfileRepository;
 
+#[derive(Clone)]
 pub struct InMemoryGatewayProfileRepository {
     pub(super) profiles: Arc<RwLock<HashMap<Uuid, GatewayProfile>>>,
     pub(super) daily_volumes: Arc<RwLock<HashMap<Uuid, i64>>>,

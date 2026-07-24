@@ -5,7 +5,7 @@ edition.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-sea-orm.workspace = true
+sea-orm-migration.workspace = true
 tokio.workspace = true
 uuid.workspace = true
 chrono.workspace = true

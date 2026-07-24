@@ -2,11 +2,10 @@
 
 use chrono::Utc;
 use tracing::info;
-use uuid::Uuid;
 
 use std::sync::Arc;
 use platform_messaging::{event_bus::{EventBus, publish_event_fire_and_forget}, encode_proto};
-use crate::domain::{MerchantAcquirerLink, LinkEnvironment, LinkError};
+use crate::domain::{MerchantAcquirerLink, LinkError};
 use crate::events::{LinkEvent, LinkCreated, LinkEnabled, LinkDisabled, CredentialsRotated, ConnectionTested, HealthChanged};
 use crate::repository::LinkRepository;
 use crate::commands::types::*;
@@ -310,8 +309,9 @@ impl<R: LinkRepository + Send + Sync> CommandHandler for LinkCommandHandler<R> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use uuid::Uuid;
     use crate::repository::InMemoryLinkRepository;
-    use crate::domain::LinkStatus;
+    use crate::domain::{LinkStatus, LinkEnvironment};
 
     async fn setup() -> LinkCommandHandler<InMemoryLinkRepository> {
         let repo = InMemoryLinkRepository::new();

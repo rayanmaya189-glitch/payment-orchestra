@@ -2,6 +2,8 @@
 //! In a modular monolith, modules communicate via in-process traits (not network gRPC).
 
 pub mod health;
+pub mod grpc;
+pub mod rate_limit;
 
 pub use crate::commands::{CommandHandler, GatewayCommandHandler};
 pub use crate::queries::{QueryHandler, GatewayQueryHandler};

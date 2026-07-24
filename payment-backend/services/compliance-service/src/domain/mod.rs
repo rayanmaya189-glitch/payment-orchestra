@@ -196,6 +196,7 @@ impl AlertStatus {
         }
     }
 
+    #[allow(dead_code)]
     pub fn from_str(s: &str) -> Option<Self> {
         match s {
             "open" => Some(Self::Open),
@@ -220,10 +221,12 @@ pub enum AmlRuleType {
         report_threshold_minor_units: i64,
         near_threshold_percent: f64,
         min_transactions: u32,
+        #[allow(dead_code)]
         window_minutes: u32,
     },
     Velocity {
         max_count: u32,
+        #[allow(dead_code)]
         window_minutes: u32,
     },
     AmountAnomaly {
@@ -233,6 +236,7 @@ pub enum AmlRuleType {
     },
     RapidSuccession {
         max_count: u32,
+        #[allow(dead_code)]
         window_seconds: u32,
     },
 }
@@ -291,6 +295,7 @@ impl AmlMonitor {
         }
     }
 
+    #[allow(dead_code)]
     pub fn new_with_rules(rules: Vec<AmlRule>) -> Self {
         Self { rules }
     }
@@ -416,6 +421,7 @@ impl Default for AmlMonitor {
 // ─── Transaction Data for AML Scanning ──────────────────────────────────────
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct RecentTransaction {
     pub transaction_id: Uuid,
     pub amount_minor_units: i64,
@@ -426,6 +432,7 @@ pub struct RecentTransaction {
 // ─── SAR Report ─────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[allow(dead_code)]
 pub struct SarReport {
     pub report_id: Uuid,
     pub operator_id: Uuid,
@@ -437,6 +444,7 @@ pub struct SarReport {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[allow(dead_code)]
 pub struct SarTransaction {
     pub transaction_id: Uuid,
     pub amount_minor_units: i64,
@@ -447,6 +455,7 @@ pub struct SarTransaction {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[allow(dead_code)]
 pub enum SarStatus {
     Draft,
     Submitted,

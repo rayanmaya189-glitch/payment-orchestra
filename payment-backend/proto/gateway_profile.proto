@@ -1,0 +1,185 @@
+// gateway_profile.proto — Protobuf service definition for connector-gateway (BC-04)
+// Gateway Connector Framework — profile management, connector listing, credential validation
+// AI-Native Payment Orchestration Platform
+
+syntax = "proto3";
+package gateway_profile.v1;
+
+import "common.proto";
+
+// ─── Service ────────────────────────────────────────────────────────────────
+
+service GatewayProfileService {
+  // Create a new gateway profile for a connector
+  rpc CreateGatewayProfile(CreateGatewayProfileRequest) returns (CreateGatewayProfileResponse);
+  // Get a gateway profile by ID
+  rpc GetGatewayProfile(GetGatewayProfileRequest) returns (GatewayProfileView);
+  // List gateway profiles for an operator
+  rpc ListGatewayProfiles(ListGatewayProfilesRequest) returns (ListGatewayProfilesResponse);
+  // Update a gateway profile
+  rpc UpdateGatewayProfile(UpdateGatewayProfileRequest) returns (UpdateGatewayProfileResponse);
+  // List all available connectors with their capabilities
+  rpc ListConnectors(ListConnectorsRequest) returns (ListConnectorsResponse);
+  // Get connector onboarding schema (renders dynamic form)
+  rpc GetConnectorSchema(GetConnectorSchemaRequest) returns (ConnectorSchemaView);
+  // Validate connector credentials against acquirer sandbox
+  rpc ValidateCredentials(ValidateCredentialsRequest) returns (ValidateCredentialsResponse);
+  // Test connection to an acquirer
+  rpc TestConnection(TestConnectionRequest) returns (TestConnectionResponse);
+}
+
+// ─── Messages ───────────────────────────────────────────────────────────────
+
+message CreateGatewayProfileRequest {
+  string operator_id = 1;
+  string connector_id = 2;       // 'stripe' | 'checkout_com' | 'network_international' | 'telr'
+  string merchant_acquirer_link_id = 3;
+  int64 min_amount_minor = 4;
+  int64 max_amount_minor = 5;
+  int64 daily_volume_limit_minor = 6;
+  int64 fixed_fee_minor = 7;
+  int32 percentage_fee_bps = 8;
+  repeated string enabled_card_schemes = 9;   // "visa", "mastercard", "amex"
+  repeated string enabled_currencies = 10;     // "AED", "USD", "EUR"
+  repeated string enabled_countries = 11;      // "AE", "US"
+  int32 routing_priority = 12;
+  uint32 rate_limit_per_second = 13;
+  uint32 rate_limit_per_day = 14;
+  uint32 burst_size = 15;
+}
+
+message CreateGatewayProfileResponse {
+  string profile_id = 1;
+  string operator_id = 2;
+  string connector_id = 3;
+  string status = 4;
+  common.v1.Timestamp created_at = 5;
+}
+
+message GetGatewayProfileRequest {
+  string profile_id = 1;
+}
+
+message GatewayProfileView {
+  string profile_id = 1;
+  string operator_id = 2;
+  string connector_id = 3;
+  string status = 4;
+  int64 min_amount_minor = 5;
+  int64 max_amount_minor = 6;
+  int64 daily_volume_limit_minor = 7;
+  int64 fixed_fee_minor = 8;
+  int32 percentage_fee_bps = 9;
+  repeated string enabled_card_schemes = 10;
+  repeated string enabled_currencies = 11;
+  repeated string enabled_countries = 12;
+  int32 routing_priority = 13;
+  common.v1.Timestamp created_at = 14;
+  common.v1.Timestamp updated_at = 15;
+}
+
+message ListGatewayProfilesRequest {
+  string operator_id = 1;
+}
+
+message ListGatewayProfilesResponse {
+  repeated GatewayProfileView profiles = 1;
+}
+
+message UpdateGatewayProfileRequest {
+  string profile_id = 1;
+  int64 min_amount_minor = 2;
+  int64 max_amount_minor = 3;
+  int64 daily_volume_limit_minor = 4;
+  int64 fixed_fee_minor = 5;
+  int32 percentage_fee_bps = 6;
+  repeated string enabled_card_schemes = 7;
+  repeated string enabled_currencies = 8;
+  repeated string enabled_countries = 9;
+  int32 routing_priority = 10;
+}
+
+message UpdateGatewayProfileResponse {
+  string profile_id = 1;
+  string status = 2;
+  common.v1.Timestamp updated_at = 3;
+}
+
+message ListConnectorsRequest {
+  // empty — returns all registered connectors
+}
+
+message ConnectorInfoView {
+  string connector_id = 1;
+  string display_name = 2;
+  repeated string supported_card_schemes = 3;
+  repeated string supported_currencies = 4;
+  bool supports_partial_capture = 5;
+  bool supports_partial_refund = 6;
+  bool supports_webhook_settlement = 7;
+  string settlement_cycle = 8;
+  int32 cross_border_fee_bps = 9;
+  uint32 test_card_count = 10;
+}
+
+message ListConnectorsResponse {
+  repeated ConnectorInfoView connectors = 1;
+}
+
+message GetConnectorSchemaRequest {
+  string connector_id = 1;
+}
+
+message OnboardingFieldView {
+  string name = 1;
+  string field_type = 2;  // "string" | "password" | "url" | "integer" | "select"
+  bool required = 3;
+  string label = 4;
+  string validation_regex = 5;
+  string help_text = 6;
+  repeated SelectOptionView options = 7;  // only for "select" type
+}
+
+message SelectOptionView {
+  string value = 1;
+  string label = 2;
+}
+
+message ConnectorSchemaView {
+  string connector_id = 1;
+  repeated OnboardingFieldView fields = 2;
+}
+
+message ValidateCredentialsRequest {
+  string connector_id = 1;
+  string api_key = 2;
+  string secret_key = 3;
+  string merchant_id = 4;
+  string store_id = 5;
+  string environment = 6;
+  map<string, string> additional_fields = 7;
+}
+
+message ValidateCredentialsResponse {
+  bool valid = 1;
+  string merchant_name = 2;
+  repeated string permissions = 3;
+  string error_message = 4;
+}
+
+message TestConnectionRequest {
+  string connector_id = 1;
+  string api_key = 2;
+  string secret_key = 3;
+  string merchant_id = 4;
+  string store_id = 5;
+  string environment = 6;
+  map<string, string> additional_fields = 7;
+}
+
+message TestConnectionResponse {
+  bool success = 1;
+  string merchant_name = 2;
+  uint32 latency_ms = 3;
+  string error_message = 4;
+}

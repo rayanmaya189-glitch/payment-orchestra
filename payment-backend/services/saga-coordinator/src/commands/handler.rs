@@ -1,7 +1,6 @@
 //! Saga Coordinator command handlers — BC-17
 
 use async_trait::async_trait;
-use uuid::Uuid;
 
 use crate::domain::*;
 use crate::repository::*;

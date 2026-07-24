@@ -5,8 +5,7 @@ use chrono::Utc;
 use uuid::Uuid;
 
 use crate::domain::{
-    self, CardScheme, ConnectorRegistry, FeeStructure, GatewayProfile, MonitoringThresholds,
-    ProfileStatus, RateLimitConfig, TransactionLimits,
+    self, ConnectorRegistry, GatewayProfile, ProfileStatus,
 };
 use crate::events::{ConnectionTested, CredentialsValidated, GatewayEvent, GatewayProfileCreated, GatewayProfileUpdated};
 use crate::repository::GatewayProfileRepository;
@@ -90,6 +89,15 @@ impl<R: GatewayProfileRepository + Send + Sync> CommandHandler for GatewayComman
         }
         if let Some(priority) = cmd.routing_priority {
             profile.routing_priority = priority;
+        }
+        if let Some(schemes) = cmd.enabled_card_schemes {
+            profile.enabled_card_schemes = schemes;
+        }
+        if let Some(currencies) = cmd.enabled_currencies {
+            profile.enabled_currencies = currencies;
+        }
+        if let Some(countries) = cmd.enabled_countries {
+            profile.enabled_countries = countries;
         }
         profile.updated_at = Utc::now();
 

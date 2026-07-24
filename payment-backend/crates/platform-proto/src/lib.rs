@@ -73,3 +73,7 @@ pub mod analytics {
 pub mod saga {
     include!(concat!(env!("OUT_DIR"), "/saga.v1.rs"));
 }
+
+pub mod gateway_profile {
+    include!(concat!(env!("OUT_DIR"), "/gateway_profile.v1.rs"));
+}

@@ -1,7 +1,6 @@
 //! Notification Service command handlers — BC-14
 
 use async_trait::async_trait;
-use uuid::Uuid;
 
 use crate::domain::*;
 use crate::repository::*;

@@ -1,8 +1,6 @@
 //! Command handlers for merchant-connector-onboarding
 
 use async_trait::async_trait;
-use std::collections::HashMap;
-use uuid::Uuid;
 
 use crate::domain::*;
 use crate::repository::*;

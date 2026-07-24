@@ -6,7 +6,7 @@ use uuid::Uuid;
 
 use std::sync::Arc;
 use platform_messaging::{event_bus::{EventBus, publish_event_fire_and_forget}, encode_proto};
-use crate::domain::{Principal, ApiKey, ApiKeyStatus, PendingChange, AuthError, IamError};
+use crate::domain::{ApiKey, ApiKeyStatus, PendingChange, AuthError, IamError};
 use crate::events::{IamEvent, PrincipalAuthenticated, PermissionDenied, ApiKeyCreated, ApiKeyRevoked};
 use crate::repository::IamRepository;
 use crate::commands::types::*;
@@ -301,7 +301,8 @@ impl<R: IamRepository> IamCommandHandler<R> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::ChangeStatus;
+    use uuid::Uuid;
+    use crate::domain::{ChangeStatus, Principal};
     use crate::repository::InMemoryIamRepository;
 
     fn create_handler() -> IamCommandHandler<InMemoryIamRepository> {

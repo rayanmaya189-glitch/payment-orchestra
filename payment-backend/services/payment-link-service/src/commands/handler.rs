@@ -3,7 +3,6 @@
 use async_trait::async_trait;
 use chrono::{Duration, Utc};
 use rand::Rng;
-use uuid::Uuid;
 
 use crate::domain::*;
 use crate::repository::*;

@@ -9,7 +9,7 @@ use async_nats::ConnectOptions;
 use std::time::Duration;
 use tracing::info;
 
-use crate::event_bus::{EventBus, EventEnvelope};
+use crate::event_bus::EventBus;
 
 /// NATS JetStream-backed event bus.
 ///
@@ -119,6 +119,7 @@ impl EventBus for NatsJetStreamEventBus {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::event_bus::EventEnvelope;
 
     #[tokio::test]
     async fn test_publish_without_nats_returns_error() {

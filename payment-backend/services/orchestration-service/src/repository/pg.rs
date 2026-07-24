@@ -7,7 +7,7 @@ use async_trait::async_trait;
 use std::collections::HashMap;
 use std::sync::Arc;
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, Set,
+    ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter,
 };
 use tokio::sync::RwLock;
 use uuid::Uuid;

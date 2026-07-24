@@ -35,6 +35,7 @@ impl Default for InMemoryComplianceRepository {
 
 /// Helper to add recent transactions (for testing)
 impl InMemoryComplianceRepository {
+    #[allow(dead_code)]
     pub async fn add_transactions(&self, txns: Vec<RecentTransaction>) {
         let mut map = self.recent_txns.write().await;
         map.extend(txns);

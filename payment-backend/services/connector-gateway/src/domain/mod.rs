@@ -14,8 +14,10 @@ use uuid::Uuid;
 // ─── Re-exports ──────────────────────────────────────────────────────────────
 
 pub use onboarding::*;
+pub use stripe_connector::StripeConnector;
 
 mod onboarding;
+mod stripe_connector;
 
 // ─── Error Types ─────────────────────────────────────────────────────────────
 
@@ -507,6 +509,7 @@ pub struct CircuitBreaker {
     last_failure: Option<Instant>,
     open_duration: std::time::Duration,
     error_threshold: f64,
+    #[allow(dead_code)]
     window: std::time::Duration,
     half_open_max_requests: u32,
     half_open_requests: u32,
@@ -639,6 +642,35 @@ impl ConnectorRegistry {
 
     pub fn list_all(&self) -> Vec<&dyn AcquirerConnector> {
         self.connectors.values().map(|c| c.as_ref()).collect()
+    }
+}
+
+impl ConnectorRegistry {
+    /// Create a new registry pre-populated with all known connectors.
+    ///
+    /// Registers:
+    /// - `stripe` — real HTTP connector for Stripe's REST API
+    /// - Mocks: `network_international`, `checkout_com`, `telr`
+    pub fn with_all_connectors() -> Self {
+        let mut registry = Self::new();
+
+        // Register the real Stripe connector (uses default config for sandbox)
+        let stripe_config = ConnectorConfig {
+            api_key: Some("sk_test_placeholder".into()),
+            secret_key: Some("sk_test_placeholder".into()),  // Stripe uses secret_key
+            merchant_id: None,
+            store_id: None,
+            environment: "sandbox".into(),
+            additional_fields: HashMap::new(),
+        };
+        registry.register(Box::new(StripeConnector::new(&stripe_config)));
+
+        // Register mock connectors for testing
+        registry.register(Box::new(mocks::MockNetworkIntlConnector::new("sandbox")));
+        registry.register(Box::new(mocks::MockCheckoutComConnector::new("sandbox")));
+        registry.register(Box::new(mocks::MockTelrConnector::new("sandbox")));
+
+        registry
     }
 }
 
@@ -836,6 +868,7 @@ pub mod mocks {
 
     pub struct MockNetworkIntlConnector {
         circuit_breaker: std::sync::Mutex<CircuitBreaker>,
+        #[allow(dead_code)]
         decline_table: DeclineMappingTable,
         environment: String,
     }
@@ -1042,6 +1075,7 @@ pub mod mocks {
     // ── Checkout.com Mock (International PSP) ─────────────────────────
 
     pub struct MockCheckoutComConnector {
+        #[allow(dead_code)]
         environment: String,
     }
 
@@ -1246,6 +1280,7 @@ pub mod mocks {
     // ── Telr Mock (Regional PSP) ──────────────────────────────────────
 
     pub struct MockTelrConnector {
+        #[allow(dead_code)]
         environment: String,
     }
 

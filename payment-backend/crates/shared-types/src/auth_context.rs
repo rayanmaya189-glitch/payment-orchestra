@@ -15,10 +15,21 @@ pub struct AuthContext {
 
 impl AuthContext {
     pub fn has_permission(&self, permission: &str) -> bool {
-        self.permissions.iter().any(|p| p == permission || p == "*")
+        self.permissions.iter().any(|p| {
+            // Superuser or admin wildcard matches everything
+            if p == "*" || p == "admin.*" {
+                return true;
+            }
+            // Resource wildcard: resource:* matches resource:action
+            if let Some(resource) = p.strip_suffix(":*") {
+                return permission.starts_with(&format!("{}:", resource));
+            }
+            // Exact match
+            p == permission
+        })
     }
 
     pub fn is_admin(&self) -> bool {
-        self.has_permission("admin.*")
+        self.permissions.iter().any(|p| p == "admin.*" || p == "*")
     }
 }

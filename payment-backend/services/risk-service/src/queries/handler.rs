@@ -6,7 +6,6 @@ use uuid::Uuid;
 
 use crate::domain::*;
 use crate::repository::*;
-use crate::queries::types::*;
 
 #[async_trait]
 pub trait QueryHandler: Send + Sync {

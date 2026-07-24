@@ -5,6 +5,9 @@ pub mod envelope;
 pub mod consumer;
 pub mod dlq;
 
+// Re-export key types at crate root for accessibility
+pub use event_bus::{EventBus, NoopEventBus, ChannelEventBus, EventEnvelope, publish_event_fire_and_forget};
+
 /// Encode a `prost::Message` into protobuf bytes.
 ///
 /// Eliminates the 3-line boilerplate (`let mut buf = Vec::new();` + `prost::Message::encode` + `map_err`)

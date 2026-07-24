@@ -1,7 +1,7 @@
 //! PostgreSQL-backed DisputeRepository using SeaORM + platform-db entities.
 
 use async_trait::async_trait;
-use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, Set};
+use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
 use uuid::Uuid;
 
 use super::DisputeRepository;

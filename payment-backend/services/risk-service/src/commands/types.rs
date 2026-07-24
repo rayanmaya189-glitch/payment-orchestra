@@ -2,7 +2,7 @@
 
 use uuid::Uuid;
 
-use crate::domain::{RiskAssessment, RiskRule};
+
 
 /// Assess risk for a payment intent synchronously.
 pub struct AssessRiskCommand {

@@ -183,6 +183,7 @@ impl MerchantAcquirerLink {
     }
 
     /// Mark credentials as expired
+    #[allow(dead_code)]
     pub fn mark_credentials_expired(&mut self) {
         self.status = LinkStatus::CredentialsExpired;
         self.updated_at = Utc::now();

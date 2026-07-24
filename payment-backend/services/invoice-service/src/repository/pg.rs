@@ -1,8 +1,8 @@
 //! PostgreSQL-backed InvoiceRepository using SeaORM + platform-db entities.
 
 use async_trait::async_trait;
-use chrono::{DateTime, Utc};
-use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, Set};
+use chrono::Utc;
+use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
 use uuid::Uuid;
 
 use super::InvoiceRepository;

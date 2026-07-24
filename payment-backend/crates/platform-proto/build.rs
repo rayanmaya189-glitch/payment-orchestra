@@ -24,6 +24,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "notification.proto",
         "analytics.proto",
         "saga.proto",
+        "gateway_profile.proto",
     ];
 
     let full_paths: Vec<std::path::PathBuf> = all_proto_files
@@ -78,6 +79,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "notification.proto",
         "analytics.proto",
         "saga.proto",
+        "gateway_profile.proto",
     ];
     let service_paths: Vec<std::path::PathBuf> = service_proto_files
         .iter()

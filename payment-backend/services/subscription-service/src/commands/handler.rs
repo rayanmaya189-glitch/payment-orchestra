@@ -1,7 +1,6 @@
 //! Command handler trait and implementation for subscription-service.
 
 use async_trait::async_trait;
-use uuid::Uuid;
 
 use crate::domain::*;
 use crate::repository::*;

@@ -6,9 +6,10 @@
 use async_trait::async_trait;
 use chrono::Utc;
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, Set,
+    ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter,
 };
 use uuid::Uuid;
+
 
 use super::*;
 use crate::domain::*;
