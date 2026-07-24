@@ -30,7 +30,7 @@ impl SettlementBatchRepository for PostgresReconciliationRepository {
 
     async fn save_settlement_batch(
         &self,
-        batch: &SettlementBatch,
+        batch: &mut SettlementBatch,
     ) -> Result<(), ReconciliationError> {
         let model = settlement_batch_domain_to_model(batch)?;
         let exists = SettlementBatchEntity::find_by_id(batch.settlement_batch_id)
@@ -124,5 +124,6 @@ fn settlement_batch_model_to_domain(m: SettlementBatchModel) -> Result<Settlemen
         records,
         ingested_at: m.ingested_at,
         processed_at: m.matched_at,
+        pending_events: Vec::new(),
     })
 }

@@ -1,6 +1,16 @@
 //! Event type definitions for invoice-service.
 
 use chrono::{DateTime, Utc};
+
+// ─── Event type string constants ─────────────────────────────────────────────
+
+pub const INVOICE_CREATED: &str = "invoice.created";
+pub const INVOICE_SENT: &str = "invoice.sent";
+pub const INVOICE_CANCELLED: &str = "invoice.cancelled";
+pub const INVOICE_PAID: &str = "invoice.paid";
+pub const INVOICE_PARTIALLY_PAID: &str = "invoice.partially_paid";
+pub const INVOICE_OVERDUE: &str = "invoice.overdue";
+pub const PAYMENT_LINKED: &str = "invoice.payment_linked";
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -13,6 +23,32 @@ pub enum InvoiceEvent {
     InvoicePartiallyPaid(InvoicePartiallyPaid),
     InvoiceOverdue(InvoiceOverdue),
     PaymentLinked(PaymentLinked),
+}
+
+impl InvoiceEvent {
+    pub fn event_type(&self) -> &'static str {
+        match self {
+            Self::InvoiceCreated(_) => INVOICE_CREATED,
+            Self::InvoiceSent(_) => INVOICE_SENT,
+            Self::InvoiceCancelled(_) => INVOICE_CANCELLED,
+            Self::InvoicePaid(_) => INVOICE_PAID,
+            Self::InvoicePartiallyPaid(_) => INVOICE_PARTIALLY_PAID,
+            Self::InvoiceOverdue(_) => INVOICE_OVERDUE,
+            Self::PaymentLinked(_) => PAYMENT_LINKED,
+        }
+    }
+
+    pub fn occurred_at(&self) -> DateTime<Utc> {
+        match self {
+            Self::InvoiceCreated(e) => e.occurred_at,
+            Self::InvoiceSent(e) => e.occurred_at,
+            Self::InvoiceCancelled(e) => e.occurred_at,
+            Self::InvoicePaid(e) => e.occurred_at,
+            Self::InvoicePartiallyPaid(e) => e.occurred_at,
+            Self::InvoiceOverdue(e) => e.occurred_at,
+            Self::PaymentLinked(e) => e.occurred_at,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

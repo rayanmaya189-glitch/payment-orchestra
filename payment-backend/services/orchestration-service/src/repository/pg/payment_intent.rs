@@ -30,7 +30,7 @@ impl PaymentIntentRepository for PostgresOrchestrationRepository {
 
     async fn save_payment_intent(
         &self,
-        intent: &PaymentIntent,
+        intent: &mut PaymentIntent,
     ) -> Result<(), OrchestrationError> {
         let model = payment_intent_domain_to_model(intent)?;
         let exists = PaymentIntentEntity::find_by_id(intent.payment_intent_id)
@@ -152,6 +152,7 @@ fn payment_intent_model_to_domain(
         gateway_selection_reason: None,
         routing_attempts,
         version: 0,
+        pending_events: Vec::new(),
         created_at: m.created_at,
         updated_at: m.updated_at,
     })

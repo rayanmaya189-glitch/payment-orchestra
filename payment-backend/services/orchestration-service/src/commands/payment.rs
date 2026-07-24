@@ -74,7 +74,7 @@ impl<R: OrchestrationRepository + Send + Sync> OrchestrationCommandHandler<R> {
             events: events.clone(),
         };
 
-        self.repo.save_payment_intent(&intent).await?;
+        self.repo.save_payment_intent(&mut intent).await?;
         self.repo.store_idempotency(&idem_key, &serde_json::to_value(&result).unwrap_or_default()).await?;
 
         Ok(result)
@@ -156,7 +156,7 @@ impl<R: OrchestrationRepository + Send + Sync> OrchestrationCommandHandler<R> {
                     attempted_at: Utc::now(),
                 });
 
-                self.repo.save_payment_intent(&intent).await?;
+                self.repo.save_payment_intent(&mut intent).await?;
 
                 Ok(PaymentIntentResult {
                     payment_intent_id: cmd.payment_intent_id,
@@ -204,7 +204,7 @@ impl<R: OrchestrationRepository + Send + Sync> OrchestrationCommandHandler<R> {
                 for event in &events {
                     intent.apply_event(event);
                 }
-                self.repo.save_payment_intent(&intent).await?;
+                self.repo.save_payment_intent(&mut intent).await?;
 
                 Ok(PaymentIntentResult {
                     payment_intent_id: cmd.payment_intent_id,
@@ -271,7 +271,7 @@ impl<R: OrchestrationRepository + Send + Sync> OrchestrationCommandHandler<R> {
             intent.apply_event(event);
         }
 
-        self.repo.save_payment_intent(&intent).await?;
+        self.repo.save_payment_intent(&mut intent).await?;
 
         Ok(PaymentIntentResult {
             payment_intent_id: cmd.payment_intent_id,
@@ -305,7 +305,7 @@ impl<R: OrchestrationRepository + Send + Sync> OrchestrationCommandHandler<R> {
             intent.apply_event(event);
         }
 
-        self.repo.save_payment_intent(&intent).await?;
+        self.repo.save_payment_intent(&mut intent).await?;
 
         Ok(PaymentIntentResult {
             payment_intent_id: cmd.payment_intent_id,
@@ -363,7 +363,7 @@ impl<R: OrchestrationRepository + Send + Sync> OrchestrationCommandHandler<R> {
             intent.apply_event(event);
         }
 
-        self.repo.save_payment_intent(&intent).await?;
+        self.repo.save_payment_intent(&mut intent).await?;
 
         Ok(PaymentIntentResult {
             payment_intent_id: cmd.payment_intent_id,

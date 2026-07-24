@@ -32,7 +32,7 @@ impl SubscriptionRepository for PostgresSubscriptionRepository {
         }
     }
 
-    async fn save(&self, sub: &Subscription) -> Result<(), SubscriptionError> {
+    async fn save(&self, sub: &mut Subscription) -> Result<(), SubscriptionError> {
         let model = domain_to_model(sub)?;
         let exists = SubEntity::find_by_id(sub.subscription_id)
             .one(&self.db)
@@ -135,5 +135,6 @@ fn model_to_domain(m: SubModel) -> Result<Subscription, SubscriptionError> {
         cancelled_at: m.cancelled_at,
         paused_at: m.paused_at,
         resumed_at: m.resumed_at,
+        pending_events: Vec::new(),
     })
 }

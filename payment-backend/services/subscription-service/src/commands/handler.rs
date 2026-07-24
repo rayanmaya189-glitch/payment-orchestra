@@ -34,7 +34,7 @@ impl<R: SubscriptionRepository> SubscriptionCommandHandler<R> {
 #[async_trait]
 impl<R: SubscriptionRepository + Send + Sync> CommandHandler for SubscriptionCommandHandler<R> {
     async fn create_subscription(&self, cmd: CreateSubscriptionCommand) -> Result<Subscription, SubscriptionError> {
-        let subscription = Subscription::new(
+        let mut subscription = Subscription::new(
             cmd.operator_id,
             cmd.customer_id,
             &cmd.plan,
@@ -42,7 +42,7 @@ impl<R: SubscriptionRepository + Send + Sync> CommandHandler for SubscriptionCom
             cmd.max_dunning_retries.unwrap_or(3),
         )?;
 
-        self.repo.save(&subscription).await?;
+        self.repo.save(&mut subscription).await?;
         Ok(subscription)
     }
 
@@ -51,7 +51,7 @@ impl<R: SubscriptionRepository + Send + Sync> CommandHandler for SubscriptionCom
             .ok_or(SubscriptionError::NotFound(cmd.subscription_id))?;
 
         subscription.cancel(cmd.has_running_renewal)?;
-        self.repo.save(&subscription).await?;
+        self.repo.save(&mut subscription).await?;
         Ok(subscription)
     }
 
@@ -60,7 +60,7 @@ impl<R: SubscriptionRepository + Send + Sync> CommandHandler for SubscriptionCom
             .ok_or(SubscriptionError::NotFound(cmd.subscription_id))?;
 
         subscription.pause()?;
-        self.repo.save(&subscription).await?;
+        self.repo.save(&mut subscription).await?;
         Ok(subscription)
     }
 
@@ -69,7 +69,7 @@ impl<R: SubscriptionRepository + Send + Sync> CommandHandler for SubscriptionCom
             .ok_or(SubscriptionError::NotFound(cmd.subscription_id))?;
 
         subscription.resume()?;
-        self.repo.save(&subscription).await?;
+        self.repo.save(&mut subscription).await?;
         Ok(subscription)
     }
 
@@ -99,7 +99,7 @@ impl<R: SubscriptionRepository + Send + Sync> CommandHandler for SubscriptionCom
         }
 
         let cycle = subscription.start_billing_cycle()?;
-        self.repo.save(&subscription).await?;
+        self.repo.save(&mut subscription).await?;
 
         Ok(RenewResult {
             subscription_id: cmd.subscription_id,
@@ -115,7 +115,7 @@ impl<R: SubscriptionRepository + Send + Sync> CommandHandler for SubscriptionCom
             .ok_or(SubscriptionError::NotFound(cmd.subscription_id))?;
 
         subscription.record_successful_payment(cmd.billing_cycle_id, cmd.payment_intent_id)?;
-        self.repo.save(&subscription).await?;
+        self.repo.save(&mut subscription).await?;
         Ok(subscription)
     }
 
@@ -125,11 +125,11 @@ impl<R: SubscriptionRepository + Send + Sync> CommandHandler for SubscriptionCom
 
         match subscription.record_failed_payment(cmd.billing_cycle_id) {
             Ok(_) => {
-                self.repo.save(&subscription).await?;
+                self.repo.save(&mut subscription).await?;
                 Ok(subscription)
             }
             Err(SubscriptionError::DunningExhausted) => {
-                self.repo.save(&subscription).await?;
+                self.repo.save(&mut subscription).await?;
                 Ok(subscription)
             }
             Err(e) => Err(e),

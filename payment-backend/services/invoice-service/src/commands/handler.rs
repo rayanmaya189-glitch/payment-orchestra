@@ -40,7 +40,7 @@ impl<R: InvoiceRepository + Send + Sync> CommandHandler for InvoiceCommandHandle
         }
 
         let invoice_id = Uuid::now_v7();
-        let invoice = Invoice::new(
+        let mut invoice = Invoice::new(
             invoice_id,
             cmd.operator_id,
             cmd.order_reference.clone(),
@@ -61,7 +61,9 @@ impl<R: InvoiceRepository + Send + Sync> CommandHandler for InvoiceCommandHandle
             occurred_at: Utc::now(),
         });
 
-        self.repo.save_invoice(&invoice).await?;
+        invoice.apply_event(&event);
+
+        self.repo.save_invoice(&mut invoice).await?;
 
         Ok(InvoiceResult {
             invoice_id,
@@ -77,15 +79,15 @@ impl<R: InvoiceRepository + Send + Sync> CommandHandler for InvoiceCommandHandle
             .ok_or(InvoiceError::NotFound(cmd.invoice_id))?;
 
         invoice.status.can_transition_to(&InvoiceStatus::Sent)?;
-        invoice.status = InvoiceStatus::Sent;
-        invoice.updated_at = Utc::now();
 
         let event = InvoiceEvent::InvoiceSent(InvoiceSent {
             invoice_id: cmd.invoice_id,
             occurred_at: Utc::now(),
         });
 
-        self.repo.save_invoice(&invoice).await?;
+        invoice.apply_event(&event);
+
+        self.repo.save_invoice(&mut invoice).await?;
 
         Ok(InvoiceResult {
             invoice_id: cmd.invoice_id,
@@ -108,7 +110,9 @@ impl<R: InvoiceRepository + Send + Sync> CommandHandler for InvoiceCommandHandle
             occurred_at: Utc::now(),
         });
 
-        self.repo.save_invoice(&invoice).await?;
+        invoice.apply_event(&event);
+
+        self.repo.save_invoice(&mut invoice).await?;
 
         Ok(InvoiceResult {
             invoice_id: cmd.invoice_id,
@@ -144,7 +148,9 @@ impl<R: InvoiceRepository + Send + Sync> CommandHandler for InvoiceCommandHandle
             })
         };
 
-        self.repo.save_invoice(&invoice).await?;
+        invoice.apply_event(&event);
+
+        self.repo.save_invoice(&mut invoice).await?;
 
         Ok(InvoiceResult {
             invoice_id: cmd.invoice_id,
@@ -169,7 +175,9 @@ impl<R: InvoiceRepository + Send + Sync> CommandHandler for InvoiceCommandHandle
             occurred_at: Utc::now(),
         });
 
-        self.repo.save_invoice(&invoice).await?;
+        invoice.apply_event(&event);
+
+        self.repo.save_invoice(&mut invoice).await?;
 
         Ok(InvoiceResult {
             invoice_id: cmd.invoice_id,

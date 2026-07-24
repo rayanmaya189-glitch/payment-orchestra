@@ -4,6 +4,8 @@ use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use crate::events::SubscriptionEvent;
+
 use super::billing_cycle::{BillingCycle, BillingCycleStatus};
 use super::dunning::{DunningRetry, DunningStatus};
 use super::error::SubscriptionError;
@@ -32,6 +34,9 @@ pub struct Subscription {
     pub cancelled_at: Option<DateTime<Utc>>,
     pub paused_at: Option<DateTime<Utc>>,
     pub resumed_at: Option<DateTime<Utc>>,
+    /// Events that have been applied but not yet persisted.
+    #[serde(default)]
+    pub pending_events: Vec<SubscriptionEvent>,
 }
 
 impl Subscription {
@@ -82,6 +87,7 @@ impl Subscription {
             cancelled_at: None,
             paused_at: None,
             resumed_at: None,
+            pending_events: Vec::new(),
         })
     }
 
@@ -222,6 +228,62 @@ impl Subscription {
 
         self.dunning_retries.push(retry.clone());
         Ok(retry)
+    }
+
+    /// Apply a subscription event to evolve the aggregate state.
+    pub fn apply_event(&mut self, event: &SubscriptionEvent) {
+        self.pending_events.push(event.clone());
+        match event {
+            SubscriptionEvent::Created(e) => {
+                self.status = SubscriptionStatus::Active;
+                self.plan_amount_minor_units = e.amount_minor_units;
+                self.currency = e.currency.clone();
+                self.current_period_start = e.current_period_start;
+                self.current_period_end = e.current_period_end;
+                self.created_at = e.occurred_at;
+            }
+            SubscriptionEvent::Cancelled(e) => {
+                self.status = SubscriptionStatus::Cancelled;
+                self.cancelled_at = Some(e.occurred_at);
+            }
+            SubscriptionEvent::Paused(e) => {
+                self.status = SubscriptionStatus::Paused;
+                self.paused_at = Some(e.occurred_at);
+            }
+            SubscriptionEvent::Resumed(e) => {
+                self.status = SubscriptionStatus::Active;
+                self.resumed_at = Some(e.occurred_at);
+            }
+            SubscriptionEvent::RenewalStarted(_e) => {
+                // Billing cycle tracking is handled separately
+            }
+            SubscriptionEvent::RenewalSucceeded(e) => {
+                if let Some(cycle) = self.billing_cycles.iter_mut()
+                    .find(|c| c.billing_cycle_id == e.billing_cycle_id)
+                {
+                    cycle.status = BillingCycleStatus::Succeeded;
+                    cycle.payment_intent_id = Some(e.payment_intent_id);
+                }
+                if self.status == SubscriptionStatus::PastDue {
+                    self.status = SubscriptionStatus::Active;
+                    self.dunning_retry_count = 0;
+                }
+            }
+            SubscriptionEvent::RenewalFailed(e) => {
+                if let Some(cycle) = self.billing_cycles.iter_mut()
+                    .find(|c| c.billing_cycle_id == e.billing_cycle_id)
+                {
+                    cycle.status = BillingCycleStatus::Failed;
+                }
+            }
+            SubscriptionEvent::DunningAttempted(_e) => {
+                self.dunning_retry_count += 1;
+            }
+            SubscriptionEvent::DunningExhausted(_e) => {
+                self.status = SubscriptionStatus::Cancelled;
+                self.cancelled_at = Some(Utc::now());
+            }
+        }
     }
 
     /// Check if a dunning retry is due now.

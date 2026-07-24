@@ -14,9 +14,11 @@ impl SettlementBatchRepository for InMemoryReconciliationRepository {
         Ok(store.get(&id).cloned())
     }
 
-    async fn save_settlement_batch(&self, batch: &SettlementBatch) -> Result<(), ReconciliationError> {
+    async fn save_settlement_batch(&self, batch: &mut SettlementBatch) -> Result<(), ReconciliationError> {
         let checksum = batch.file_checksum.clone();
         let batch_id = batch.settlement_batch_id;
+        // Clear pending_events — they've been persisted
+        batch.pending_events.clear();
         self.batches.write().await.insert(batch_id, batch.clone());
         self.batch_checksums.write().await.insert(checksum, batch_id);
         Ok(())

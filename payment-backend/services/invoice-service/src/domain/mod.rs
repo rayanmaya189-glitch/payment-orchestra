@@ -1,6 +1,8 @@
 //! Invoice-service domain model — Invoice lifecycle management.
 //! CRUD + events aggregate: Invoice.
 
+use crate::events::InvoiceEvent;
+
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -111,6 +113,9 @@ pub struct Invoice {
     pub payment_intent_ids: Vec<Uuid>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+    /// Events pending persistence to the event store.
+    #[serde(default)]
+    pub pending_events: Vec<InvoiceEvent>,
 }
 
 impl Invoice {
@@ -150,7 +155,53 @@ impl Invoice {
             payment_intent_ids: Vec::new(),
             created_at: now,
             updated_at: now,
+            pending_events: Vec::new(),
         })
+    }
+
+    /// Apply an invoice event to evolve the aggregate state.
+    pub fn apply_event(&mut self, event: &InvoiceEvent) {
+        self.pending_events.push(event.clone());
+        match event {
+            InvoiceEvent::InvoiceCreated(e) => {
+                self.status = InvoiceStatus::Draft;
+                self.total_amount_minor = e.total_amount_minor;
+                self.currency = e.currency.clone();
+                self.due_date = e.due_date;
+                self.recipient_email = e.recipient_email.clone();
+                self.created_at = e.occurred_at;
+                self.updated_at = e.occurred_at;
+            }
+            InvoiceEvent::InvoiceSent(e) => {
+                self.status = InvoiceStatus::Sent;
+                self.updated_at = e.occurred_at;
+            }
+            InvoiceEvent::InvoiceCancelled(e) => {
+                self.status = InvoiceStatus::Cancelled;
+                self.updated_at = e.occurred_at;
+            }
+            InvoiceEvent::InvoicePaid(e) => {
+                self.paid_amount_minor = e.paid_amount_minor;
+                if e.fully_paid {
+                    self.status = InvoiceStatus::Paid;
+                } else {
+                    self.status = InvoiceStatus::PartiallyPaid;
+                }
+                self.updated_at = e.occurred_at;
+            }
+            InvoiceEvent::InvoicePartiallyPaid(e) => {
+                self.paid_amount_minor += e.paid_amount_minor;
+                self.status = InvoiceStatus::PartiallyPaid;
+                self.updated_at = e.occurred_at;
+            }
+            InvoiceEvent::InvoiceOverdue(e) => {
+                self.status = InvoiceStatus::Overdue;
+                self.updated_at = e.occurred_at;
+            }
+            InvoiceEvent::PaymentLinked(_e) => {
+                self.updated_at = Utc::now();
+            }
+        }
     }
 
     pub fn apply_payment(&mut self, amount_minor: i64) -> Result<(), InvoiceError> {

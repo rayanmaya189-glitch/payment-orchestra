@@ -48,6 +48,54 @@ pub enum PaymentEvent {
     GatewayProfileSelected(GatewayProfileSelected),
 }
 
+impl PaymentEvent {
+    /// Returns the event type string constant for this event.
+    pub fn event_type(&self) -> &'static str {
+        match self {
+            PaymentEvent::PaymentIntentCreated(_) => PAYMENT_INTENT_CREATED,
+            PaymentEvent::PaymentAuthorizationAttempted(_) => PAYMENT_AUTHORIZATION_ATTEMPTED,
+            PaymentEvent::PaymentAuthorized(_) => PAYMENT_AUTHORIZED,
+            PaymentEvent::PaymentCaptured(_) => PAYMENT_CAPTURED,
+            PaymentEvent::PaymentPartiallyCaptured(_) => PAYMENT_PARTIALLY_CAPTURED,
+            PaymentEvent::PaymentFailed(_) => PAYMENT_FAILED,
+            PaymentEvent::PaymentFailedAllRoutes(_) => PAYMENT_FAILED_ALL_ROUTES,
+            PaymentEvent::PaymentVoided(_) => PAYMENT_VOIDED,
+            PaymentEvent::PaymentRefunded(_) => PAYMENT_REFUNDED,
+            PaymentEvent::PaymentPartiallyRefunded(_) => PAYMENT_PARTIALLY_REFUNDED,
+            PaymentEvent::RoutingPolicyActivated(_) => ROUTING_POLICY_ACTIVATED,
+            PaymentEvent::RoutingPolicyDeactivated(_) => ROUTING_POLICY_DEACTIVATED,
+            PaymentEvent::PaymentMethodTokenStored(_) => PAYMENT_METHOD_TOKEN_STORED,
+            PaymentEvent::PaymentMethodTokenExpired(_) => PAYMENT_METHOD_TOKEN_EXPIRED,
+            PaymentEvent::PaymentMethodTokenRevoked(_) => PAYMENT_METHOD_TOKEN_REVOKED,
+            PaymentEvent::RiskScoreAssigned(_) => RISK_SCORE_ASSIGNED,
+            PaymentEvent::GatewayProfileSelected(_) => GATEWAY_PROFILE_SELECTED,
+        }
+    }
+
+    /// Returns the occurred_at timestamp for this event.
+    pub fn occurred_at(&self) -> DateTime<Utc> {
+        match self {
+            PaymentEvent::PaymentIntentCreated(e) => e.occurred_at,
+            PaymentEvent::PaymentAuthorizationAttempted(e) => e.occurred_at,
+            PaymentEvent::PaymentAuthorized(e) => e.occurred_at,
+            PaymentEvent::PaymentCaptured(e) => e.occurred_at,
+            PaymentEvent::PaymentPartiallyCaptured(e) => e.occurred_at,
+            PaymentEvent::PaymentFailed(e) => e.occurred_at,
+            PaymentEvent::PaymentFailedAllRoutes(e) => e.occurred_at,
+            PaymentEvent::PaymentVoided(e) => e.occurred_at,
+            PaymentEvent::PaymentRefunded(e) => e.occurred_at,
+            PaymentEvent::PaymentPartiallyRefunded(e) => e.occurred_at,
+            PaymentEvent::RoutingPolicyActivated(e) => e.occurred_at,
+            PaymentEvent::RoutingPolicyDeactivated(e) => e.occurred_at,
+            PaymentEvent::PaymentMethodTokenStored(e) => e.occurred_at,
+            PaymentEvent::PaymentMethodTokenExpired(e) => e.occurred_at,
+            PaymentEvent::PaymentMethodTokenRevoked(e) => e.occurred_at,
+            PaymentEvent::RiskScoreAssigned(e) => e.occurred_at,
+            PaymentEvent::GatewayProfileSelected(e) => e.occurred_at,
+        }
+    }
+}
+
 // ─── PaymentIntent Events ────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -9,7 +9,7 @@ use crate::domain::*;
 #[async_trait]
 pub trait SettlementBatchRepository: Send + Sync {
     async fn load_settlement_batch(&self, id: Uuid) -> Result<Option<SettlementBatch>, ReconciliationError>;
-    async fn save_settlement_batch(&self, batch: &SettlementBatch) -> Result<(), ReconciliationError>;
+    async fn save_settlement_batch(&self, batch: &mut SettlementBatch) -> Result<(), ReconciliationError>;
     async fn find_batch_by_checksum(&self, checksum: &str) -> Result<Option<SettlementBatch>, ReconciliationError>;
     async fn list_all_batches(&self) -> Result<Vec<SettlementBatch>, ReconciliationError>;
 }

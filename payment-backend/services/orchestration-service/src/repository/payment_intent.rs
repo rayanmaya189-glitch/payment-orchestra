@@ -14,7 +14,7 @@ impl PaymentIntentRepository for InMemoryOrchestrationRepository {
         Ok(store.get(&id).cloned())
     }
 
-    async fn save_payment_intent(&self, intent: &PaymentIntent) -> Result<(), OrchestrationError> {
+    async fn save_payment_intent(&self, intent: &mut PaymentIntent) -> Result<(), OrchestrationError> {
         let mut store = self.payment_intents.write().await;
         store.insert(intent.payment_intent_id, intent.clone());
         Ok(())

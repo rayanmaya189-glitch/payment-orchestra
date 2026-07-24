@@ -40,7 +40,7 @@ impl InvoiceRepository for InMemoryInvoiceRepository {
         Ok(store.get(&id).cloned())
     }
 
-    async fn save_invoice(&self, invoice: &Invoice) -> Result<(), InvoiceError> {
+    async fn save_invoice(&self, invoice: &mut Invoice) -> Result<(), InvoiceError> {
         let id = invoice.invoice_id;
         let op_id = invoice.operator_id;
         let order_ref = invoice.order_reference.clone();

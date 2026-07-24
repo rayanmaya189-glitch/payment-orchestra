@@ -66,7 +66,7 @@ impl SubscriptionRepository for ArcRepoAdapter {
         repo.load(id).await
     }
 
-    async fn save(&self, subscription: &Subscription) -> Result<(), SubscriptionError> {
+    async fn save(&self, subscription: &mut Subscription) -> Result<(), SubscriptionError> {
         let repo = self.0.write().await;
         repo.save(subscription).await
     }

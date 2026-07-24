@@ -7,6 +7,7 @@ pub mod in_memory;
 pub mod payment_intent;
 pub mod routing_policy;
 pub mod payment_method_token;
+pub mod event_sourced;
 pub mod idempotency;
 pub mod acquirer_link;
 

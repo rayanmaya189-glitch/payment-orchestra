@@ -18,7 +18,41 @@ pub const SETTLEMENT_COMPLETED: &str = "settlement.completed";
 pub const FEE_VARIANCE_DETECTED: &str = "fee.variance_detected";
 pub const FEE_VARIANCE_RESOLVED: &str = "fee.variance_resolved";
 
-// ─── Event enum ──────────────────────────────────────────────────────────────
+impl ReconciliationEvent {
+    pub fn event_type(&self) -> &'static str {
+        match self {
+            Self::SettlementBatchIngested(_) => SETTLEMENT_BATCH_INGESTED,
+            Self::SettlementRecordMatched(_) => SETTLEMENT_RECORD_MATCHED,
+            Self::SettlementRecordUnmatched(_) => SETTLEMENT_RECORD_UNMATCHED,
+            Self::ReconciliationExceptionResolved(_) => RECONCILIATION_EXCEPTION_RESOLVED,
+            Self::LedgerEntryCreated(_) => LEDGER_ENTRY_CREATED,
+            Self::LedgerEntryReconciled(_) => LEDGER_ENTRY_RECONCILED,
+            Self::SettlementExpected(_) => SETTLEMENT_EXPECTED,
+            Self::SettlementOverdue(_) => SETTLEMENT_OVERDUE,
+            Self::SettlementCompleted(_) => SETTLEMENT_COMPLETED,
+            Self::FeeVarianceDetected(_) => FEE_VARIANCE_DETECTED,
+            Self::FeeVarianceResolved(_) => FEE_VARIANCE_RESOLVED,
+        }
+    }
+
+    pub fn occurred_at(&self) -> DateTime<Utc> {
+        match self {
+            Self::SettlementBatchIngested(e) => e.occurred_at,
+            Self::SettlementRecordMatched(e) => e.occurred_at,
+            Self::SettlementRecordUnmatched(e) => e.occurred_at,
+            Self::ReconciliationExceptionResolved(e) => e.occurred_at,
+            Self::LedgerEntryCreated(e) => e.occurred_at,
+            Self::LedgerEntryReconciled(e) => e.occurred_at,
+            Self::SettlementExpected(e) => e.occurred_at,
+            Self::SettlementOverdue(e) => e.occurred_at,
+            Self::SettlementCompleted(e) => e.occurred_at,
+            Self::FeeVarianceDetected(e) => e.occurred_at,
+            Self::FeeVarianceResolved(e) => e.occurred_at,
+        }
+    }
+}
+
+// ─── Event structs ─────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ReconciliationEvent {

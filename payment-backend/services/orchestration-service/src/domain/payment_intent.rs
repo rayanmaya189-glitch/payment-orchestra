@@ -76,8 +76,12 @@ pub struct PaymentIntent {
     // Routing attempts (history)
     pub routing_attempts: Vec<RoutingAttempt>,
 
-    // Event-sourcing version
+    // Event-sourcing version & tracking
     pub version: i64,
+    /// Events that have been applied but not yet persisted to the event store.
+    /// Populated by apply_event(), drained by the event-sourced repository on save.
+    #[serde(default)]
+    pub pending_events: Vec<PaymentEvent>,
 
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
@@ -122,6 +126,7 @@ impl PaymentIntent {
             gateway_selection_reason: None,
             routing_attempts: Vec::new(),
             version: 0,
+            pending_events: Vec::new(),
             created_at: now,
             updated_at: now,
         }
@@ -129,6 +134,7 @@ impl PaymentIntent {
 
     /// Apply a state transition event to evolve the aggregate.
     pub fn apply_event(&mut self, event: &PaymentEvent) {
+        self.pending_events.push(event.clone());
         match event {
             PaymentEvent::PaymentIntentCreated(e) => {
                 self.status = PaymentStatus::Created;

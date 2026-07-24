@@ -59,7 +59,7 @@ impl<R: SettlementBatchRepository + LedgerEntryRepository + SettlementExpectatio
             matched_payment_intent_id: None,
         };
 
-        let batch = SettlementBatch::new(
+        let mut batch = SettlementBatch::new(
             batch_id,
             cmd.operator_id,
             cmd.acquirer_link_id,
@@ -78,7 +78,9 @@ impl<R: SettlementBatchRepository + LedgerEntryRepository + SettlementExpectatio
             occurred_at: Utc::now(),
         });
 
-        self.repo.save_settlement_batch(&batch).await?;
+        batch.apply_event(&event);
+
+        self.repo.save_settlement_batch(&mut batch).await?;
 
         Ok(IngestBatchResult {
             settlement_batch_id: batch_id,
@@ -169,12 +171,23 @@ impl<R: SettlementBatchRepository + LedgerEntryRepository + SettlementExpectatio
             }
         }
 
-        batch.matched_count = matched;
-        batch.unmatched_count = unmatched;
-        batch.status = BatchStatus::Processed;
-        batch.processed_at = Some(Utc::now());
+        // Apply events to update batch state (increments matched/unmatched counts)
+        // and pushes to pending_events for event store persistence.
+        for ev in &events {
+            batch.apply_event(ev);
+        }
 
-        self.repo.save_settlement_batch(&batch).await?;
+        // Push a SettlementCompleted event to capture the status change
+        let completed_event = ReconciliationEvent::SettlementCompleted(SettlementCompleted {
+            expectation_id: batch.settlement_batch_id,
+            payment_intent_id: Uuid::default(),
+            settled_amount_minor: batch.total_amount_minor,
+            settlement_date: Utc::now(),
+            occurred_at: Utc::now(),
+        });
+        batch.apply_event(&completed_event);
+
+        self.repo.save_settlement_batch(&mut batch).await?;
 
         Ok(MatchingResult {
             settlement_batch_id: cmd.settlement_batch_id,

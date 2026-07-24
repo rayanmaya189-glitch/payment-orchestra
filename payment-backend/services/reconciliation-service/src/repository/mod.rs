@@ -1,5 +1,6 @@
 //! Repository interfaces and in-memory implementation for reconciliation-service.
 
+pub mod event_sourced;
 pub mod pg;
 pub mod traits;
 pub mod in_memory;

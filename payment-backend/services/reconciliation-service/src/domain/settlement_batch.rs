@@ -4,6 +4,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use crate::events::ReconciliationEvent;
 use super::types::BatchStatus;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -21,6 +22,9 @@ pub struct SettlementBatch {
     pub records: Vec<SettlementRecord>,
     pub ingested_at: DateTime<Utc>,
     pub processed_at: Option<DateTime<Utc>>,
+    /// Events pending persistence to the event store.
+    #[serde(default)]
+    pub pending_events: Vec<ReconciliationEvent>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -64,6 +68,38 @@ impl SettlementBatch {
             records,
             ingested_at: Utc::now(),
             processed_at: None,
+            pending_events: Vec::new(),
+        }
+    }
+
+    /// Apply a reconciliation event to evolve the aggregate state.
+    pub fn apply_event(&mut self, event: &ReconciliationEvent) {
+        self.pending_events.push(event.clone());
+        match event {
+            ReconciliationEvent::SettlementBatchIngested(e) => {
+                self.settlement_batch_id = e.settlement_batch_id;
+                self.operator_id = e.operator_id;
+                self.acquirer_link_id = e.acquirer_link_id;
+                self.total_records = e.total_records;
+                self.total_amount_minor = e.total_amount_minor;
+                self.ingested_at = e.occurred_at;
+            }
+            ReconciliationEvent::SettlementRecordMatched(_e) => {
+                self.matched_count += 1;
+            }
+            ReconciliationEvent::SettlementRecordUnmatched(_e) => {
+                self.unmatched_count += 1;
+            }
+            ReconciliationEvent::SettlementCompleted(e) => {
+                self.status = BatchStatus::Processed;
+                self.processed_at = Some(e.occurred_at);
+            }
+            ReconciliationEvent::SettlementOverdue(e) => {
+                self.status = BatchStatus::Quarantined;
+                self.processed_at = Some(e.occurred_at);
+            }
+            // Other events don't affect SettlementBatch state directly
+            _ => {}
         }
     }
 }

@@ -38,7 +38,7 @@ impl InvoiceRepository for PostgresInvoiceRepository {
         }
     }
 
-    async fn save_invoice(&self, invoice: &Invoice) -> Result<(), InvoiceError> {
+    async fn save_invoice(&self, invoice: &mut Invoice) -> Result<(), InvoiceError> {
         let model = domain_to_model(invoice)?;
         let exists = InvoiceEntity::find_by_id(invoice.invoice_id)
             .one(&self.db)
@@ -178,5 +178,6 @@ fn model_to_domain(m: InvoiceModel) -> Result<Invoice, InvoiceError> {
         payment_intent_ids,
         created_at: m.created_at,
         updated_at: m.updated_at,
+        pending_events: Vec::new(),
     })
 }

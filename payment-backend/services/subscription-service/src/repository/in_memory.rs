@@ -35,7 +35,7 @@ impl SubscriptionRepository for InMemorySubscriptionRepository {
         Ok(map.get(&id).cloned())
     }
 
-    async fn save(&self, subscription: &Subscription) -> Result<(), SubscriptionError> {
+    async fn save(&self, subscription: &mut Subscription) -> Result<(), SubscriptionError> {
         let mut map = self.subscriptions.write().await;
         map.insert(subscription.subscription_id, subscription.clone());
         Ok(())

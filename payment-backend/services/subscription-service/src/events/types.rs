@@ -46,6 +46,20 @@ impl SubscriptionEvent {
             Self::DunningExhausted(_) => EVENT_TYPE_DUNNING_EXHAUSTED,
         }
     }
+
+    pub fn occurred_at(&self) -> DateTime<Utc> {
+        match self {
+            Self::Created(e) => e.occurred_at,
+            Self::Cancelled(e) => e.occurred_at,
+            Self::Paused(e) => e.occurred_at,
+            Self::Resumed(e) => e.occurred_at,
+            Self::RenewalStarted(e) => e.occurred_at,
+            Self::RenewalSucceeded(e) => e.occurred_at,
+            Self::RenewalFailed(e) => e.occurred_at,
+            Self::DunningAttempted(e) => e.occurred_at,
+            Self::DunningExhausted(e) => e.occurred_at,
+        }
+    }
 }
 
 // ─── Event payloads ──────────────────────────────────────────────────────────

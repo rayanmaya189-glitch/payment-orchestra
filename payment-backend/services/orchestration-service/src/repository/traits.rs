@@ -9,7 +9,7 @@ use crate::domain::*;
 #[async_trait]
 pub trait PaymentIntentRepository: Send + Sync {
     async fn load_payment_intent(&self, id: Uuid) -> Result<Option<PaymentIntent>, OrchestrationError>;
-    async fn save_payment_intent(&self, intent: &PaymentIntent) -> Result<(), OrchestrationError>;
+    async fn save_payment_intent(&self, intent: &mut PaymentIntent) -> Result<(), OrchestrationError>;
     async fn list_payment_intents_for_operator(&self, operator_id: Uuid) -> Result<Vec<PaymentIntent>, OrchestrationError>;
 }
 
