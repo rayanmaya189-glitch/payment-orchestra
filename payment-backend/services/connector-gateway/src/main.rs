@@ -5,7 +5,7 @@
 //! - Gateway profile management (CRUD)
 //! - Connector discovery (list, schema)
 //! - Credential operations (validate, test connection)
-//! With Redis-backed rate limiting
+//! - Redis-backed rate limiting
 
 use std::net::SocketAddr;
 use std::sync::Arc;

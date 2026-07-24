@@ -13,6 +13,8 @@
 //! The platform is a routing and orchestration layer only. Funds flow directly
 //! between the customer, the payment gateway, and the merchant bank account.
 
+#![allow(clippy::result_large_err)]
+
 pub mod domain;
 pub mod commands;
 pub mod queries;

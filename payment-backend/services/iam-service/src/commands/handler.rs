@@ -178,8 +178,7 @@ impl<R: IamRepository + Send + Sync> CommandHandler for IamCommandHandler<R> {
         let api_key_secret = Uuid::now_v7().to_string();
         let expires_at = cmd.expires_in_days
             .unwrap_or(90)
-            .min(365)
-            .max(1);
+            .clamp(1, 365);
 
         let key = ApiKey {
             api_key_id,

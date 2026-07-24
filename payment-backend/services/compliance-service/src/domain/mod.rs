@@ -247,7 +247,7 @@ pub fn default_aml_rules() -> Vec<AmlRule> {
         AmlRule {
             rule_id: "AML-R001",
             rule_type: AmlRuleType::Structuring {
-                report_threshold_minor_units: 50_000_00, // 50,000 AED
+                report_threshold_minor_units: 5_000_000, // 50,000 AED (in minor units)
                 near_threshold_percent: 0.9,
                 min_transactions: 5,
                 window_minutes: 60,
@@ -267,7 +267,7 @@ pub fn default_aml_rules() -> Vec<AmlRule> {
             rule_type: AmlRuleType::AmountAnomaly {
                 multiplier: 10.0,
                 min_sample_size: 30,
-                max_amount_minor_units: 500_000_00, // 500,000 AED
+                max_amount_minor_units: 50_000_000, // 500,000 AED (in minor units)
             },
             severity: AlertSeverity::High,
         },

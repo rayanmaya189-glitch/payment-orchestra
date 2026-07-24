@@ -16,6 +16,8 @@
 //! between the customer, the payment gateway, and the merchant bank account.
 //! The platform never holds, touches, or controls funds.
 
+#![allow(clippy::result_large_err)]
+
 pub mod domain;
 pub mod commands;
 pub mod queries;

@@ -35,16 +35,16 @@ pub enum SagaStatus {
 impl SagaStatus {
     pub fn can_transition_to(&self, target: &Self) -> bool {
         use SagaStatus::*;
-        match (self, target) {
-            (Created, Running) => true,
-            (Running, Completed) => true,
-            (Running, Compensating) => true,
-            (Running, Failed) => true,
-            (Compensating, Compensated) => true,
-            (Compensating, RequiresManualIntervention) => true,
-            (Failed, RequiresManualIntervention) => true,
-            _ => false,
-        }
+        matches!(
+            (self, target),
+            (Created, Running)
+                | (Running, Completed)
+                | (Running, Compensating)
+                | (Running, Failed)
+                | (Compensating, Compensated)
+                | (Compensating, RequiresManualIntervention)
+                | (Failed, RequiresManualIntervention)
+        )
     }
 
     pub fn is_terminal(&self) -> bool {

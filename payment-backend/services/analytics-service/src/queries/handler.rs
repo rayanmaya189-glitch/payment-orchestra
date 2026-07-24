@@ -152,7 +152,7 @@ impl<R: AnalyticsRepository + Send + Sync> QueryHandler for AnalyticsQueryHandle
             })
             .collect();
 
-        rows.sort_by(|a, b| b.count.cmp(&a.count));
+        rows.sort_by_key(|a| std::cmp::Reverse(a.count));
         Ok(rows)
     }
 
@@ -222,7 +222,7 @@ impl<R: AnalyticsRepository + Send + Sync> QueryHandler for AnalyticsQueryHandle
             })
             .collect();
 
-        rows.sort_by(|a, b| b.total_fees_minor_units.cmp(&a.total_fees_minor_units));
+        rows.sort_by_key(|a| std::cmp::Reverse(a.total_fees_minor_units));
         Ok(rows)
     }
 

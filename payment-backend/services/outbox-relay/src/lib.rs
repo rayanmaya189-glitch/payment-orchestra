@@ -1,6 +1,8 @@
 //! Outbox Relay — Background task that polls outbox and publishes to in-process NATS channels.
 //! Implements ADR-011 (Transactional Outbox) within each event-sourced service.
 
+#![allow(clippy::result_large_err)]
+
 pub mod domain;
 pub mod entities;
 pub mod commands;

@@ -8,6 +8,8 @@
 //! ## Architecture Context
 //! This module runs within the modular monolith alongside all other modules.
 
+#![allow(clippy::result_large_err)]
+
 pub mod domain;
 pub mod commands;
 pub mod queries;

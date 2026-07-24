@@ -30,6 +30,7 @@ impl RiskClient {
     }
 
     /// Assess the risk of a transaction before authorizing.
+    #[allow(clippy::too_many_arguments)]
     pub async fn assess_risk(
         &self,
         payment_intent_id: String,

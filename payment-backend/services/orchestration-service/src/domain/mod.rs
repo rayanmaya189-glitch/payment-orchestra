@@ -218,7 +218,7 @@ impl PaymentStatus {
                 Err(OrchestrationError::InvalidStateTransition("PAYMENT_INTENT_VOIDED".into())),
             (Self::AuthorizationExpired, cmd) if cmd == "Capture" || cmd == "Void" =>
                 Err(OrchestrationError::InvalidStateTransition("AUTHORIZATION_EXPIRED".into())),
-            (Self::Captured, cmd) if cmd == "Capture" =>
+            (Self::Captured, _) =>
                 Err(OrchestrationError::InvalidStateTransition("PAYMENT_INTENT_ALREADY_CAPTURED".into())),
             (Self::Refunded, cmd) if cmd == "Refund" || cmd == "Capture" =>
                 Err(OrchestrationError::InvalidStateTransition("PAYMENT_INTENT_FULLY_REFUNDED".into())),

@@ -55,13 +55,9 @@ impl StripeConnector {
             .cloned()
             .unwrap_or_default();
         let environment = config.environment.clone();
-        let is_production = environment == "production";
-
-        let base_url = if is_production {
-            "https://api.stripe.com"
-        } else {
-            "https://api.stripe.com"
-        };
+        // Stripe uses the same base URL for all environments;
+        // environment-specific behavior is handled via API keys.
+        let base_url = "https://api.stripe.com";
 
         let client = reqwest::Client::builder()
             .connect_timeout(std::time::Duration::from_secs(10))
