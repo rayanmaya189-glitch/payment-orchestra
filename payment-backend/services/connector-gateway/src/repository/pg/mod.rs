@@ -13,6 +13,9 @@ use uuid::Uuid;
 
 pub mod gateway_profile;
 
+#[cfg(test)]
+pub(crate) mod tests;
+
 /// Combined PostgreSQL-backed repository implementing GatewayProfileRepository.
 #[derive(Clone)]
 pub struct PostgresConnectorGatewayRepository {

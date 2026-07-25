@@ -2,11 +2,11 @@
 //!
 //! File structure (one concept per file per CONVENTIONS.md):
 //!
-//! - [`error`]               — [`OnboardingError`]
-//! - [`status`]              — [`OnboardingStatus`] state machine
-//! - [`types`]               — [`ConnectorConfiguration`], [`ApiCredentials`],
-//!                             [`WebhookConfiguration`], [`BusinessDetails`]
-//! - [`onboarding_request`]  — [`OnboardingRequest`] + validation + defaults
+//! - [`error`] — [`OnboardingError`]
+//! - [`status`] — [`OnboardingStatus`] state machine
+//! - [`types`] — [`ConnectorConfiguration`], [`ApiCredentials`],
+//!   [`WebhookConfiguration`], [`BusinessDetails`]
+//! - [`onboarding_request`] — [`OnboardingRequest`] + validation + defaults
 
 pub mod error;
 pub mod onboarding_request;

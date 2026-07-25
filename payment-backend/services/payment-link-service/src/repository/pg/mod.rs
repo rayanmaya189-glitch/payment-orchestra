@@ -4,7 +4,7 @@
 //! - entity `link_id` ←→ domain `payment_link_id`
 //! - entity `checkout_token` ←→ domain `token`
 //! - entity `payment_intent_ids` (Json) ←→ domain `payment_intent_id` (Option<Uuid>)
-//! Missing entity columns default: max_uses=0, use_count=0, success_url="", cancel_url=""
+//!   Missing entity columns default: max_uses=0, use_count=0, success_url="", cancel_url=""
 
 use async_trait::async_trait;
 use chrono::Utc;
@@ -50,7 +50,7 @@ fn domain_to_model(link: &PaymentLink) -> Result<PaymentLinkModel, PaymentLinkEr
         use_count: 0,
         success_url: String::new(),
         cancel_url: String::new(),
-        payment_intent_ids: payment_intent_ids,
+        payment_intent_ids,
         created_at: link.created_at,
         updated_at: Utc::now(),
     })
