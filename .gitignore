@@ -1,6 +1,6 @@
 # Rust Build
 target/
-
+.github/
 # IDE & Editor
 .idea/
 .vscode/
