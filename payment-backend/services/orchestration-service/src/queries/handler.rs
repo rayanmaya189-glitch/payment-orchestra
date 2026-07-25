@@ -16,6 +16,26 @@ pub trait QueryHandler: Send + Sync {
     async fn list_active_tokens(&self, query: ListActiveTokensQuery) -> Result<Vec<PaymentMethodToken>, OrchestrationError>;
 }
 
+// Blanket impl: Box<dyn QueryHandler> implements QueryHandler
+#[async_trait]
+impl QueryHandler for Box<dyn QueryHandler> {
+    async fn get_payment_intent(&self, query: GetPaymentIntentQuery) -> Result<Option<PaymentIntent>, OrchestrationError> {
+        self.as_ref().get_payment_intent(query).await
+    }
+    async fn list_payment_intents(&self, query: ListPaymentIntentsQuery) -> Result<Vec<PaymentIntent>, OrchestrationError> {
+        self.as_ref().list_payment_intents(query).await
+    }
+    async fn get_active_routing_policy(&self, query: GetActiveRoutingPolicyQuery) -> Result<Option<RoutingPolicy>, OrchestrationError> {
+        self.as_ref().get_active_routing_policy(query).await
+    }
+    async fn get_payment_method_token(&self, query: GetPaymentMethodTokenQuery) -> Result<Option<PaymentMethodToken>, OrchestrationError> {
+        self.as_ref().get_payment_method_token(query).await
+    }
+    async fn list_active_tokens(&self, query: ListActiveTokensQuery) -> Result<Vec<PaymentMethodToken>, OrchestrationError> {
+        self.as_ref().list_active_tokens(query).await
+    }
+}
+
 pub struct OrchestrationQueryHandler<R: PaymentIntentRepository + RoutingPolicyRepository + PaymentMethodTokenRepository> {
     repo: R,
 }

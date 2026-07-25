@@ -82,6 +82,27 @@ impl<R: DocumentRepository + Send + Sync> CommandHandler for DocumentCommandHand
     }
 }
 
+// ─── Blanket impl: Box<dyn CommandHandler> delegates to inner ─────────────────
+
+#[async_trait]
+impl<T: CommandHandler + ?Sized> CommandHandler for Box<T> {
+    async fn upload_document(&self, cmd: UploadDocumentCommand) -> Result<DocumentRecord, DocumentError> {
+        (**self).upload_document(cmd).await
+    }
+    async fn start_ocr(&self, cmd: StartOcrCommand) -> Result<DocumentRecord, DocumentError> {
+        (**self).start_ocr(cmd).await
+    }
+    async fn complete_ocr(&self, cmd: CompleteOcrCommand) -> Result<DocumentRecord, DocumentError> {
+        (**self).complete_ocr(cmd).await
+    }
+    async fn fail_ocr(&self, cmd: FailOcrCommand) -> Result<DocumentRecord, DocumentError> {
+        (**self).fail_ocr(cmd).await
+    }
+    async fn delete_document(&self, cmd: DeleteDocumentCommand) -> Result<(), DocumentError> {
+        (**self).delete_document(cmd).await
+    }
+}
+
 /// Sanitize filename for storage: remove path separators, keep alphanumeric + dots + hyphens.
 fn sanitize_filename(filename: &str) -> String {
     filename

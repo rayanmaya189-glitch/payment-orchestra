@@ -180,4 +180,6 @@ pub enum DocumentError {
     InvalidStatusTransition,
     #[error("OCR processing failed")]
     OcrFailed,
+    #[error("Database error: {0}")]
+    DatabaseError(String),
 }

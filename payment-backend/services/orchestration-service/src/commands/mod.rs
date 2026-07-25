@@ -30,6 +30,38 @@ pub trait CommandHandler: Send + Sync {
     async fn revoke_payment_method_token(&self, cmd: RevokePaymentMethodToken) -> Result<TokenResult, OrchestrationError>;
 }
 
+// Blanket impl: Box<dyn CommandHandler> implements CommandHandler
+#[async_trait]
+impl CommandHandler for Box<dyn CommandHandler> {
+    async fn create_payment_intent(&self, cmd: CreatePaymentIntent) -> Result<PaymentIntentResult, OrchestrationError> {
+        self.as_ref().create_payment_intent(cmd).await
+    }
+    async fn authorize_payment_intent(&self, cmd: AuthorizePaymentIntent) -> Result<PaymentIntentResult, OrchestrationError> {
+        self.as_ref().authorize_payment_intent(cmd).await
+    }
+    async fn capture_payment_intent(&self, cmd: CapturePaymentIntent) -> Result<PaymentIntentResult, OrchestrationError> {
+        self.as_ref().capture_payment_intent(cmd).await
+    }
+    async fn void_payment_intent(&self, cmd: VoidPaymentIntent) -> Result<PaymentIntentResult, OrchestrationError> {
+        self.as_ref().void_payment_intent(cmd).await
+    }
+    async fn refund_payment_intent(&self, cmd: RefundPaymentIntent) -> Result<PaymentIntentResult, OrchestrationError> {
+        self.as_ref().refund_payment_intent(cmd).await
+    }
+    async fn activate_routing_policy(&self, cmd: ActivateRoutingPolicy) -> Result<RoutingPolicyResult, OrchestrationError> {
+        self.as_ref().activate_routing_policy(cmd).await
+    }
+    async fn store_payment_method_token(&self, cmd: StorePaymentMethodToken) -> Result<TokenResult, OrchestrationError> {
+        self.as_ref().store_payment_method_token(cmd).await
+    }
+    async fn expire_payment_method_token(&self, cmd: ExpirePaymentMethodToken) -> Result<TokenResult, OrchestrationError> {
+        self.as_ref().expire_payment_method_token(cmd).await
+    }
+    async fn revoke_payment_method_token(&self, cmd: RevokePaymentMethodToken) -> Result<TokenResult, OrchestrationError> {
+        self.as_ref().revoke_payment_method_token(cmd).await
+    }
+}
+
 // ─── Handler Implementation ──────────────────────────────────────────────────
 
 pub struct OrchestrationCommandHandler<R: OrchestrationRepository> {

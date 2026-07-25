@@ -221,6 +221,9 @@ fn document_error_to_status(e: DocumentError) -> Status {
         DocumentError::OcrFailed => {
             Status::internal("OCR processing failed")
         }
+        DocumentError::DatabaseError(msg) => {
+            Status::internal(format!("Database error: {}", msg))
+        }
     }
 }
 

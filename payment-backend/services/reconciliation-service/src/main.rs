@@ -13,11 +13,13 @@ use reconciliation_service::repository::InMemoryReconciliationRepository;
 use platform_db::connection::create_service_pool;
 use platform_messaging::event_bus::{EventBus, NoopEventBus};
 use platform_messaging::nats_event_bus::NatsJetStreamEventBus;
+use platform_metrics::grpc_interceptor::MetricsLayer;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenvy::dotenv().ok();
     platform_logging::telemetry::init();
+    platform_metrics::init_uptime_tracker();
 
     let _db = match create_service_pool("RECONCILIATION").await {
         Ok(db) => { tracing::info!("Connected to PostgreSQL for reconciliation-service"); Some(db) }
@@ -57,8 +59,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let grpc_addr: SocketAddr = runner.grpc_addr;
     info!("Reconciliation service listening on {}", grpc_addr);
 
+    // Spawn periodic uptime recording (30s cadence aligns with Prometheus scrape)
+    tokio::spawn(async {
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(30));
+        loop {
+            interval.tick().await;
+            platform_metrics::record_uptime();
+        }
+    });
+
     tokio::select! {
         result = Server::builder()
+            .layer(MetricsLayer::new("reconciliation-service"))
             .add_service(platform_proto::reconciliation::reconciliation_service_server::ReconciliationServiceServer::new(reconciliation_service))
             .serve_with_shutdown(grpc_addr, async {
                 tokio::signal::ctrl_c().await.ok();

@@ -65,7 +65,7 @@ impl PaymentIntentRepository for EventSourcedOrchestrationRepository {
             .event_store
             .read_all_events("PaymentIntent", id)
             .await
-            .map_err(|e| OrchestrationError::DatabaseError(e))?;
+            .map_err(OrchestrationError::DatabaseError)?;
 
         if stored_events.is_empty() {
             return Ok(None);
@@ -130,7 +130,7 @@ impl EventSourcedOrchestrationRepository {
             .event_store
             .latest_sequence("PaymentIntent", payment_intent_id)
             .await
-            .map_err(|e| OrchestrationError::DatabaseError(e))?;
+            .map_err(OrchestrationError::DatabaseError)?;
 
         let start_seq = latest.unwrap_or(0) + 1;
 
@@ -149,7 +149,7 @@ impl EventSourcedOrchestrationRepository {
         self.event_store
             .append_events(stored_events)
             .await
-            .map_err(|e| OrchestrationError::DatabaseError(e))?;
+            .map_err(OrchestrationError::DatabaseError)?;
 
         Ok(())
     }

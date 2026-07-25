@@ -1,58 +1,51 @@
+//! PostgreSQL-backed RoutingPolicyRepository using SeaORM CRUD.
+
 use async_trait::async_trait;
 use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
 use uuid::Uuid;
 
-use super::PostgresOrchestrationRepository;
-use crate::repository::RoutingPolicyRepository;
 use crate::domain::*;
 use crate::entities::routing_policy::{
-    Entity as RoutingPolicyEntity,
-    ActiveModel as RoutingPolicyActiveModel,
-    Model as RoutingPolicyModel,
-    Column as RoutingPolicyColumn,
+    ActiveModel as RoutingPolicyActiveModel, Column as RoutingPolicyColumn,
+    Entity as RoutingPolicyEntity, Model as RoutingPolicyModel,
 };
+use super::PostgresOrchestrationRepository;
+use crate::repository::RoutingPolicyRepository;
 
 #[async_trait]
 impl RoutingPolicyRepository for PostgresOrchestrationRepository {
-    async fn load_active_routing_policy(
-        &self,
-        operator_id: Uuid,
-    ) -> Result<Option<RoutingPolicy>, OrchestrationError> {
-        {
-            let active = self.active_policies.read().await;
-            if let Some(policy_id) = active.get(&operator_id) {
-                let store = self.load_routing_policy(*policy_id).await?;
-                if store.is_some() {
-                    return Ok(store);
-                }
-            }
-        }
-
+    async fn load_active_routing_policy(&self, operator_id: Uuid) -> Result<Option<RoutingPolicy>, OrchestrationError> {
         let result = RoutingPolicyEntity::find()
             .filter(RoutingPolicyColumn::OperatorId.eq(operator_id))
-            .filter(RoutingPolicyColumn::Status.eq("active"))
+            .filter(RoutingPolicyColumn::Status.eq("Active"))
             .one(&self.db)
             .await
             .map_err(|e| OrchestrationError::DatabaseError(e.to_string()))?;
 
         match result {
-            Some(m) => {
-                let policy = routing_policy_model_to_domain(m)?;
-                self.active_policies
-                    .write()
-                    .await
-                    .insert(operator_id, policy.routing_policy_id);
-                Ok(Some(policy))
-            }
+            Some(model) => Ok(Some(model_to_domain(model)?)),
             None => Ok(None),
         }
     }
 
-    async fn save_routing_policy(
-        &self,
-        policy: &RoutingPolicy,
-    ) -> Result<(), OrchestrationError> {
-        let model = routing_policy_domain_to_model(policy)?;
+    async fn save_routing_policy(&self, policy: &RoutingPolicy) -> Result<(), OrchestrationError> {
+        let rules_json = serde_json::to_value(&policy.rules)
+            .map_err(|e| OrchestrationError::DatabaseError(format!("Serialize rules: {}", e)))?;
+
+
+        let model = RoutingPolicyModel {
+            routing_policy_id: policy.routing_policy_id,
+            operator_id: policy.operator_id,
+            name: format!("routing_policy_{}", policy.routing_policy_id),
+            status: match policy.status {
+                PolicyStatus::Active => "Active".to_string(),
+                PolicyStatus::Inactive => "Inactive".to_string(),
+            },
+            rules: rules_json,
+            created_at: policy.created_at,
+            activated_at: policy.activated_at,
+        };
+
         let exists = RoutingPolicyEntity::find_by_id(policy.routing_policy_id)
             .one(&self.db)
             .await
@@ -60,7 +53,7 @@ impl RoutingPolicyRepository for PostgresOrchestrationRepository {
             .is_some();
 
         if exists {
-            RoutingPolicyEntity::update(RoutingPolicyActiveModel::from(model.clone()))
+            RoutingPolicyEntity::update(RoutingPolicyActiveModel::from(model))
                 .exec(&self.db)
                 .await
                 .map_err(|e| OrchestrationError::DatabaseError(e.to_string()))?;
@@ -70,63 +63,34 @@ impl RoutingPolicyRepository for PostgresOrchestrationRepository {
                 .await
                 .map_err(|e| OrchestrationError::DatabaseError(e.to_string()))?;
         }
-
-        if policy.status == PolicyStatus::Active {
-            let mut active = self.active_policies.write().await;
-            active.insert(policy.operator_id, policy.routing_policy_id);
-        }
-
         Ok(())
     }
 
-    async fn load_routing_policy(
-        &self,
-        id: Uuid,
-    ) -> Result<Option<RoutingPolicy>, OrchestrationError> {
+    async fn load_routing_policy(&self, id: Uuid) -> Result<Option<RoutingPolicy>, OrchestrationError> {
         let result = RoutingPolicyEntity::find_by_id(id)
             .one(&self.db)
             .await
             .map_err(|e| OrchestrationError::DatabaseError(e.to_string()))?;
+
         match result {
-            Some(m) => Ok(Some(routing_policy_model_to_domain(m)?)),
+            Some(model) => Ok(Some(model_to_domain(model)?)),
             None => Ok(None),
         }
     }
 }
 
-// ─── Domain ↔ Model conversion: RoutingPolicy ────────────────────────────────
-
-fn routing_policy_domain_to_model(
-    rp: &RoutingPolicy,
-) -> Result<RoutingPolicyModel, OrchestrationError> {
-    Ok(RoutingPolicyModel {
-        routing_policy_id: rp.routing_policy_id,
-        operator_id: rp.operator_id,
-        name: format!("policy-v{}", rp.version),
-        status: rp.status.to_string(),
-        rules: serde_json::to_value(&rp.rules)
-            .map_err(|e| OrchestrationError::Validation(format!("Serialize rules: {}", e)))?,
-        created_at: rp.created_at,
-        activated_at: rp.activated_at,
-    })
-}
-
-fn routing_policy_model_to_domain(
-    m: RoutingPolicyModel,
-) -> Result<RoutingPolicy, OrchestrationError> {
-    let status = match m.status.as_str() {
-        "active" => PolicyStatus::Active,
-        _ => PolicyStatus::Inactive,
-    };
-
+fn model_to_domain(m: RoutingPolicyModel) -> Result<RoutingPolicy, OrchestrationError> {
     let rules: Vec<RoutingRule> = serde_json::from_value(m.rules)
-        .map_err(|e| OrchestrationError::Validation(format!("Deserialize rules: {}", e)))?;
+        .unwrap_or_default();
 
     Ok(RoutingPolicy {
         routing_policy_id: m.routing_policy_id,
         operator_id: m.operator_id,
         version: 1,
-        status,
+        status: match m.status.as_str() {
+            "Active" => PolicyStatus::Active,
+            _ => PolicyStatus::Inactive,
+        },
         rules,
         failover_config: FailoverConfig::default(),
         partial_auth_strategy: PartialAuthStrategy::AcceptPartial,

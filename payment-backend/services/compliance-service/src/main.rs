@@ -7,6 +7,7 @@ use std::net::SocketAddr;
 use tracing::info;
 
 mod domain;
+mod entities;
 mod commands;
 mod queries;
 mod events;
@@ -21,26 +22,20 @@ use std::sync::Arc;
 use platform_db::connection::create_service_pool;
 use platform_messaging::event_bus::{EventBus, NoopEventBus};
 use platform_messaging::nats_event_bus::NatsJetStreamEventBus;
-use commands::ComplianceCommandHandler;
-use queries::ComplianceQueries;
-use repository::InMemoryComplianceRepository;
+use commands::{CommandHandler, ComplianceCommandHandler};
+use queries::{QueryHandler, ComplianceQueries};
+use repository::{InMemoryComplianceRepository, PostgresComplianceRepository};
 use api::grpc::ComplianceGrpcService;
 use platform_proto::compliance::compliance_service_server::ComplianceServiceServer;
+use platform_metrics::grpc_interceptor::MetricsLayer;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenvy::dotenv().ok();
     platform_logging::telemetry::init();
+    platform_metrics::init_uptime_tracker();
     
-
-    let _db = match create_service_pool("COMPLIANCE").await {
-        Ok(db) => { tracing::info!("Connected to PostgreSQL for compliance-service"); Some(db) }
-        Err(e) => { tracing::warn!("PostgreSQL unavailable for compliance-service ({}), using InMemory", e); None }
-    };
-
     let mut runner = platform_registry::bootstrap::ServerRunner::new("compliance-service", 9003, 9103).await?;
-
-    let repository = InMemoryComplianceRepository::new();
 
     let event_bus: Arc<dyn EventBus> = if let Ok(url) = std::env::var("NATS_URL") {
         let nats_username = std::env::var("COMPLIANCE_NATS_USERNAME").ok();
@@ -63,16 +58,39 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Arc::new(NoopEventBus)
     };
 
-    let command_handler = ComplianceCommandHandler::new(repository.clone())
-        .with_event_bus(event_bus);
-    let queries = ComplianceQueries::new(repository);
+    // Choose repository: PostgreSQL-backed if DB available, otherwise in-memory
+    let (command_handler, queries): (Box<dyn CommandHandler>, Box<dyn QueryHandler>) =
+        if let Ok(db) = create_service_pool("COMPLIANCE").await {
+            info!("Using PostgreSQL-backed repository for compliance-service");
+            let repo = PostgresComplianceRepository::new(db);
+            let ch = ComplianceCommandHandler::new(repo.clone()).with_event_bus(event_bus);
+            let qh = ComplianceQueries::new(repo);
+            (Box::new(ch), Box::new(qh))
+        } else {
+            tracing::warn!("PostgreSQL unavailable for compliance-service, using InMemory repository");
+            let repo = InMemoryComplianceRepository::new();
+            let ch = ComplianceCommandHandler::new(repo.clone()).with_event_bus(event_bus);
+            let qh = ComplianceQueries::new(repo);
+            (Box::new(ch), Box::new(qh))
+        };
+
     let compliance_service = ComplianceGrpcService::new(command_handler, queries);
 
     let addr: SocketAddr = runner.grpc_addr;
     info!("Compliance service gRPC server listening on {addr}");
 
+    // Spawn periodic uptime recording (30s cadence aligns with Prometheus scrape)
+    tokio::spawn(async {
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(30));
+        loop {
+            interval.tick().await;
+            platform_metrics::record_uptime();
+        }
+    });
+
     tokio::select! {
         result = tonic::transport::Server::builder()
+            .layer(MetricsLayer::new("compliance-service"))
             .add_service(ComplianceServiceServer::new(compliance_service))
             .serve_with_shutdown(addr, async {
                 tokio::signal::ctrl_c().await.ok();

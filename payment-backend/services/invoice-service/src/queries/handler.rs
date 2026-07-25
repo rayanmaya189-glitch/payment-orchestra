@@ -42,3 +42,24 @@ impl<R: InvoiceRepository + Send + Sync> QueryHandler for InvoiceQueryHandler<R>
         self.repo.list_invoices(query.operator_id, query.status_filter).await
     }
 }
+
+// ─── Blanket impl: Box<dyn QueryHandler> delegates to inner ──────────────────
+
+#[async_trait]
+impl<T: QueryHandler + ?Sized> QueryHandler for Box<T> {
+    async fn get_invoice(&self, query: GetInvoiceQuery) -> Result<Option<Invoice>, InvoiceError> {
+        (**self).get_invoice(query).await
+    }
+
+    async fn find_by_order(&self, query: FindInvoiceByOrderQuery) -> Result<Option<Invoice>, InvoiceError> {
+        (**self).find_by_order(query).await
+    }
+
+    async fn find_overdue(&self, query: FindOverdueInvoicesQuery) -> Result<Vec<Invoice>, InvoiceError> {
+        (**self).find_overdue(query).await
+    }
+
+    async fn list_invoices(&self, query: ListInvoicesQuery) -> Result<Vec<Invoice>, InvoiceError> {
+        (**self).list_invoices(query).await
+    }
+}

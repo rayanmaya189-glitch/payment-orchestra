@@ -56,6 +56,9 @@ pub(crate) fn analytics_error_to_status(e: AnalyticsError) -> Status {
         AnalyticsError::InvalidEventType(et) => {
             Status::invalid_argument(format!("Invalid event type: {}", et))
         }
+        AnalyticsError::DatabaseError(msg) => {
+            Status::internal(format!("Database error: {}", msg))
+        }
     }
 }
 

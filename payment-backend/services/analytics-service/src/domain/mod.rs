@@ -175,6 +175,8 @@ pub enum AnalyticsError {
     EventNotFound(Uuid),
     #[error("Invalid event type: {0}")]
     InvalidEventType(String),
+    #[error("Database error: {0}")]
+    DatabaseError(String),
 }
 
 // ---------------------------------------------------------------------------

@@ -261,4 +261,6 @@ pub enum RiskError {
     InvalidCardBin(String),
     #[error("Unsupported currency: {0}")]
     UnsupportedCurrency(String),
+    #[error("Database error: {0}")]
+    DatabaseError(String),
 }

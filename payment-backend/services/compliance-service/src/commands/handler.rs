@@ -11,6 +11,23 @@ use crate::events::{ComplianceEvent, KybCaseSubmitted, KybCaseApproved, KybCaseR
 use crate::repository::ComplianceRepository;
 use crate::commands::types::*;
 
+// Blanket impl: Box<dyn CommandHandler> implements CommandHandler
+#[async_trait::async_trait]
+impl CommandHandler for Box<dyn CommandHandler> {
+    async fn submit_kyb_evidence(&self, cmd: SubmitKybEvidence) -> Result<SubmitKybEvidenceResult, ComplianceError> {
+        self.as_ref().submit_kyb_evidence(cmd).await
+    }
+    async fn review_kyb_case(&self, cmd: ReviewKybCase) -> Result<ReviewKybCaseResult, ComplianceError> {
+        self.as_ref().review_kyb_case(cmd).await
+    }
+    async fn scan_transaction(&self, cmd: ScanTransaction) -> Result<ScanTransactionResult, ComplianceError> {
+        self.as_ref().scan_transaction(cmd).await
+    }
+    async fn review_aml_alert(&self, cmd: ReviewAmlAlert) -> Result<ReviewAmlAlertResult, ComplianceError> {
+        self.as_ref().review_aml_alert(cmd).await
+    }
+}
+
 #[async_trait::async_trait]
 pub trait CommandHandler: Send + Sync {
     async fn submit_kyb_evidence(&self, cmd: SubmitKybEvidence) -> Result<SubmitKybEvidenceResult, ComplianceError>;

@@ -12,6 +12,7 @@ use platform_messaging::nats_event_bus::NatsJetStreamEventBus;
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenvy::dotenv().ok();
     platform_logging::telemetry::init();
+    platform_metrics::init_uptime_tracker();
 
     let _db = match create_service_pool("API_GATEWAY").await {
         Ok(db) => { tracing::info!("Connected to PostgreSQL for api-gateway"); Some(db) }
@@ -38,6 +39,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let orchestration_addr = format!("http://127.0.0.1:{}", std::env::var("orchestration_service_grpc_port").unwrap_or_else(|_| "9005".into()));
     let _orchestration_client = platform_clients::orchestration::OrchestrationClient::connect(&orchestration_addr).await?;
     tracing::info!(addr = %orchestration_addr, "Orchestration gRPC client connected");
+
+    // Spawn periodic uptime recording (30s cadence aligns with Prometheus scrape)
+    tokio::spawn(async {
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(30));
+        loop {
+            interval.tick().await;
+            platform_metrics::record_uptime();
+        }
+    });
 
     info!("API Gateway service registered, listening on {}", runner.grpc_addr);
     platform_health::serve::serve_health(&runner).await?;

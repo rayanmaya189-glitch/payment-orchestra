@@ -22,4 +22,6 @@ pub enum SagaError {
     CompensationFailed(String),
     #[error("Saga timed out")]
     Timeout,
+    #[error("Database error: {0}")]
+    DatabaseError(String),
 }

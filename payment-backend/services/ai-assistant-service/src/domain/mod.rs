@@ -134,6 +134,8 @@ pub enum AiError {
     RateLimitExceeded(String),
     #[error("Message too long: {length} characters (max: {max})")]
     MessageTooLong { length: usize, max: usize },
+    #[error("Database error: {0}")]
+    DatabaseError(String),
 }
 
 // ---------------------------------------------------------------------------

@@ -95,3 +95,33 @@ impl<R: SagaRepository + Send + Sync> CommandHandler for SagaCommandHandler<R> {
         Ok(saga)
     }
 }
+
+// ─── Blanket impl: Box<dyn CommandHandler> delegates to inner ─────────────────
+
+#[async_trait]
+impl<T: CommandHandler + ?Sized> CommandHandler for Box<T> {
+    async fn start_saga(&self, cmd: StartSagaCommand) -> Result<SagaInstance, SagaError> {
+        (**self).start_saga(cmd).await
+    }
+    async fn begin_saga(&self, cmd: BeginSagaCommand) -> Result<SagaInstance, SagaError> {
+        (**self).begin_saga(cmd).await
+    }
+    async fn start_step(&self, cmd: StartStepCommand) -> Result<SagaInstance, SagaError> {
+        (**self).start_step(cmd).await
+    }
+    async fn complete_step(&self, cmd: CompleteStepCommand) -> Result<SagaInstance, SagaError> {
+        (**self).complete_step(cmd).await
+    }
+    async fn fail_step(&self, cmd: FailStepCommand) -> Result<SagaInstance, SagaError> {
+        (**self).fail_step(cmd).await
+    }
+    async fn compensate_next(&self, cmd: CompensateNextCommand) -> Result<Option<usize>, SagaError> {
+        (**self).compensate_next(cmd).await
+    }
+    async fn complete_saga(&self, cmd: CompleteSagaCommand) -> Result<SagaInstance, SagaError> {
+        (**self).complete_saga(cmd).await
+    }
+    async fn fail_saga(&self, cmd: FailSagaCommand) -> Result<SagaInstance, SagaError> {
+        (**self).fail_saga(cmd).await
+    }
+}

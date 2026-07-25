@@ -141,6 +141,23 @@ impl<R: OperatorRepository + Send + Sync> CommandHandler for OperatorCommandHand
     }
 }
 
+// ─── Blanket impl: Box<dyn CommandHandler> delegates to inner ────────────────
+
+#[async_trait::async_trait]
+impl<T: CommandHandler + ?Sized> CommandHandler for Box<T> {
+    async fn register(&self, cmd: RegisterOperator) -> Result<RegisterOperatorResult, crate::domain::OperatorError> {
+        (**self).register(cmd).await
+    }
+
+    async fn verify_email(&self, cmd: VerifyEmail) -> Result<VerifyEmailResult, crate::domain::OperatorError> {
+        (**self).verify_email(cmd).await
+    }
+
+    async fn update_status(&self, cmd: UpdateOperatorStatus) -> Result<UpdateOperatorStatusResult, crate::domain::OperatorError> {
+        (**self).update_status(cmd).await
+    }
+}
+
 // ─── Tests ─────────────────────────────────────────────────────────────────
 
 #[cfg(test)]

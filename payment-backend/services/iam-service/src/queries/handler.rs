@@ -5,6 +5,17 @@ use uuid::Uuid;
 use crate::domain::{Principal, ApiKey, IamError};
 use crate::repository::IamRepository;
 
+// Blanket impl: Box<dyn QueryHandler> implements QueryHandler
+#[async_trait::async_trait]
+impl QueryHandler for Box<dyn QueryHandler> {
+    async fn get_principal(&self, id: Uuid) -> Result<Option<Principal>, IamError> {
+        self.as_ref().get_principal(id).await
+    }
+    async fn list_api_keys(&self, principal_id: Uuid) -> Result<Vec<ApiKey>, IamError> {
+        self.as_ref().list_api_keys(principal_id).await
+    }
+}
+
 #[async_trait::async_trait]
 pub trait QueryHandler: Send + Sync {
     async fn get_principal(&self, id: Uuid) -> Result<Option<Principal>, IamError>;

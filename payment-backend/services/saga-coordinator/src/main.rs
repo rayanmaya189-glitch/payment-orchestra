@@ -11,20 +11,17 @@ use tracing::info;
 use saga_coordinator::api::{grpc::SagaGrpcService, SagaApi};
 use saga_coordinator::commands::{SagaCommandHandler, CommandHandler};
 use saga_coordinator::queries::{SagaQueryHandler, QueryHandler};
-use saga_coordinator::repository::InMemorySagaRepository;
+use saga_coordinator::repository::{InMemorySagaRepository, PostgresSagaRepository};
 use platform_db::connection::create_service_pool;
 use platform_messaging::event_bus::{EventBus, NoopEventBus};
 use platform_messaging::nats_event_bus::NatsJetStreamEventBus;
+use platform_metrics::grpc_interceptor::MetricsLayer;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenvy::dotenv().ok();
     platform_logging::telemetry::init();
-
-    let _db = match create_service_pool("SAGA_COORDINATOR").await {
-        Ok(db) => { tracing::info!("Connected to PostgreSQL for saga-coordinator"); Some(db) }
-        Err(e) => { tracing::warn!("PostgreSQL unavailable for saga-coordinator ({}), skipping", e); None }
-    };
+    platform_metrics::init_uptime_tracker();
 
     let mut runner = platform_registry::bootstrap::ServerRunner::new("saga-coordinator", 9016, 9116).await?;
 
@@ -37,20 +34,41 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     } else { Arc::new(NoopEventBus) };
 
-    let repo = InMemorySagaRepository::new();
-    let command_handler = SagaCommandHandler::new(repo.clone());
-    let query_handler = SagaQueryHandler::new(repo);
-    let api = SagaApi::new(
-        Box::new(command_handler) as Box<dyn CommandHandler>,
-        Box::new(query_handler) as Box<dyn QueryHandler>,
-    );
+    let (command_handler, query_handler): (Box<dyn CommandHandler>, Box<dyn QueryHandler>) =
+        if let Ok(db) = create_service_pool("SAGA_COORDINATOR").await {
+            tracing::info!("Connected to PostgreSQL for saga-coordinator");
+            let repo = PostgresSagaRepository::new(db);
+            (
+                Box::new(SagaCommandHandler::new(repo.clone())) as Box<dyn CommandHandler>,
+                Box::new(SagaQueryHandler::new(repo)) as Box<dyn QueryHandler>,
+            )
+        } else {
+            tracing::warn!("PostgreSQL unavailable for saga-coordinator, using in-memory");
+            let repo = InMemorySagaRepository::new();
+            (
+                Box::new(SagaCommandHandler::new(repo.clone())) as Box<dyn CommandHandler>,
+                Box::new(SagaQueryHandler::new(repo)) as Box<dyn QueryHandler>,
+            )
+        };
+
+    let api = SagaApi::new(command_handler, query_handler);
     let saga_service = SagaGrpcService::new(api);
 
     let grpc_addr: SocketAddr = runner.grpc_addr;
     info!("Saga Coordinator service registered, listening on {}", grpc_addr);
 
+    // Spawn periodic uptime recording (30s cadence aligns with Prometheus scrape)
+    tokio::spawn(async {
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(30));
+        loop {
+            interval.tick().await;
+            platform_metrics::record_uptime();
+        }
+    });
+
     tokio::select! {
         result = Server::builder()
+            .layer(MetricsLayer::new("saga-coordinator"))
             .add_service(platform_proto::saga::saga_service_server::SagaServiceServer::new(saga_service))
             .serve_with_shutdown(grpc_addr, async {
                 tokio::signal::ctrl_c().await.ok();

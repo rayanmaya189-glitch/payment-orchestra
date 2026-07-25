@@ -95,3 +95,18 @@ impl<R: RiskRepository + Send + Sync> CommandHandler for RiskCommandHandler<R> {
         RiskEngine::default_rules()
     }
 }
+
+// ─── Blanket impl: Box<dyn CommandHandler> delegates to inner ─────────────────
+
+#[async_trait]
+impl<T: CommandHandler + ?Sized> CommandHandler for Box<T> {
+    async fn assess_risk(&self, cmd: AssessRiskCommand) -> Result<RiskAssessment, RiskError> {
+        (**self).assess_risk(cmd).await
+    }
+    async fn update_risk_rule(&self, cmd: UpdateRiskRuleCommand) -> Result<RiskRule, RiskError> {
+        (**self).update_risk_rule(cmd).await
+    }
+    async fn get_default_rules(&self) -> Vec<RiskRule> {
+        (**self).get_default_rules().await
+    }
+}

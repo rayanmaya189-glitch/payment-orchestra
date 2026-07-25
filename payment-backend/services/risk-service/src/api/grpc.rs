@@ -200,6 +200,9 @@ fn risk_error_to_status(e: RiskError) -> Status {
         RiskError::UnsupportedCurrency(currency) => {
             Status::invalid_argument(format!("Unsupported currency: {}", currency))
         }
+        RiskError::DatabaseError(msg) => {
+            Status::internal(format!("Database error: {}", msg))
+        }
     }
 }
 

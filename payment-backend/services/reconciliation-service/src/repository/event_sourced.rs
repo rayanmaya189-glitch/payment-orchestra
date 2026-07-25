@@ -55,7 +55,7 @@ impl EventSourcedReconciliationRepository {
             .event_store
             .latest_sequence("SettlementBatch", batch_id)
             .await
-            .map_err(|e| ReconciliationError::DatabaseError(e))?;
+            .map_err(ReconciliationError::DatabaseError)?;
 
         let start_seq = latest.unwrap_or(0) + 1;
 
@@ -68,7 +68,7 @@ impl EventSourcedReconciliationRepository {
         self.event_store
             .append_events(stored_events)
             .await
-            .map_err(|e| ReconciliationError::DatabaseError(e))?;
+            .map_err(ReconciliationError::DatabaseError)?;
 
         Ok(())
     }
@@ -81,7 +81,7 @@ impl SettlementBatchRepository for EventSourcedReconciliationRepository {
             .event_store
             .read_all_events("SettlementBatch", id)
             .await
-            .map_err(|e| ReconciliationError::DatabaseError(e))?;
+            .map_err(ReconciliationError::DatabaseError)?;
 
         if stored_events.is_empty() {
             return Ok(None);

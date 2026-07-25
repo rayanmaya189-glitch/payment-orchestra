@@ -169,6 +169,7 @@ fn saga_error_to_status(e: SagaError) -> Status {
         SagaError::StepFailed(msg) => Status::internal(format!("Step failed: {}", msg)),
         SagaError::CompensationFailed(msg) => Status::internal(format!("Compensation failed: {}", msg)),
         SagaError::Timeout => Status::deadline_exceeded("Saga timed out"),
+        SagaError::DatabaseError(msg) => Status::internal(format!("Database error: {}", msg)),
     }
 }
 

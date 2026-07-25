@@ -145,6 +145,8 @@ pub enum SchedulerError {
     JobDisabled(String),
     #[error("Not the leader for job: {0}")]
     NotLeader(String),
+    #[error("Database error: {0}")]
+    DatabaseError(String),
 }
 
 // ---------------------------------------------------------------------------

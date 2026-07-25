@@ -187,6 +187,9 @@ fn ai_error_to_status(e: AiError) -> Status {
                 length, max
             ))
         }
+        AiError::DatabaseError(msg) => {
+            Status::internal(format!("Database error: {}", msg))
+        }
     }
 }
 

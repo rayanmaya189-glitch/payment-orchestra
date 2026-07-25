@@ -14,6 +14,7 @@ use platform_messaging::nats_event_bus::NatsJetStreamEventBus;
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenvy::dotenv().ok();
     platform_logging::telemetry::init();
+    platform_metrics::init_uptime_tracker();
 
     let _db = match create_service_pool("SCHEDULER").await {
         Ok(db) => { tracing::info!("Connected to PostgreSQL for scheduler"); Some(db) }
@@ -30,6 +31,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             Err(e) => { tracing::warn!("NATS failed ({}), using NoopEventBus", e); Arc::new(NoopEventBus) }
         }
     } else { Arc::new(NoopEventBus) };
+
+    // Spawn periodic uptime recording (30s cadence aligns with Prometheus scrape)
+    tokio::spawn(async {
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(30));
+        loop {
+            interval.tick().await;
+            platform_metrics::record_uptime();
+        }
+    });
 
     info!("Scheduler service registered, listening on {}", runner.grpc_addr);
     platform_health::serve::serve_health(&runner).await?;

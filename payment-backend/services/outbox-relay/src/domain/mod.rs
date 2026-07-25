@@ -74,4 +74,6 @@ pub enum OutboxRelayError {
     NotRunning,
     #[error("Relay is already running")]
     AlreadyRunning,
+    #[error("Database error: {0}")]
+    DatabaseError(String),
 }

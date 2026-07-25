@@ -212,4 +212,6 @@ pub enum AiGatewayError {
     ModelUnavailable(String),
     #[error("Audit log error: {0}")]
     AuditError(String),
+    #[error("Database error: {0}")]
+    DatabaseError(String),
 }

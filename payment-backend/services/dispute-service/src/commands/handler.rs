@@ -65,3 +65,20 @@ impl<R: DisputeRepository + Send + Sync> CommandHandler for DisputeCommandHandle
         Ok(case)
     }
 }
+
+// ─── Blanket impl: Box<dyn CommandHandler> delegates to inner ────────────────
+
+#[async_trait]
+impl<T: CommandHandler + ?Sized> CommandHandler for Box<T> {
+    async fn record_chargeback(&self, cmd: RecordChargebackCommand) -> Result<ChargebackCase, DisputeError> {
+        (**self).record_chargeback(cmd).await
+    }
+
+    async fn submit_representment(&self, cmd: SubmitRepresentmentCommand) -> Result<ChargebackCase, DisputeError> {
+        (**self).submit_representment(cmd).await
+    }
+
+    async fn resolve_chargeback(&self, cmd: ResolveChargebackCommand) -> Result<ChargebackCase, DisputeError> {
+        (**self).resolve_chargeback(cmd).await
+    }
+}

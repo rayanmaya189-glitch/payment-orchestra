@@ -136,3 +136,36 @@ impl<R: SubscriptionRepository + Send + Sync> CommandHandler for SubscriptionCom
         }
     }
 }
+
+// ─── Blanket impl: Box<dyn CommandHandler> delegates to inner ────────────────
+
+#[async_trait]
+impl<T: CommandHandler + ?Sized> CommandHandler for Box<T> {
+    async fn create_subscription(&self, cmd: CreateSubscriptionCommand) -> Result<Subscription, SubscriptionError> {
+        (**self).create_subscription(cmd).await
+    }
+
+    async fn cancel_subscription(&self, cmd: CancelSubscriptionCommand) -> Result<Subscription, SubscriptionError> {
+        (**self).cancel_subscription(cmd).await
+    }
+
+    async fn pause_subscription(&self, cmd: PauseSubscriptionCommand) -> Result<Subscription, SubscriptionError> {
+        (**self).pause_subscription(cmd).await
+    }
+
+    async fn resume_subscription(&self, cmd: ResumeSubscriptionCommand) -> Result<Subscription, SubscriptionError> {
+        (**self).resume_subscription(cmd).await
+    }
+
+    async fn renew_subscription(&self, cmd: RenewSubscriptionCommand) -> Result<RenewResult, SubscriptionError> {
+        (**self).renew_subscription(cmd).await
+    }
+
+    async fn confirm_renewal_payment(&self, cmd: ConfirmRenewalPaymentCommand) -> Result<Subscription, SubscriptionError> {
+        (**self).confirm_renewal_payment(cmd).await
+    }
+
+    async fn fail_renewal_payment(&self, cmd: FailRenewalPaymentCommand) -> Result<Subscription, SubscriptionError> {
+        (**self).fail_renewal_payment(cmd).await
+    }
+}

@@ -28,6 +28,9 @@ platform-db.workspace = true
 platform-health.workspace = true
 platform-metrics.workspace = true
 
+[features]
+integration_test = []
+
 [dev-dependencies]
 proptest.workspace = true
 testcontainers.workspace = true

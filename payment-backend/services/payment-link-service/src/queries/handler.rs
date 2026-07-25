@@ -42,3 +42,24 @@ impl<R: PaymentLinkRepository + Send + Sync> QueryHandler for PaymentLinkQueryHa
         self.repo.find_expired().await
     }
 }
+
+// ─── Blanket impl: Box<dyn QueryHandler> delegates to inner ──────────────────
+
+#[async_trait]
+impl<T: QueryHandler + ?Sized> QueryHandler for Box<T> {
+    async fn get_payment_link(&self, id: Uuid) -> Result<PaymentLink, PaymentLinkError> {
+        (**self).get_payment_link(id).await
+    }
+
+    async fn get_payment_link_by_token(&self, token: &str) -> Result<PaymentLink, PaymentLinkError> {
+        (**self).get_payment_link_by_token(token).await
+    }
+
+    async fn find_by_operator(&self, operator_id: Uuid) -> Result<Vec<PaymentLink>, PaymentLinkError> {
+        (**self).find_by_operator(operator_id).await
+    }
+
+    async fn find_expired_links(&self) -> Result<Vec<PaymentLink>, PaymentLinkError> {
+        (**self).find_expired_links().await
+    }
+}

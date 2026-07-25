@@ -13,3 +13,4 @@ pub mod acquirer_link;
 
 pub use traits::*;
 pub use in_memory::*;
+pub use pg::PostgresOrchestrationRepository;

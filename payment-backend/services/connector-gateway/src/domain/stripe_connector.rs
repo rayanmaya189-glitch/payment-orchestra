@@ -15,7 +15,7 @@ use std::collections::HashMap;
 use std::sync::Mutex;
 
 use serde_json::Value;
-
+use platform_middleware::ssrf::validate_connector_url;
 
 use super::*;
 
@@ -45,6 +45,14 @@ impl StripeConnector {
             .unwrap_or_default();
         let environment = config.environment.clone();
         let base_url = "https://api.stripe.com".to_string();
+
+        // Validate base_url for SSRF safety (prevents accidentally connecting
+        // to internal/private networks even if config is ever made dynamic)
+        if let Err(e) = validate_connector_url(&base_url) {
+            // In production this would be a startup fatal error, but for now
+            // warn and continue since the URL is hardcoded to api.stripe.com.
+            tracing::warn!("SSRF validation warning for base_url '{}': {}", base_url, e);
+        }
 
         let client = reqwest::Client::builder()
             .connect_timeout(std::time::Duration::from_secs(10))

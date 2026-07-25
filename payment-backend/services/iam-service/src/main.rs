@@ -7,6 +7,7 @@ use std::net::SocketAddr;
 use tracing::info;
 
 mod domain;
+mod entities;
 mod commands;
 mod queries;
 mod events;
@@ -21,29 +22,23 @@ use std::sync::Arc;
 use platform_db::connection::create_service_pool;
 use platform_messaging::event_bus::{EventBus, NoopEventBus};
 use platform_messaging::nats_event_bus::NatsJetStreamEventBus;
-use commands::IamCommandHandler;
-use queries::IamQueries;
-use repository::InMemoryIamRepository;
+use commands::{CommandHandler, IamCommandHandler};
+use queries::{QueryHandler, IamQueries};
+use repository::{InMemoryIamRepository, PostgresIamRepository};
 use api::grpc::IamGrpcService;
 use platform_proto::iam::iam_service_server::IamServiceServer;
+use platform_metrics::grpc_interceptor::MetricsLayer;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenvy::dotenv().ok();
     platform_logging::telemetry::init();
+    platform_metrics::init_uptime_tracker();
     
-
     let mut runner = platform_registry::bootstrap::ServerRunner::new("iam-service", 9002, 9102).await?;
-
-    let _db = match create_service_pool("IAM").await {
-        Ok(db) => { tracing::info!("Connected to PostgreSQL for iam-service"); Some(db) }
-        Err(e) => { tracing::warn!("PostgreSQL unavailable for iam-service ({}), using InMemory", e); None }
-    };
 
     let config = platform_config::config::ServiceConfig::from_env()
         .unwrap_or_default();
-
-    let repository = InMemoryIamRepository::new();
 
     let event_bus: Arc<dyn EventBus> = if let Ok(url) = std::env::var("NATS_URL") {
         let nats_username = std::env::var("IAM_NATS_USERNAME").ok();
@@ -66,18 +61,41 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Arc::new(NoopEventBus)
     };
 
-    let command_handler = IamCommandHandler::new(
-        repository.clone(),
-        config.jwt_secret,
-    ).with_event_bus(event_bus);
-    let queries = IamQueries::new(repository);
+    // Choose repository: PostgreSQL-backed if DB available, otherwise in-memory
+    let (command_handler, queries): (Box<dyn CommandHandler>, Box<dyn QueryHandler>) =
+        if let Ok(db) = create_service_pool("IAM").await {
+            tracing::info!("Using PostgreSQL-backed repository for iam-service");
+            let repo = PostgresIamRepository::new(db);
+            let ch = IamCommandHandler::new(repo.clone(), config.jwt_secret)
+                .with_event_bus(event_bus);
+            let qh = IamQueries::new(repo);
+            (Box::new(ch), Box::new(qh))
+        } else {
+            tracing::warn!("PostgreSQL unavailable for iam-service, using InMemory repository");
+            let repo = InMemoryIamRepository::new();
+            let ch = IamCommandHandler::new(repo.clone(), config.jwt_secret)
+                .with_event_bus(event_bus);
+            let qh = IamQueries::new(repo);
+            (Box::new(ch), Box::new(qh))
+        };
+
     let iam_service = IamGrpcService::new(command_handler, queries);
 
     let addr: SocketAddr = runner.grpc_addr;
     info!("IAM service gRPC server listening on {addr}");
 
+    // Spawn periodic uptime recording (30s cadence aligns with Prometheus scrape)
+    tokio::spawn(async {
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(30));
+        loop {
+            interval.tick().await;
+            platform_metrics::record_uptime();
+        }
+    });
+
     tokio::select! {
         result = tonic::transport::Server::builder()
+            .layer(MetricsLayer::new("iam-service"))
             .add_service(IamServiceServer::new(iam_service))
             .serve_with_shutdown(addr, async {
                 tokio::signal::ctrl_c().await.ok();

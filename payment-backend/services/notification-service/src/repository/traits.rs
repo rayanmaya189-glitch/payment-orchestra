@@ -21,3 +21,23 @@ pub trait WebhookRepository: Send + Sync {
     async fn find_by_operator(&self, operator_id: Uuid) -> Result<Vec<Webhook>, NotificationError>;
     async fn delete(&self, id: Uuid) -> Result<(), NotificationError>;
 }
+
+// Blanket impl: Box<dyn WebhookRepository> implements WebhookRepository
+#[async_trait]
+impl<T: WebhookRepository + ?Sized> WebhookRepository for Box<T> {
+    async fn save(&self, webhook: &Webhook) -> Result<(), NotificationError> {
+        (**self).save(webhook).await
+    }
+
+    async fn load(&self, id: Uuid) -> Result<Option<Webhook>, NotificationError> {
+        (**self).load(id).await
+    }
+
+    async fn find_by_operator(&self, operator_id: Uuid) -> Result<Vec<Webhook>, NotificationError> {
+        (**self).find_by_operator(operator_id).await
+    }
+
+    async fn delete(&self, id: Uuid) -> Result<(), NotificationError> {
+        (**self).delete(id).await
+    }
+}

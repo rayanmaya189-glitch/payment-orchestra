@@ -42,3 +42,24 @@ impl<R: DisputeRepository + Send + Sync> QueryHandler for DisputeQueryHandler<R>
         self.repo.find_by_operator(operator_id).await
     }
 }
+
+// ─── Blanket impl: Box<dyn QueryHandler> delegates to inner ──────────────────
+
+#[async_trait]
+impl<T: QueryHandler + ?Sized> QueryHandler for Box<T> {
+    async fn get_chargeback(&self, id: Uuid) -> Result<ChargebackCase, DisputeError> {
+        (**self).get_chargeback(id).await
+    }
+
+    async fn find_by_payment_intent(&self, payment_intent_id: Uuid) -> Result<Vec<ChargebackCase>, DisputeError> {
+        (**self).find_by_payment_intent(payment_intent_id).await
+    }
+
+    async fn find_open_cases(&self, operator_id: Uuid) -> Result<Vec<ChargebackCase>, DisputeError> {
+        (**self).find_open_cases(operator_id).await
+    }
+
+    async fn find_by_operator(&self, operator_id: Uuid) -> Result<Vec<ChargebackCase>, DisputeError> {
+        (**self).find_by_operator(operator_id).await
+    }
+}

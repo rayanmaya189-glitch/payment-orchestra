@@ -42,3 +42,24 @@ impl<R: SubscriptionRepository + Send + Sync> QueryHandler for SubscriptionQuery
         self.repo.find_active_for_renewal().await
     }
 }
+
+// ─── Blanket impl: Box<dyn QueryHandler> delegates to inner ──────────────────
+
+#[async_trait]
+impl<T: QueryHandler + ?Sized> QueryHandler for Box<T> {
+    async fn get_subscription(&self, id: Uuid) -> Result<Subscription, SubscriptionError> {
+        (**self).get_subscription(id).await
+    }
+
+    async fn find_by_customer(&self, customer_id: Uuid) -> Result<Vec<Subscription>, SubscriptionError> {
+        (**self).find_by_customer(customer_id).await
+    }
+
+    async fn find_by_operator(&self, operator_id: Uuid) -> Result<Vec<Subscription>, SubscriptionError> {
+        (**self).find_by_operator(operator_id).await
+    }
+
+    async fn find_active_for_renewal(&self) -> Result<Vec<Subscription>, SubscriptionError> {
+        (**self).find_active_for_renewal().await
+    }
+}

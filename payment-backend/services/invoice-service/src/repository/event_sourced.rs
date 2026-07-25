@@ -37,7 +37,7 @@ impl EventSourcedInvoiceRepository {
             .event_store
             .latest_sequence("Invoice", invoice_id)
             .await
-            .map_err(|e| InvoiceError::DatabaseError(e))?;
+            .map_err(InvoiceError::DatabaseError)?;
 
         let start_seq = latest.unwrap_or(0) + 1;
 
@@ -50,7 +50,7 @@ impl EventSourcedInvoiceRepository {
         self.event_store
             .append_events(stored_events)
             .await
-            .map_err(|e| InvoiceError::DatabaseError(e))?;
+            .map_err(InvoiceError::DatabaseError)?;
 
         Ok(())
     }
@@ -63,7 +63,7 @@ impl InvoiceRepository for EventSourcedInvoiceRepository {
             .event_store
             .read_all_events("Invoice", id)
             .await
-            .map_err(|e| InvoiceError::DatabaseError(e))?;
+            .map_err(InvoiceError::DatabaseError)?;
 
         if stored_events.is_empty() {
             return Ok(None);

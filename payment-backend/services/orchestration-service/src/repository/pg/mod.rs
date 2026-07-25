@@ -1,44 +1,35 @@
-//! PostgreSQL-backed orchestration repositories using SeaORM + platform-db entities.
+//! PostgreSQL-backed orchestration repositories using SeaORM.
 //!
-//! Implements 3 persistent traits (PaymentIntentRepository, RoutingPolicyRepository,
-//! PaymentMethodTokenRepository) and 2 in-memory traits (IdempotencyCache, AcquirerLinkProvider).
+//! Implements all 5 repository traits: PaymentIntentRepository, RoutingPolicyRepository,
+//! PaymentMethodTokenRepository, IdempotencyCache, AcquirerLinkProvider.
+//!
+//! PaymentIntentRepository uses direct CRUD with JSONB columns for complex types
+//! (routing_attempts). Other traits use SeaORM for PostgreSQL persistence.
+//! Event-sourced variant is in the parent `event_sourced.rs` module.
 
-use std::collections::HashMap;
 use std::sync::Arc;
+
 use sea_orm::DatabaseConnection;
-use tokio::sync::RwLock;
-use uuid::Uuid;
+use tokio::sync::Mutex;
 
 pub mod payment_intent;
 pub mod routing_policy;
-pub mod idempotency;
 pub mod payment_method_token;
+pub mod idempotency;
 pub mod acquirer_link;
 
-/// Combined PostgreSQL-backed orchestration repository.
-///
-/// Uses SeaORM for persistent entities and in-memory maps for
-/// idempotency cache and acquirer link provider (no dedicated DB tables yet).
+/// Combined PostgreSQL-backed repository implementing all orchestration traits.
+#[derive(Clone)]
 pub struct PostgresOrchestrationRepository {
     pub db: DatabaseConnection,
-    pub(super) idempotency_cache: Arc<RwLock<HashMap<String, serde_json::Value>>>,
-    pub(super) active_policies: Arc<RwLock<HashMap<Uuid, Uuid>>>,
-    pub(super) active_links: Arc<RwLock<HashMap<Uuid, Vec<Uuid>>>>,
+    pub redis_conn: Option<Arc<Mutex<redis::aio::ConnectionManager>>>,
 }
 
 impl PostgresOrchestrationRepository {
-    pub fn new(db: DatabaseConnection) -> Self {
+    pub fn new(db: DatabaseConnection, redis_conn: Option<redis::aio::ConnectionManager>) -> Self {
         Self {
             db,
-            idempotency_cache: Arc::new(RwLock::new(HashMap::new())),
-            active_policies: Arc::new(RwLock::new(HashMap::new())),
-            active_links: Arc::new(RwLock::new(HashMap::new())),
+            redis_conn: redis_conn.map(|c| Arc::new(Mutex::new(c))),
         }
-    }
-
-    /// Seed active acquirer links for testing.
-    pub async fn set_active_links(&self, operator_id: Uuid, link_ids: Vec<Uuid>) {
-        let mut links = self.active_links.write().await;
-        links.insert(operator_id, link_ids);
     }
 }

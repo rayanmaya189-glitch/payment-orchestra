@@ -63,3 +63,18 @@ impl<R: RiskRepository + Send + Sync> QueryHandler for RiskQueryHandler<R> {
         self.repo.get_risk_stats(operator_id, window_hours).await
     }
 }
+
+// ─── Blanket impl: Box<dyn QueryHandler> delegates to inner ──────────────────
+
+#[async_trait]
+impl<T: QueryHandler + ?Sized> QueryHandler for Box<T> {
+    async fn get_assessment(&self, payment_intent_id: Uuid) -> Result<RiskAssessment, RiskError> {
+        (**self).get_assessment(payment_intent_id).await
+    }
+    async fn find_high_risk(&self, operator_id: Uuid, since: DateTime<Utc>) -> Result<Vec<RiskAssessment>, RiskError> {
+        (**self).find_high_risk(operator_id, since).await
+    }
+    async fn get_risk_stats(&self, operator_id: Uuid, window_hours: u32) -> Result<RiskStats, RiskError> {
+        (**self).get_risk_stats(operator_id, window_hours).await
+    }
+}

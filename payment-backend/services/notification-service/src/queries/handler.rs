@@ -50,3 +50,28 @@ impl<R: NotificationRepository + Send + Sync> QueryHandler for NotificationQuery
         default_templates()
     }
 }
+
+// ─── Blanket impl: Box<dyn QueryHandler> delegates to inner ──────────────────
+
+#[async_trait]
+impl<T: QueryHandler + ?Sized> QueryHandler for Box<T> {
+    async fn get_notification(&self, id: Uuid) -> Result<NotificationRequest, NotificationError> {
+        (**self).get_notification(id).await
+    }
+
+    async fn find_pending(&self) -> Result<Vec<NotificationRequest>, NotificationError> {
+        (**self).find_pending().await
+    }
+
+    async fn find_dead_letter(&self) -> Result<Vec<NotificationRequest>, NotificationError> {
+        (**self).find_dead_letter().await
+    }
+
+    async fn find_by_operator(&self, operator_id: Uuid) -> Result<Vec<NotificationRequest>, NotificationError> {
+        (**self).find_by_operator(operator_id).await
+    }
+
+    async fn list_templates(&self) -> Vec<NotificationTemplate> {
+        (**self).list_templates().await
+    }
+}

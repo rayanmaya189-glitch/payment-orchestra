@@ -38,7 +38,7 @@ impl EventSourcedSubscriptionRepository {
             .event_store
             .latest_sequence("Subscription", subscription_id)
             .await
-            .map_err(|e| SubscriptionError::DatabaseError(e))?;
+            .map_err(SubscriptionError::DatabaseError)?;
 
         let start_seq = latest.unwrap_or(0) + 1;
 
@@ -51,7 +51,7 @@ impl EventSourcedSubscriptionRepository {
         self.event_store
             .append_events(stored_events)
             .await
-            .map_err(|e| SubscriptionError::DatabaseError(e))?;
+            .map_err(SubscriptionError::DatabaseError)?;
 
         Ok(())
     }
@@ -64,7 +64,7 @@ impl SubscriptionRepository for EventSourcedSubscriptionRepository {
             .event_store
             .read_all_events("Subscription", id)
             .await
-            .map_err(|e| SubscriptionError::DatabaseError(e))?;
+            .map_err(SubscriptionError::DatabaseError)?;
 
         if stored_events.is_empty() {
             return Ok(None);

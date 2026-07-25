@@ -13,25 +13,23 @@ use tracing::info;
 
 use connector_gateway::api::grpc::GatewayProfileGrpcService;
 use connector_gateway::api::rate_limit::{RateLimitInterceptor, create_rate_limiter};
-use connector_gateway::commands::GatewayCommandHandler;
-use connector_gateway::queries::GatewayQueryHandler;
+use connector_gateway::commands::{CommandHandler, GatewayCommandHandler};
+use connector_gateway::queries::{QueryHandler, GatewayQueryHandler};
 use connector_gateway::repository::InMemoryGatewayProfileRepository;
+use connector_gateway::repository::PostgresConnectorGatewayRepository;
 use connector_gateway::domain::ConnectorRegistry;
 use platform_proto::gateway_profile::gateway_profile_service_server::GatewayProfileServiceServer;
 
 use platform_db::connection::create_service_pool;
 use platform_messaging::event_bus::{EventBus, NoopEventBus};
 use platform_messaging::nats_event_bus::NatsJetStreamEventBus;
+use platform_metrics::grpc_interceptor::MetricsLayer;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenvy::dotenv().ok();
     platform_logging::telemetry::init();
-
-    let _db = match create_service_pool("CONNECTOR_GATEWAY").await {
-        Ok(db) => { tracing::info!("Connected to PostgreSQL for connector-gateway"); Some(db) }
-        Err(e) => { tracing::warn!("PostgreSQL unavailable for connector-gateway ({}), skipping", e); None }
-    };
+    platform_metrics::init_uptime_tracker();
 
     let mut runner = platform_registry::bootstrap::ServerRunner::new("connector-gateway", 9004, 9104).await?;
 
@@ -44,19 +42,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     } else { Arc::new(NoopEventBus) };
 
-    // Initialize in-memory repository
-    let repo = InMemoryGatewayProfileRepository::new();
-
-    // Create command and query handlers with separate registries
-    // (ConnectorRegistry is not Clone since it contains Box<dyn> trait objects)
-    let command_handler = GatewayCommandHandler::new(
-        repo.clone(),
-        ConnectorRegistry::with_all_connectors(),
-    );
-    let query_handler = GatewayQueryHandler::new(
-        repo.clone(),
-        ConnectorRegistry::with_all_connectors(),
-    );
+    // Choose repository: PostgreSQL-backed if DB available, otherwise in-memory.
+    // ConnectorRegistry is not Clone (contains Box<dyn>), so each handler gets its own instance.
+    let (command_handler, query_handler): (Box<dyn CommandHandler>, Box<dyn QueryHandler>) =
+        if let Ok(db) = create_service_pool("CONNECTOR_GATEWAY").await {
+            tracing::info!("Using PostgreSQL-backed repository for connector-gateway");
+            let repo = PostgresConnectorGatewayRepository::new(db);
+            (
+                Box::new(GatewayCommandHandler::new(repo.clone(), ConnectorRegistry::with_all_connectors())),
+                Box::new(GatewayQueryHandler::new(repo, ConnectorRegistry::with_all_connectors())),
+            )
+        } else {
+            tracing::warn!("PostgreSQL unavailable for connector-gateway, using InMemory repository");
+            let repo = InMemoryGatewayProfileRepository::new();
+            (
+                Box::new(GatewayCommandHandler::new(repo.clone(), ConnectorRegistry::with_all_connectors())),
+                Box::new(GatewayQueryHandler::new(repo, ConnectorRegistry::with_all_connectors())),
+            )
+        };
 
     // Create the gRPC service with its own registry for direct connector access
     let gateway_profile_service = GatewayProfileGrpcService::new(
@@ -73,9 +76,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!("Connector Gateway gRPC server listening on {addr}");
     info!("Connectors available: stripe, network_international, checkout_com, telr");
 
+    // Spawn periodic uptime recording (30s cadence aligns with Prometheus scrape)
+    tokio::spawn(async {
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(30));
+        loop {
+            interval.tick().await;
+            platform_metrics::record_uptime();
+        }
+    });
+
     // Start gRPC server with rate limiting interceptor
     tokio::select! {
         result = tonic::transport::Server::builder()
+            .layer(MetricsLayer::new("connector-gateway"))
             .layer(tonic::service::interceptor(rate_limit_interceptor))
             .add_service(GatewayProfileServiceServer::new(gateway_profile_service))
             .serve_with_shutdown(addr, async {

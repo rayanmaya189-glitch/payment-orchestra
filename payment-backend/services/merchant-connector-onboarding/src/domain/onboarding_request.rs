@@ -66,11 +66,10 @@ impl OnboardingRequest {
                     if value.is_empty() && field.required {
                         return Err(OnboardingError::InvalidFieldValue(field.name.clone()));
                     }
-                    if !value.is_empty() {
-                        if value.len() < (field.min_length.unwrap_or(0) as usize) {
+                    if !value.is_empty()
+                        && value.len() < (field.min_length.unwrap_or(0) as usize) {
                             return Err(OnboardingError::InvalidFieldValue(field.name.clone()));
                         }
-                    }
                 }
             }
         }

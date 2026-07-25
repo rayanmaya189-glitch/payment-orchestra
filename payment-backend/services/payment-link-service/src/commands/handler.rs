@@ -120,3 +120,24 @@ impl<R: PaymentLinkRepository + Send + Sync> CommandHandler for PaymentLinkComma
         Ok(expired)
     }
 }
+
+// ─── Blanket impl: Box<dyn CommandHandler> delegates to inner ────────────────
+
+#[async_trait]
+impl<T: CommandHandler + ?Sized> CommandHandler for Box<T> {
+    async fn create_payment_link(&self, cmd: CreatePaymentLinkCommand) -> Result<PaymentLink, PaymentLinkError> {
+        (**self).create_payment_link(cmd).await
+    }
+
+    async fn resolve_payment_link(&self, cmd: ResolvePaymentLinkCommand) -> Result<PaymentLink, PaymentLinkError> {
+        (**self).resolve_payment_link(cmd).await
+    }
+
+    async fn cancel_payment_link(&self, cmd: CancelPaymentLinkCommand) -> Result<PaymentLink, PaymentLinkError> {
+        (**self).cancel_payment_link(cmd).await
+    }
+
+    async fn expire_overdue_links(&self) -> Result<Vec<PaymentLink>, PaymentLinkError> {
+        (**self).expire_overdue_links().await
+    }
+}

@@ -11,6 +11,23 @@ use crate::events::{ConnectionTested, CredentialsValidated, GatewayEvent, Gatewa
 use crate::repository::GatewayProfileRepository;
 use crate::commands::types::*;
 
+// Blanket impl: Box<dyn CommandHandler> implements CommandHandler
+#[async_trait]
+impl CommandHandler for Box<dyn CommandHandler> {
+    async fn create_gateway_profile(&self, cmd: CreateGatewayProfile) -> Result<CreateGatewayProfileResult, String> {
+        self.as_ref().create_gateway_profile(cmd).await
+    }
+    async fn update_gateway_profile(&self, cmd: UpdateGatewayProfile) -> Result<UpdateGatewayProfileResult, String> {
+        self.as_ref().update_gateway_profile(cmd).await
+    }
+    async fn test_connection(&self, cmd: TestConnection) -> Result<TestConnectionResult, String> {
+        self.as_ref().test_connection(cmd).await
+    }
+    async fn validate_credentials(&self, cmd: ValidateCredentials) -> Result<ValidateCredentialsResult, String> {
+        self.as_ref().validate_credentials(cmd).await
+    }
+}
+
 // ─── Command Handler Trait ───────────────────────────────────────────────────
 
 #[async_trait]

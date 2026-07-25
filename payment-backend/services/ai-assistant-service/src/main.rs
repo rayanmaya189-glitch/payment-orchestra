@@ -13,11 +13,13 @@ use ai_assistant_service::repository::InMemoryConversationSessionRepository;
 use platform_db::connection::create_service_pool;
 use platform_messaging::event_bus::{EventBus, NoopEventBus};
 use platform_messaging::nats_event_bus::NatsJetStreamEventBus;
+use platform_metrics::grpc_interceptor::MetricsLayer;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenvy::dotenv().ok();
     platform_logging::telemetry::init();
+    platform_metrics::init_uptime_tracker();
 
     let _db = match create_service_pool("AI_ASSISTANT").await {
         Ok(db) => { tracing::info!("Connected to PostgreSQL for ai-assistant-service"); Some(db) }
@@ -59,8 +61,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let grpc_addr: SocketAddr = runner.grpc_addr;
     info!("AI Assistant service listening on {}", grpc_addr);
 
+    // Spawn periodic uptime recording (30s cadence aligns with Prometheus scrape)
+    tokio::spawn(async {
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(30));
+        loop {
+            interval.tick().await;
+            platform_metrics::record_uptime();
+        }
+    });
+
     tokio::select! {
         result = Server::builder()
+            .layer(MetricsLayer::new("ai-assistant-service"))
             .add_service(platform_proto::ai_assistant::ai_assistant_service_server::AiAssistantServiceServer::new(ai_service))
             .serve_with_shutdown(grpc_addr, async {
                 tokio::signal::ctrl_c().await.ok();

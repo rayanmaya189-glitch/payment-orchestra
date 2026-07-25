@@ -18,4 +18,5 @@ sea-orm.workspace = true
 platform-error.workspace = true
 platform-config.workspace = true
 shared-types.workspace = true
+reqwest.workspace = true
 url = "2"

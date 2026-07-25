@@ -37,3 +37,18 @@ impl<R: DocumentRepository + Send + Sync> QueryHandler for DocumentQueryHandler<
         self.repo.find_by_operator(operator_id).await
     }
 }
+
+// ─── Blanket impl: Box<dyn QueryHandler> delegates to inner ──────────────────
+
+#[async_trait]
+impl<T: QueryHandler + ?Sized> QueryHandler for Box<T> {
+    async fn get_document(&self, id: Uuid) -> Result<DocumentRecord, DocumentError> {
+        (**self).get_document(id).await
+    }
+    async fn find_by_type(&self, operator_id: Uuid, category: &str) -> Result<Vec<DocumentRecord>, DocumentError> {
+        (**self).find_by_type(operator_id, category).await
+    }
+    async fn find_by_operator(&self, operator_id: Uuid) -> Result<Vec<DocumentRecord>, DocumentError> {
+        (**self).find_by_operator(operator_id).await
+    }
+}

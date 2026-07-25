@@ -7,26 +7,21 @@ use tonic::transport::Server;
 use tracing::info;
 
 use document_service::api::grpc::DocumentGrpcService;
-use document_service::commands::DocumentCommandHandler;
-use document_service::queries::DocumentQueryHandler;
-use document_service::repository::InMemoryDocumentRepository;
+use document_service::commands::{DocumentCommandHandler, CommandHandler};
+use document_service::queries::{DocumentQueryHandler, QueryHandler};
+use document_service::repository::{InMemoryDocumentRepository, PostgresDocumentRepository};
 use platform_db::connection::create_service_pool;
 use platform_messaging::event_bus::{EventBus, NoopEventBus};
 use platform_messaging::nats_event_bus::NatsJetStreamEventBus;
+use platform_metrics::grpc_interceptor::MetricsLayer;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenvy::dotenv().ok();
     platform_logging::telemetry::init();
-
-    let _db = match create_service_pool("DOCUMENT").await {
-        Ok(db) => { tracing::info!("Connected to PostgreSQL for document-service"); Some(db) }
-        Err(e) => { tracing::warn!("PostgreSQL unavailable for document-service ({}), using InMemory", e); None }
-    };
+    platform_metrics::init_uptime_tracker();
 
     let mut runner = platform_registry::bootstrap::ServerRunner::new("document-service", 9013, 9113).await?;
-
-    let repo = InMemoryDocumentRepository::new();
 
     let _event_bus: Arc<dyn EventBus> = if let Ok(url) = std::env::var("NATS_URL") {
         let nats_username = std::env::var("DOCUMENT_NATS_USERNAME").ok();
@@ -49,16 +44,40 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Arc::new(NoopEventBus)
     };
 
-    let command_handler = DocumentCommandHandler::new(repo.clone());
-    let query_handler = DocumentQueryHandler::new(repo);
+    let (command_handler, query_handler): (Box<dyn CommandHandler>, Box<dyn QueryHandler>) =
+        if let Ok(db) = create_service_pool("DOCUMENT").await {
+            tracing::info!("Connected to PostgreSQL for document-service");
+            let repo = PostgresDocumentRepository::new(db);
+            (
+                Box::new(DocumentCommandHandler::new(repo.clone())) as Box<dyn CommandHandler>,
+                Box::new(DocumentQueryHandler::new(repo)) as Box<dyn QueryHandler>,
+            )
+        } else {
+            tracing::warn!("PostgreSQL unavailable for document-service, using in-memory");
+            let repo = InMemoryDocumentRepository::new();
+            (
+                Box::new(DocumentCommandHandler::new(repo.clone())) as Box<dyn CommandHandler>,
+                Box::new(DocumentQueryHandler::new(repo)) as Box<dyn QueryHandler>,
+            )
+        };
 
     let document_service = DocumentGrpcService::new(command_handler, query_handler);
 
     let grpc_addr: SocketAddr = runner.grpc_addr;
     info!("Document service listening on {}", grpc_addr);
 
+    // Spawn periodic uptime recording (30s cadence aligns with Prometheus scrape)
+    tokio::spawn(async {
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(30));
+        loop {
+            interval.tick().await;
+            platform_metrics::record_uptime();
+        }
+    });
+
     tokio::select! {
         result = Server::builder()
+            .layer(MetricsLayer::new("document-service"))
             .add_service(platform_proto::document::document_service_server::DocumentServiceServer::new(document_service))
             .serve_with_shutdown(grpc_addr, async {
                 tokio::signal::ctrl_c().await.ok();

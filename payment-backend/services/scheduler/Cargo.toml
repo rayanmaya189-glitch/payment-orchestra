@@ -21,6 +21,7 @@ platform-error.workspace = true
 platform-messaging.workspace = true
 platform-db.workspace = true
 platform-registry.workspace = true
+platform-metrics.workspace = true
 platform-health.workspace = true
 
 [dev-dependencies]

@@ -115,3 +115,24 @@ impl<R: NotificationRepository + Send + Sync> CommandHandler for NotificationCom
         Ok(notification)
     }
 }
+
+// ─── Blanket impl: Box<dyn CommandHandler> delegates to inner ────────────────
+
+#[async_trait]
+impl<T: CommandHandler + ?Sized> CommandHandler for Box<T> {
+    async fn send_notification(&self, cmd: SendNotificationCommand) -> Result<NotificationRequest, NotificationError> {
+        (**self).send_notification(cmd).await
+    }
+
+    async fn mark_delivered(&self, cmd: MarkDeliveredCommand) -> Result<NotificationRequest, NotificationError> {
+        (**self).mark_delivered(cmd).await
+    }
+
+    async fn mark_failed(&self, cmd: MarkFailedCommand) -> Result<NotificationRequest, NotificationError> {
+        (**self).mark_failed(cmd).await
+    }
+
+    async fn retry_notification(&self, cmd: RetryNotificationCommand) -> Result<NotificationRequest, NotificationError> {
+        (**self).retry_notification(cmd).await
+    }
+}

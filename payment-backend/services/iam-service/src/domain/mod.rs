@@ -16,7 +16,7 @@ pub use error::{AuthError, IamError};
 pub use pending_change::PendingChange;
 #[allow(unused_imports)]
 pub use pending_change::ChangeStatus;
-pub use principal::Principal;
+pub use principal::{MfaMethod, Principal, PrincipalStatus, PrincipalType};
 
 // ─── Tests ─────────────────────────────────────────────────────────────────
 

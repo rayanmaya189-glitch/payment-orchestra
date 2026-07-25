@@ -35,3 +35,16 @@ impl<R: LinkRepository + Send + Sync> QueryHandler for LinkQueries<R> {
         }
     }
 }
+
+// ─── Blanket impl: Box<dyn QueryHandler> delegates to inner ──────────────────
+
+#[async_trait::async_trait]
+impl<T: QueryHandler + ?Sized> QueryHandler for Box<T> {
+    async fn get_link(&self, id: Uuid) -> Result<Option<MerchantAcquirerLink>, LinkError> {
+        (**self).get_link(id).await
+    }
+
+    async fn list_links(&self, operator_id: Uuid, status_filter: Option<&str>) -> Result<Vec<MerchantAcquirerLink>, LinkError> {
+        (**self).list_links(operator_id, status_filter).await
+    }
+}

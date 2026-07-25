@@ -37,3 +37,18 @@ impl<R: SagaRepository + Send + Sync> QueryHandler for SagaQueryHandler<R> {
         self.repo.find_stuck(timeout_seconds).await
     }
 }
+
+// ─── Blanket impl: Box<dyn QueryHandler> delegates to inner ──────────────────
+
+#[async_trait]
+impl<T: QueryHandler + ?Sized> QueryHandler for Box<T> {
+    async fn get_saga(&self, id: Uuid) -> Result<SagaInstance, SagaError> {
+        (**self).get_saga(id).await
+    }
+    async fn find_by_aggregate(&self, aggregate_id: Uuid) -> Result<Vec<SagaInstance>, SagaError> {
+        (**self).find_by_aggregate(aggregate_id).await
+    }
+    async fn find_stuck(&self, timeout_seconds: i64) -> Result<Vec<SagaInstance>, SagaError> {
+        (**self).find_stuck(timeout_seconds).await
+    }
+}

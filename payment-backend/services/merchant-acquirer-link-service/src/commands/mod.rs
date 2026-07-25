@@ -157,6 +157,35 @@ impl<R: LinkRepository + Send + Sync> CommandHandler for LinkCommandHandler<R> {
     }
 }
 
+// ─── Blanket impl: Box<dyn CommandHandler> delegates to inner ────────────────
+
+#[async_trait::async_trait]
+impl<T: CommandHandler + ?Sized> CommandHandler for Box<T> {
+    async fn create_link(&self, cmd: CreateLink) -> Result<CreateLinkResult, crate::domain::LinkError> {
+        (**self).create_link(cmd).await
+    }
+
+    async fn test_connection(&self, cmd: TestConnection) -> Result<TestConnectionResult, crate::domain::LinkError> {
+        (**self).test_connection(cmd).await
+    }
+
+    async fn rotate_credentials(&self, cmd: RotateCredentials) -> Result<RotateCredentialsResult, crate::domain::LinkError> {
+        (**self).rotate_credentials(cmd).await
+    }
+
+    async fn disable_link(&self, cmd: DisableLink) -> Result<DisableLinkResult, crate::domain::LinkError> {
+        (**self).disable_link(cmd).await
+    }
+
+    async fn enable_link(&self, cmd: EnableLink) -> Result<EnableLinkResult, crate::domain::LinkError> {
+        (**self).enable_link(cmd).await
+    }
+
+    async fn update_metadata(&self, cmd: UpdateMetadata) -> Result<UpdateMetadataResult, crate::domain::LinkError> {
+        (**self).update_metadata(cmd).await
+    }
+}
+
 // ─── Tests ─────────────────────────────────────────────────────────────────
 
 #[cfg(test)]

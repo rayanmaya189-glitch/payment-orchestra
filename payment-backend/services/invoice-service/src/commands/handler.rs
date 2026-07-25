@@ -188,3 +188,28 @@ impl<R: InvoiceRepository + Send + Sync> CommandHandler for InvoiceCommandHandle
         })
     }
 }
+
+// ─── Blanket impl: Box<dyn CommandHandler> delegates to inner ────────────────
+
+#[async_trait]
+impl<T: CommandHandler + ?Sized> CommandHandler for Box<T> {
+    async fn create_invoice(&self, cmd: CreateInvoice) -> Result<InvoiceResult, InvoiceError> {
+        (**self).create_invoice(cmd).await
+    }
+
+    async fn send_invoice(&self, cmd: SendInvoice) -> Result<InvoiceResult, InvoiceError> {
+        (**self).send_invoice(cmd).await
+    }
+
+    async fn cancel_invoice(&self, cmd: CancelInvoice) -> Result<InvoiceResult, InvoiceError> {
+        (**self).cancel_invoice(cmd).await
+    }
+
+    async fn link_payment(&self, cmd: LinkPaymentToInvoice) -> Result<InvoiceResult, InvoiceError> {
+        (**self).link_payment(cmd).await
+    }
+
+    async fn mark_overdue(&self, cmd: MarkInvoiceOverdue) -> Result<InvoiceResult, InvoiceError> {
+        (**self).mark_overdue(cmd).await
+    }
+}

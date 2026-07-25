@@ -16,6 +16,26 @@ use platform_messaging::{event_bus::{EventBus, publish_event_fire_and_forget}, e
 use crate::events::IamEvent;
 use crate::repository::IamRepository;
 
+// Blanket impl: Box<dyn CommandHandler> implements CommandHandler
+#[async_trait::async_trait]
+impl CommandHandler for Box<dyn CommandHandler> {
+    async fn authenticate(&self, cmd: Authenticate) -> Result<AuthenticateResult, crate::domain::IamError> {
+        self.as_ref().authenticate(cmd).await
+    }
+    async fn create_api_key(&self, cmd: CreateApiKey) -> Result<CreateApiKeyResult, crate::domain::IamError> {
+        self.as_ref().create_api_key(cmd).await
+    }
+    async fn revoke_api_key(&self, cmd: RevokeApiKey) -> Result<RevokeApiKeyResult, crate::domain::IamError> {
+        self.as_ref().revoke_api_key(cmd).await
+    }
+    async fn submit_change(&self, cmd: SubmitChange) -> Result<SubmitChangeResult, crate::domain::IamError> {
+        self.as_ref().submit_change(cmd).await
+    }
+    async fn review_change(&self, cmd: ReviewChange) -> Result<ReviewChangeResult, crate::domain::IamError> {
+        self.as_ref().review_change(cmd).await
+    }
+}
+
 // ─── Command Trait ─────────────────────────────────────────────────────────
 
 #[async_trait::async_trait]

@@ -7,6 +7,23 @@ use crate::domain::{AcquirerConnector, ConnectorRegistry, GatewayProfile, Onboar
 use crate::repository::GatewayProfileRepository;
 use crate::queries::types::*;
 
+// Blanket impl: Box<dyn QueryHandler> implements QueryHandler
+#[async_trait]
+impl QueryHandler for Box<dyn QueryHandler> {
+    async fn get_gateway_profile(&self, id: Uuid) -> Result<Option<GatewayProfile>, String> {
+        self.as_ref().get_gateway_profile(id).await
+    }
+    async fn list_gateway_profiles(&self, operator_id: Uuid) -> Result<Vec<GatewayProfile>, String> {
+        self.as_ref().list_gateway_profiles(operator_id).await
+    }
+    async fn get_connector_schema(&self, connector_id: &str) -> Result<Option<OnboardingSchema>, String> {
+        self.as_ref().get_connector_schema(connector_id).await
+    }
+    async fn list_connectors(&self) -> Result<Vec<ConnectorInfo>, String> {
+        self.as_ref().list_connectors().await
+    }
+}
+
 #[async_trait]
 pub trait QueryHandler: Send + Sync {
     async fn get_gateway_profile(&self, id: Uuid) -> Result<Option<GatewayProfile>, String>;
