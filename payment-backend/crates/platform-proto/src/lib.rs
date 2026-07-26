@@ -77,3 +77,11 @@ pub mod saga {
 pub mod gateway_profile {
     include!(concat!(env!("OUT_DIR"), "/gateway_profile.v1.rs"));
 }
+
+pub mod scheduler {
+    include!(concat!(env!("OUT_DIR"), "/scheduler.v1.rs"));
+}
+
+pub mod outbox_relay {
+    include!(concat!(env!("OUT_DIR"), "/outbox_relay.v1.rs"));
+}

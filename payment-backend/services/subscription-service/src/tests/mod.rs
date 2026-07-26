@@ -13,6 +13,7 @@
 mod dunning_tests;
 mod renewal_tests;
 mod subscription_tests;
+mod pg_repository_tests;
 
 use crate::commands::*;
 use crate::domain::*;

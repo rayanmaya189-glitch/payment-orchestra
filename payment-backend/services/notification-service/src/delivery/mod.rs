@@ -33,7 +33,7 @@ use platform_middleware::ssrf::SsrfSafeClient;
 use crate::repository::{NotificationRepository, WebhookRepository};
 
 mod webhook_delivery;
-pub use webhook_delivery::*;
+pub(crate) use webhook_delivery::*;
 
 /// Default polling interval for the delivery queue.
 pub const POLL_INTERVAL_MS: u64 = 5_000; // 5 seconds

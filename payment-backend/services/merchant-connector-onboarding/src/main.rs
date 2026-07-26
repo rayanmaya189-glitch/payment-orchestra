@@ -42,6 +42,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!("Merchant Connector Onboarding service registered, listening on {}", runner.grpc_addr);
     platform_health::serve::serve_health(&runner).await?;
     runner.deregister().await;
+    platform_logging::telemetry::shutdown();
 
     info!("Merchant Connector Onboarding service stopped");
     Ok(())

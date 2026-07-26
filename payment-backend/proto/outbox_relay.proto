@@ -1,0 +1,76 @@
+// outbox_relay.proto — Management gRPC service for the outbox relay.
+// AI-Native Payment Orchestration Platform
+//
+// Provides operational RPCs for monitoring the transactional outbox relay:
+// viewing metrics, inspecting pending entries, and manually appending entries.
+// The relay background loop runs independently — this service exposes
+// control-plane and observability operations.
+
+syntax = "proto3";
+package outbox_relay.v1;
+
+// ─── Service ────────────────────────────────────────────────────────────────
+
+service OutboxRelayService {
+  // Get current relay metrics (poll count, publish count, queue depth, etc.).
+  rpc GetMetrics(GetMetricsRequest) returns (RelayMetricsView);
+
+  // Get a single outbox entry by ID.
+  rpc GetEntry(GetEntryRequest) returns (OutboxEntryView);
+
+  // List all unpublished outbox entries.
+  rpc ListUnpublished(ListUnpublishedRequest) returns (ListUnpublishedResponse);
+
+  // Manually append a new entry to the outbox (for testing / recovery).
+  rpc AppendEntry(AppendEntryRequest) returns (OutboxEntryView);
+}
+
+// ─── Messages ───────────────────────────────────────────────────────────────
+
+message GetMetricsRequest {
+  // empty — returns metrics for this relay instance
+}
+
+message GetEntryRequest {
+  string entry_id = 1;  // UUID
+}
+
+message ListUnpublishedRequest {
+  // Optional: batch size limit (defaults to 100).
+  uint32 batch_size = 1;
+}
+
+message ListUnpublishedResponse {
+  repeated OutboxEntryView entries = 1;
+}
+
+message AppendEntryRequest {
+  string aggregate_type = 1;
+  string aggregate_id = 2;   // UUID
+  string event_type = 3;
+  int32 event_version = 4;
+  bytes payload = 5;
+}
+
+// ─── Views ──────────────────────────────────────────────────────────────────
+
+message RelayMetricsView {
+  uint64 total_polled = 1;
+  uint64 total_published = 2;
+  uint64 total_failed = 3;
+  uint64 total_duplicates_skipped = 4;
+  optional string last_polled_at = 5;  // RFC 3339
+  uint64 queue_depth = 6;
+  bool is_running = 7;
+}
+
+message OutboxEntryView {
+  string entry_id = 1;
+  string aggregate_type = 2;
+  string aggregate_id = 3;
+  string event_type = 4;
+  int32 event_version = 5;
+  bytes payload = 6;
+  string created_at = 7;  // RFC 3339
+  optional string published_at = 8;
+}

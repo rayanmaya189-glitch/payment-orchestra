@@ -74,6 +74,12 @@ struct MemoryRateLimiterInner {
     last_cleanup: Instant,
 }
 
+impl Default for MemoryRateLimiter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl MemoryRateLimiter {
     /// Create a new in-memory rate limiter.
     pub fn new() -> Self {

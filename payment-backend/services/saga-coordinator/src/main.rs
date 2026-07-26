@@ -85,6 +85,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     runner.deregister().await;
+    platform_logging::telemetry::shutdown();
     info!("Saga Coordinator service stopped");
     Ok(())
 }

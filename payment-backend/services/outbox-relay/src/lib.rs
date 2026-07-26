@@ -2,6 +2,11 @@
 //! Implements ADR-011 (Transactional Outbox) within each event-sourced service.
 
 #![allow(clippy::result_large_err)]
+// Allow unused code in API/scaffolding modules — these are structured for
+// future gRPC service composition. The binary (`main.rs`) only uses
+// `domain` and `repository` directly.
+#![allow(dead_code)]
+#![allow(unused_imports)]
 
 pub mod domain;
 pub mod entities;

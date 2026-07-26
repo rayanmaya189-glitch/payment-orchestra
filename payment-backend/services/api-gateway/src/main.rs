@@ -15,11 +15,19 @@
 //! ## Architecture
 //!
 //! The API Gateway registers itself with etcd for service discovery and
-//! exposes its health endpoint. Internal gRPC routing is handled via
-//! tonic-based downstream clients (loaded dynamically from etcd or
-//! configured addresses). The gateway validates and authenticates every
-//! request before forwarding to the appropriate internal service.
+//! exposes its gRPC health endpoint. Internal gRPC routing is handled via
+//! tonic-based downstream clients. A gRPC management API (`GatewayApi`)
+//! is wired but not yet exposed as a full proto-defined service — the
+//! gateway primarily functions as an HTTP-to-gRPC reverse proxy.
 
+// Scaffold modules contain intentionally unused code for future implementation.
+#![allow(
+    dead_code,
+    clippy::result_large_err,
+    clippy::match_like_matches_macro
+)]
+
+use std::net::SocketAddr;
 use std::sync::Arc;
 use tracing::info;
 
@@ -27,6 +35,7 @@ use platform_db::connection::create_service_pool;
 use platform_messaging::event_bus::{EventBus, NoopEventBus};
 use platform_messaging::nats_event_bus::NatsJetStreamEventBus;
 use platform_metrics::grpc_interceptor::MetricsLayer;
+use platform_middleware::rate_limit::GrcRateLimitLayer;
 
 mod domain;
 mod entities;
@@ -43,6 +52,11 @@ mod tests;
 use commands::{CommandHandler, GatewayCommandHandler};
 use queries::{QueryHandler, GatewayQueryHandler};
 use repository::{InMemoryGatewayRepository, PostgresGatewayRepository};
+use api::GatewayApi;
+use platform_proto::health::health_server::HealthServer;
+use platform_health::grpc::HealthService;
+
+// ─── Downstream Client Init ─────────────────────────────────────────────────
 
 /// Initialize gRPC client connections to downstream services (best-effort).
 async fn init_downstream_clients() {
@@ -61,10 +75,12 @@ async fn init_downstream_clients() {
         let addr = format!("http://127.0.0.1:{}", port);
         match platform_clients::client::ServiceConnection::connect(name, &addr).await {
             Ok(_conn) => tracing::info!(service = %name, addr = %addr, "Downstream gRPC client connected"),
-            Err(e) => tracing::warn!(service = %name, error = %e, "Downstream gRPC client unavailable, will retry on demand"),
+            Err(e) => tracing::warn!(service = %name, error = %e, "Downstream gRPC client unavailable"),
         }
     }
 }
+
+// ─── Main ───────────────────────────────────────────────────────────────────
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -86,31 +102,36 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     } else { Arc::new(NoopEventBus) };
 
-    // Build the command and query handlers using the appropriate repository
-    let _command_handler: Box<dyn CommandHandler>;
-    let _query_handler: Box<dyn QueryHandler>;
+    let mut runner = platform_registry::bootstrap::ServerRunner::new("api-gateway", 9020, 9120).await?;
+    let grpc_addr: SocketAddr = runner.grpc_addr;
 
-    if let Ok(db) = create_service_pool("API_GATEWAY").await {
-        info!("Using PostgreSQL-backed repository for api-gateway");
-        let repo = PostgresGatewayRepository::new(db);
-        _command_handler = Box::new(GatewayCommandHandler::new(repo.clone())) as Box<dyn CommandHandler>;
-        _query_handler = Box::new(GatewayQueryHandler::new(repo)) as Box<dyn QueryHandler>;
-    } else {
-        tracing::warn!("PostgreSQL unavailable, using InMemory repository");
-        let repo = InMemoryGatewayRepository::new();
-        _command_handler = Box::new(GatewayCommandHandler::new(repo.clone())) as Box<dyn CommandHandler>;
-        _query_handler = Box::new(GatewayQueryHandler::new(repo)) as Box<dyn QueryHandler>;
+    // Build command and query handlers, wire into GatewayApi
+    // Wire command and query handlers into GatewayApi for future use.
+    // The GatewayApi is stored as `_api` to avoid unused-variable warnings
+    // while keeping the handlers alive for when the REST-to-gRPC proxy is connected.
+    let _api = {
+        let (ch, qh): (Box<dyn CommandHandler>, Box<dyn QueryHandler>) =
+            if let Ok(db) = create_service_pool("API_GATEWAY").await {
+                info!("Using PostgreSQL-backed repository for api-gateway");
+                let repo = PostgresGatewayRepository::new(db);
+                (
+                    Box::new(GatewayCommandHandler::new(repo.clone())),
+                    Box::new(GatewayQueryHandler::new(repo)),
+                )
+            } else {
+                tracing::warn!("PostgreSQL unavailable, using InMemory repository");
+                let repo = InMemoryGatewayRepository::new();
+                (
+                    Box::new(GatewayCommandHandler::new(repo.clone())),
+                    Box::new(GatewayQueryHandler::new(repo)),
+                )
+            };
+        GatewayApi::new(ch, qh)
     };
 
-    let mut runner = platform_registry::bootstrap::ServerRunner::new("api-gateway", 9020, 9120).await?;
+    info!("API Gateway registered, grpc={grpc_addr}");
 
-    info!(
-        "API Gateway registered, grpc={}, health={}",
-        runner.grpc_addr,
-        runner.health_addr,
-    );
-
-    // Spawn periodic uptime recording (30s cadence aligns with Prometheus scrape)
+    // Spawn periodic uptime recording
     tokio::spawn(async {
         let mut interval = tokio::time::interval(std::time::Duration::from_secs(30));
         loop {
@@ -119,11 +140,28 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     });
 
-    // Serve health endpoint (the API Gateway exposes gRPC health check for now;
-    // full REST-to-gRPC transcoding requires a reverse proxy layer)
-    platform_health::serve::serve_health(&runner).await?;
+    // Run gRPC health check server with metrics and rate-limit layers
+    let health_service = HealthService::new("api-gateway".to_string());
+
+    tokio::select! {
+        result = tonic::transport::Server::builder()
+            .layer(MetricsLayer::new("api-gateway"))
+            .layer(GrcRateLimitLayer::in_memory("api-gateway"))
+            .add_service(HealthServer::new(health_service))
+            .serve_with_shutdown(grpc_addr, async {
+                tokio::signal::ctrl_c().await.ok();
+            }) => {
+                if let Err(e) = result {
+                    tracing::error!("gRPC server error: {}", e);
+                }
+            }
+        _ = tokio::signal::ctrl_c() => {
+            info!("Shutdown signal received");
+        }
+    }
 
     runner.deregister().await;
+    platform_logging::telemetry::shutdown();
     info!("API Gateway service stopped");
     Ok(())
 }

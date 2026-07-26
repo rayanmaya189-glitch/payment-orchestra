@@ -253,7 +253,7 @@ impl<R: IamRepository> IamCommandHandler<R> {
             token_type: token_type.to_string(),
         };
 
-        encode(&Header::new(self.jwt_algorithm.clone()), &claims, &self.jwt_encoding_key)
+        encode(&Header::new(self.jwt_algorithm), &claims, &self.jwt_encoding_key)
             .map_err(|e| {
                 tracing::error!(error = %e, algorithm = ?self.jwt_algorithm, "JWT signing failed");
                 crate::domain::IamError::InvalidRequest(format!("Token generation failed: {}", e))

@@ -32,6 +32,10 @@ platform-health.workspace = true
 platform-metrics.workspace = true
 platform-middleware.workspace = true
 
+[features]
+integration_test = []
+
 [dev-dependencies]
 proptest.workspace = true
 testcontainers.workspace = true
+migrations = { path = "../../migrations" }

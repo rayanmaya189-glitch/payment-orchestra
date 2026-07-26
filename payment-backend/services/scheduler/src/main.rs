@@ -5,11 +5,19 @@
 //!
 //! ## Architecture
 //!
-//! The scheduler runs in a loop, polling for due jobs every `tick_interval_ms`.
-//! Before executing a job, it checks leader election via the repository's
-//! `acquire_lease` method to ensure only one instance runs each job type
-//! across the cluster.
+//! The scheduler runs a background loop that polls for due jobs every
+//! `TICK_INTERVAL_MS` and executes them with leader election. A gRPC
+//! management service (`SchedulerService`) provides operational RPCs
+//! for inspecting and managing jobs.
 
+// Scaffold modules contain intentionally unused code for future implementation.
+#![allow(
+    dead_code,
+    clippy::result_large_err,
+    clippy::match_like_matches_macro
+)]
+
+use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 use tracing::{info, warn, error};
@@ -18,6 +26,8 @@ use chrono::Utc;
 use platform_db::connection::create_service_pool;
 use platform_messaging::event_bus::{EventBus, NoopEventBus};
 use platform_messaging::nats_event_bus::NatsJetStreamEventBus;
+use platform_metrics::grpc_interceptor::MetricsLayer;
+use platform_middleware::rate_limit::GrcRateLimitLayer;
 
 mod domain;
 mod entities;
@@ -32,12 +42,18 @@ mod pipeline;
 mod tests;
 
 use domain::{
-    SchedulerError, JobSchedule, JobType, JobExecution, ExecutionStatus,
+    JobSchedule, JobType, JobExecution, ExecutionStatus,
     JobRunResult, default_jobs, ScheduledJob,
 };
 use repository::{
     SchedulerRepository, InMemorySchedulerRepository, PostgresSchedulerRepository,
 };
+use api::grpc::SchedulerGrpcService;
+use platform_proto::health::health_server::HealthServer;
+use platform_proto::scheduler::scheduler_service_server::SchedulerServiceServer;
+use platform_health::grpc::HealthService;
+
+// ─── Constants ──────────────────────────────────────────────────────────────
 
 /// Scheduler tick interval (checks for due jobs every 1 second)
 const TICK_INTERVAL_MS: u64 = 1000;
@@ -52,6 +68,8 @@ const LEADER_LEASE_TTL_SECS: u64 = 30;
 fn instance_id() -> String {
     std::env::var("HOSTNAME").unwrap_or_else(|_| uuid::Uuid::now_v7().to_string())
 }
+
+// ─── Job Execution ──────────────────────────────────────────────────────────
 
 /// Execute a single job by type.
 async fn execute_job(job: &ScheduledJob) -> Result<JobRunResult, String> {
@@ -93,6 +111,8 @@ async fn execute_job(job: &ScheduledJob) -> Result<JobRunResult, String> {
     })
 }
 
+// ─── Scheduler Loop ─────────────────────────────────────────────────────────
+
 /// Main scheduler loop — polls job queue and executes due jobs.
 async fn scheduler_loop(
     repo: Arc<dyn SchedulerRepository>,
@@ -107,7 +127,6 @@ async fn scheduler_loop(
     loop {
         interval.tick().await;
 
-        // Load all active jobs
         let jobs = match repo.list_active_jobs().await {
             Ok(jobs) => jobs,
             Err(e) => {
@@ -117,27 +136,24 @@ async fn scheduler_loop(
         };
 
         for job in &jobs {
-            // Check if this job is due for execution
             let is_due = match job.next_run_at {
                 Some(next) => Utc::now() >= next,
-                None => true, // First run — schedule immediately
+                None => true,
             };
 
             if !is_due {
                 continue;
             }
 
-            // Try to become leader for this job (distributed lock via repo)
             let is_leader = match repo.acquire_lease(&job.job_key, &instance_id, LEADER_LEASE_TTL_SECS).await {
                 Ok(true) => true,
                 _ => false,
             };
 
             if !is_leader {
-                continue; // Another instance is handling this job
+                continue;
             }
 
-            // Execute the job in a separate task
             let job_id = job.job_id;
             let job_key = job.job_key.clone();
             let job_type_str = job.job_type.to_string();
@@ -157,7 +173,6 @@ async fn scheduler_loop(
                     result: None,
                 };
 
-                // Run the job with timeout
                 let timeout = tokio::time::sleep(Duration::from_secs(JOB_TIMEOUT_SECS));
                 let job_result = tokio::select! {
                     result = execute_job(&job_clone) => result,
@@ -171,11 +186,7 @@ async fn scheduler_loop(
 
                 match job_result {
                     Ok(result) => {
-                        execution.status = if result.success {
-                            ExecutionStatus::Completed
-                        } else {
-                            ExecutionStatus::Failed
-                        };
+                        execution.status = if result.success { ExecutionStatus::Completed } else { ExecutionStatus::Failed };
                         execution.result = Some(result);
                     }
                     Err(msg) => {
@@ -208,18 +219,14 @@ async fn scheduler_loop(
                 );
             });
 
-            // Update next_run_at for the job
             let next_run = match job.schedule {
                 JobSchedule::Every { interval_seconds } => {
                     Some(Utc::now() + chrono::TimeDelta::seconds(interval_seconds as i64))
                 }
-                JobSchedule::Cron { .. } => {
-                    Some(Utc::now() + chrono::TimeDelta::hours(1))
-                }
+                JobSchedule::Cron { .. } => Some(Utc::now() + chrono::TimeDelta::hours(1)),
                 JobSchedule::OnceAt { .. } => None,
             };
 
-            // Save updated job with new next_run_at
             let mut updated_job = job.clone();
             updated_job.next_run_at = next_run;
             if let Err(e) = repo.save_job(&updated_job).await {
@@ -227,7 +234,6 @@ async fn scheduler_loop(
             }
         }
 
-        // Refresh leader leases every ~15 seconds
         if last_lease_refresh.elapsed() >= Duration::from_secs(15) {
             for job in &jobs {
                 if let Err(e) = repo.acquire_lease(&job.job_key, &instance_id, LEADER_LEASE_TTL_SECS).await {
@@ -239,11 +245,13 @@ async fn scheduler_loop(
     }
 }
 
+// ─── Default Job Registration ───────────────────────────────────────────────
+
 /// Register default jobs in the repository.
 async fn register_default_jobs(repo: &dyn SchedulerRepository) {
     for (job_key, service_name, job_type, schedule) in default_jobs() {
         match repo.load_job_by_key(&job_key).await {
-            Ok(Some(_)) => continue, // Already registered
+            Ok(Some(_)) => continue,
             Ok(None) => {
                 let job = ScheduledJob {
                     job_id: uuid::Uuid::now_v7(),
@@ -271,6 +279,8 @@ async fn register_default_jobs(repo: &dyn SchedulerRepository) {
     info!("Default jobs registered");
 }
 
+// ─── Main ───────────────────────────────────────────────────────────────────
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenvy::dotenv().ok();
@@ -288,20 +298,43 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     } else { Arc::new(NoopEventBus) };
 
-    // Initialize repository and register default jobs
-    let repo: Arc<dyn SchedulerRepository> = if let Some(db) = create_service_pool("SCHEDULER").await.ok() {
-        info!("Using PostgreSQL-backed repository for scheduler");
-        let repo = PostgresSchedulerRepository::new(db);
-        register_default_jobs(&repo).await;
-        Arc::new(repo)
-    } else {
-        warn!("PostgreSQL unavailable, using InMemory repository");
-        let repo = InMemorySchedulerRepository::new();
-        register_default_jobs(&repo).await;
-        Arc::new(repo)
-    };
+    // Initialize repository, register default jobs, and build handlers
+    use crate::commands::SchedulerCommandHandler;
+    use crate::queries::SchedulerQueryHandler;
 
-    // Spawn periodic uptime recording (30s cadence aligns with Prometheus scrape)
+    let (api, loop_repo): (crate::api::SchedulerApi, Arc<dyn SchedulerRepository>) = {
+        let (repo, ch, qh): (Arc<dyn SchedulerRepository>, _, _) =
+            if let Ok(db) = create_service_pool("SCHEDULER").await {
+                info!("Using PostgreSQL-backed repository for scheduler");
+                let repo = PostgresSchedulerRepository::new(db);
+                register_default_jobs(&repo).await;
+                let ch: Box<dyn crate::commands::CommandHandler> =
+                    Box::new(SchedulerCommandHandler::new(repo.clone()));
+                let qh: Box<dyn crate::queries::QueryHandler> =
+                    Box::new(SchedulerQueryHandler::new(repo.clone()));
+                (Arc::new(repo) as Arc<dyn SchedulerRepository>, ch, qh)
+            } else {
+                warn!("PostgreSQL unavailable, using InMemory repository");
+                let mem_repo = InMemorySchedulerRepository::new();
+                register_default_jobs(&mem_repo).await;
+                let rw_mem = Arc::new(tokio::sync::RwLock::new(mem_repo));
+                let adapter = pipeline::ArcRepoAdapter(rw_mem);
+                let ch: Box<dyn crate::commands::CommandHandler> =
+                    Box::new(SchedulerCommandHandler::new(adapter.clone()));
+                let qh: Box<dyn crate::queries::QueryHandler> =
+                    Box::new(SchedulerQueryHandler::new(adapter.clone()));
+                // ArcRepoAdapter implements SchedulerRepository, so wrap in Arc<dyn ...>
+                (Arc::new(adapter) as Arc<dyn SchedulerRepository>, ch, qh)
+            };
+        (crate::api::SchedulerApi::new(ch, qh), repo)
+    };
+    let scheduler_service = SchedulerGrpcService::new(api);
+    let health_service = HealthService::new("scheduler".to_string());
+
+    let grpc_addr: SocketAddr = runner.grpc_addr;
+    info!("Scheduler gRPC server listening on {grpc_addr}");
+
+    // Spawn periodic uptime recording
     tokio::spawn(async {
         let mut interval = tokio::time::interval(std::time::Duration::from_secs(30));
         loop {
@@ -310,17 +343,34 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     });
 
-    // Start the main scheduler loop
-    let scheduler_repo = repo.clone();
+    // Start the scheduler loop as a background task
+    let scheduler_repo = loop_repo.clone();
     let scheduler_eb = event_bus.clone();
     tokio::spawn(async move {
         scheduler_loop(scheduler_repo, scheduler_eb).await;
     });
 
-    info!("Scheduler service registered, listening on {}", runner.grpc_addr);
-    platform_health::serve::serve_health(&runner).await?;
-    runner.deregister().await;
+    // Run the gRPC server with graceful shutdown
+    tokio::select! {
+        result = tonic::transport::Server::builder()
+            .layer(MetricsLayer::new("scheduler"))
+            .layer(GrcRateLimitLayer::in_memory("scheduler"))
+            .add_service(SchedulerServiceServer::new(scheduler_service))
+            .add_service(HealthServer::new(health_service))
+            .serve_with_shutdown(grpc_addr, async {
+                tokio::signal::ctrl_c().await.ok();
+            }) => {
+                if let Err(e) = result {
+                    tracing::error!("gRPC server error: {}", e);
+                }
+            }
+        _ = tokio::signal::ctrl_c() => {
+            info!("Shutdown signal received");
+        }
+    }
 
+    runner.deregister().await;
+    platform_logging::telemetry::shutdown();
     info!("Scheduler service stopped");
     Ok(())
 }

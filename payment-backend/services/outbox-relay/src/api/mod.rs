@@ -1,5 +1,7 @@
 //! Outbox Relay public API
 
+pub mod grpc;
+
 use uuid::Uuid;
 
 use crate::commands::*;

@@ -6,6 +6,7 @@ mod capture_tests;
 mod create_tests;
 mod routing_tests;
 mod void_refund_tests;
+mod pg_repository_tests;
 
 pub(crate) mod helpers {
     use uuid::Uuid;

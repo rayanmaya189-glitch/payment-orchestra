@@ -93,6 +93,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     runner.deregister().await;
+    platform_logging::telemetry::shutdown();
     info!("Risk service stopped");
     Ok(())
 }

@@ -14,6 +14,7 @@
 mod compensation_tests;
 mod lifecycle_tests;
 mod timeout_tests;
+mod pg_repository_tests;
 
 use crate::commands::*;
 use crate::domain::*;

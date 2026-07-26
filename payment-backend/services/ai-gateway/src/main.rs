@@ -42,6 +42,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!("AI Gateway service registered, listening on {}", runner.grpc_addr);
     platform_health::serve::serve_health(&runner).await?;
     runner.deregister().await;
+    platform_logging::telemetry::shutdown();
 
     info!("AI Gateway service stopped");
     Ok(())

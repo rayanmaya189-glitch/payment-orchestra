@@ -1,4 +1,9 @@
 #![allow(clippy::result_large_err)]
+// Allow unused code in API/scaffolding modules — these are structured for
+// future gRPC service composition. The binary (`main.rs`) only uses
+// `commands`, `queries`, and `repository` directly.
+#![allow(dead_code)]
+#![allow(unused_imports)]
 
 pub mod domain;
 pub mod entities;

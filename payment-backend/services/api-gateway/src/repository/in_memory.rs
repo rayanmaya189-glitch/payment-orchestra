@@ -24,11 +24,22 @@ impl Default for InMemoryGatewayRepository {
 }
 
 impl InMemoryGatewayRepository {
+    /// Create a new in-memory gateway repository.
+    ///
+    /// Pre-seeds a well-known test API key for development and testing:
+    /// `sk_test_12345` maps to a known operator UUID.
+    /// In production, use `PostgresGatewayRepository` with real API keys.
     pub fn new() -> Self {
+        let mut api_keys = HashMap::new();
+        // Seed a well-known test API key for development/testing
+        api_keys.insert(
+            "sk_test_12345".to_string(),
+            Uuid::from_u128(0x0000_0000_0000_0000_0000_0000_0000_0001),
+        );
         Self {
             routes: Arc::new(default_routes()),
             rate_limit_counters: Arc::new(RwLock::new(HashMap::new())),
-            api_keys: Arc::new(RwLock::new(HashMap::new())),
+            api_keys: Arc::new(RwLock::new(api_keys)),
             request_log: Arc::new(RwLock::new(HashMap::new())),
         }
     }

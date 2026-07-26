@@ -25,7 +25,7 @@ fn create_request(method: &str, path: &str, api_key: Option<&str>, body: &[u8]) 
 async fn test_valid_payment_intent_request() {
     let pipeline = setup();
     let result = pipeline.api.process_request(
-        create_request("POST", "/v1/payment-intents", Some("sk_live_test_key_12345"), b"test_body")
+        create_request("POST", "/v1/payment-intents", Some("sk_test_12345"), b"test_body")
     ).await.unwrap();
 
     assert!(result.allowed);
@@ -38,7 +38,7 @@ async fn test_valid_payment_intent_request() {
 async fn test_route_not_found_returns_error() {
     let pipeline = setup();
     let result = pipeline.api.process_request(
-        create_request("POST", "/v1/unknown", Some("sk_live_test_key_12345"), b"")
+        create_request("POST", "/v1/unknown", Some("sk_test_12345"), b"")
     ).await;
 
     assert!(result.is_err());
@@ -48,7 +48,7 @@ async fn test_route_not_found_returns_error() {
 async fn test_get_method_not_allowed() {
     let pipeline = setup();
     let result = pipeline.api.process_request(
-        create_request("GET", "/v1/payment-intents", Some("sk_live_test_key_12345"), b"")
+        create_request("GET", "/v1/payment-intents", Some("sk_test_12345"), b"")
     ).await.unwrap();
 
     assert!(!result.allowed);
@@ -93,7 +93,7 @@ async fn test_body_size_limit_enforced() {
     let pipeline = setup();
     let oversized_body = vec![0u8; MAX_BODY_SIZE + 1];
     let result = pipeline.api.process_request(
-        create_request("POST", "/v1/payment-intents", Some("sk_live_test_key_12345"), &oversized_body)
+        create_request("POST", "/v1/payment-intents", Some("sk_test_12345"), &oversized_body)
     ).await.unwrap();
 
     assert!(!result.allowed);
@@ -119,7 +119,7 @@ async fn test_get_specific_route() {
 async fn test_request_logging() {
     let pipeline = setup();
     let result = pipeline.api.process_request(
-        create_request("POST", "/v1/invoices", Some("sk_live_test_key_12345"), b"{}")
+        create_request("POST", "/v1/invoices", Some("sk_test_12345"), b"{}")
     ).await.unwrap();
 
     let log = pipeline.api.get_request(result.request_id).await.unwrap();
@@ -139,7 +139,7 @@ async fn test_health_check() {
 async fn test_delete_method() {
     let pipeline = setup();
     let result = pipeline.api.process_request(
-        create_request("DELETE", "/v1/payment-intents/*", Some("sk_live_test_key_12345"), b"{}")
+        create_request("DELETE", "/v1/payment-intents/*", Some("sk_test_12345"), b"{}")
     ).await.unwrap();
 
     assert!(result.allowed);

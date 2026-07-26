@@ -1,5 +1,7 @@
 //! Integration tests for iam-service.
 
+mod pg_repository_tests;
+
 #[cfg(test)]
 mod integration_tests {
     use uuid::Uuid;
