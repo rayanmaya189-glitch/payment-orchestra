@@ -13,7 +13,7 @@ use super::{sample_limits, sample_fees, test_operator_id, test_link_id};
 async fn test_create_and_get_gateway_profile() {
     let repo = InMemoryGatewayProfileRepository::new();
     let mut registry = ConnectorRegistry::new();
-    registry.register(Box::new(domain::mocks::MockNetworkIntlConnector::new("sandbox")));
+    registry.register(Box::new(domain::MockNetworkIntlConnector::new("sandbox")));
 
     let commands = commands::GatewayCommandHandler::new(repo, registry);
 
@@ -53,7 +53,7 @@ async fn test_create_and_get_gateway_profile() {
 async fn test_validate_credentials() {
     let repo = InMemoryGatewayProfileRepository::new();
     let mut registry = ConnectorRegistry::new();
-    registry.register(Box::new(domain::mocks::MockNetworkIntlConnector::new("sandbox")));
+    registry.register(Box::new(domain::MockNetworkIntlConnector::new("sandbox")));
 
     let commands = commands::GatewayCommandHandler::new(repo, registry);
 

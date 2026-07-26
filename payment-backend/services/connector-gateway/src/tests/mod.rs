@@ -1,5 +1,6 @@
 //! Integration tests for connector-gateway.
 
+mod pg_repository_tests;
 mod circuit_breaker_tests;
 mod fee_calculation_tests;
 mod handler_tests;

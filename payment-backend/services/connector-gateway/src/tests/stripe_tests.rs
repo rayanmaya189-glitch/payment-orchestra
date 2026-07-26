@@ -1,8 +1,9 @@
 //! Stripe / mock connector tests: validation, rotation, decline mapping, registry.
 
 use crate::domain::{
-    self, CardScheme, ConnectorRegistry, GatewayProfile, MonitoringThresholds,
-    ProfileStatus, RateLimitConfig, RotationState, RotationStrategy, TransactionLimits,
+    self, AcquirerConnector, CardScheme, ConnectorRegistry, GatewayProfile,
+    MonitoringThresholds, ProfileStatus, RateLimitConfig,
+    RotationState, RotationStrategy, TransactionLimits,
 };
 
 use super::{sample_gateway_profile, sample_limits, sample_fees, test_profile_id, test_operator_id, test_link_id};
@@ -83,7 +84,9 @@ fn test_rotation_strategy_priority_selects_first() {
 
 #[test]
 fn test_rotation_strategy_no_eligible_gateways() {
-    let profile = sample_gateway_profile(test_profile_id(), test_operator_id(), test_link_id(), "network_international");
+    // Create profile with non-matching currency
+    let mut profile = sample_gateway_profile(test_profile_id(), test_operator_id(), test_link_id(), "network_international");
+    profile.enabled_currencies = vec!["AED".into()]; // Only AED, not EUR
     let state = RotationState {
         operator_id: test_operator_id(),
         strategy: RotationStrategy::Priority,
@@ -93,13 +96,13 @@ fn test_rotation_strategy_no_eligible_gateways() {
         daily_volume: Default::default(),
     };
 
-    let amount = domain::Money { amount_minor_units: 10000, currency: "USD".into() };
-    // Profile only has "AED" enabled, so USD should not be eligible
+    let amount = domain::Money { amount_minor_units: 10000, currency: "EUR".into() };
+    // Profile only has "AED" enabled, so EUR should not be eligible
     let result = state.select_gateway_profile(
         &[profile],
         &amount,
         &CardScheme::Visa,
-        "USD",
+        "EUR",
     );
 
     assert!(result.is_err());
@@ -123,7 +126,7 @@ fn test_decline_mapping_unknown_code() {
 #[test]
 fn test_connector_registry_register_and_get() {
     let mut registry = ConnectorRegistry::new();
-    registry.register(Box::new(domain::mocks::MockNetworkIntlConnector::new("sandbox")));
+    registry.register(Box::new(domain::MockNetworkIntlConnector::new("sandbox")));
 
     let connector = registry.get("network_international");
     assert!(connector.is_ok());
@@ -139,7 +142,7 @@ fn test_connector_registry_get_unknown() {
 
 #[tokio::test]
 async fn test_mock_connector_authorize_sandbox() {
-    let connector = domain::mocks::MockNetworkIntlConnector::new("sandbox");
+    let connector = domain::MockNetworkIntlConnector::new("sandbox");
     let result = connector
         .authorize(domain::AuthorizeRequest {
             payment_method_token: "tok_test".into(),
@@ -160,7 +163,7 @@ async fn test_mock_connector_authorize_sandbox() {
 
 #[tokio::test]
 async fn test_connector_test_card_numbers() {
-    let connector = domain::mocks::MockCheckoutComConnector::new("sandbox");
+    let connector = domain::MockCheckoutComConnector::new("sandbox");
     let cards = connector.test_card_numbers();
     assert_eq!(cards.len(), 2);
     assert!(cards.iter().any(|c| c.scheme == CardScheme::Visa));

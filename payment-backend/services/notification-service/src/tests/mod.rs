@@ -1,16 +1,20 @@
 //! Notification Service TDD tests — BC-14
 //!
 //! Spec tests:
-//! - test_send_notification_email: basic send via email
-//! - test_send_notification_invalid_template: missing template rejected
-//! - test_mark_delivered: successful delivery
-//! - test_mark_failed_and_retry: failure → retry flow
-//! - test_mark_failed_exhausted: max retries → dead letter
-//! - test_retry_notification: reset failed to queued
-//! - test_template_rendering: variable substitution
-//! - test_find_pending: query
-//! - test_find_dead_letter: query
-//! - test_list_templates: 5 default templates
+
+mod pg_repository_tests;
+
+// Spec tests:
+// - test_send_notification_email: basic send via email
+// - test_send_notification_invalid_template: missing template rejected
+// - test_mark_delivered: successful delivery
+// - test_mark_failed_and_retry: failure → retry flow
+// - test_mark_failed_exhausted: max retries → dead letter
+// - test_retry_notification: reset failed to queued
+// - test_template_rendering: variable substitution
+// - test_find_pending: query
+// - test_find_dead_letter: query
+// - test_list_templates: 5 default templates
 
 use crate::commands::*;
 use crate::domain::*;

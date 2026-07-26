@@ -32,8 +32,8 @@ fn test_circuit_breaker_records_success_and_failure() {
     let mut cb = domain::CircuitBreaker::new();
     cb.record_success();
     cb.record_failure();
-    // State stays closed after 1 success + 1 failure (50% rate doesn't trigger)
-    assert_eq!(*cb.state(), domain::CircuitState::Closed);
+    // State opens after 1 success + 1 failure (50% rate triggers >= 50% threshold)
+    assert_eq!(*cb.state(), domain::CircuitState::Open);
 }
 
 #[test]

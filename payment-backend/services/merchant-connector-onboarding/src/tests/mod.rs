@@ -1,3 +1,5 @@
+mod pg_repository_tests;
+
 use crate::commands::*;
 use crate::domain::*;
 use crate::pipeline::*;

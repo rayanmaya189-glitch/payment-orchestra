@@ -1,14 +1,18 @@
 //! Payment Link TDD tests — BC-07
 //!
 //! Spec test cases:
-//! - test_create_payment_link: basic creation with token prefix and status
-//! - test_expired_payment_link_returns_410: expiry detection
-//! - test_payment_link_token_has_minimum_entropy: 128-bit token check
-//! - test_resolve_payment_link: successful checkout flow
-//! - test_double_resolve_rejected: idempotency / used link check
-//! - test_cancel_payment_link: manual cancellation
-//! - test_expire_overdue_links: batch expiry job
-//! - test_create_link_invalid_amount: validation
+
+mod pg_repository_tests;
+
+// Spec test cases:
+// - test_create_payment_link: basic creation with token prefix and status
+// - test_expired_payment_link_returns_410: expiry detection
+// - test_payment_link_token_has_minimum_entropy: 128-bit token check
+// - test_resolve_payment_link: successful checkout flow
+// - test_double_resolve_rejected: idempotency / used link check
+// - test_cancel_payment_link: manual cancellation
+// - test_expire_overdue_links: batch expiry job
+// - test_create_link_invalid_amount: validation
 
 use crate::commands::*;
 use crate::domain::*;
