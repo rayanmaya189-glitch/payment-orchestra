@@ -28,6 +28,7 @@ use repository::{InMemoryIamRepository, PostgresIamRepository};
 use api::grpc::IamGrpcService;
 use platform_proto::iam::iam_service_server::IamServiceServer;
 use platform_metrics::grpc_interceptor::MetricsLayer;
+use platform_middleware::rate_limit::GrcRateLimitLayer;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -96,6 +97,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tokio::select! {
         result = tonic::transport::Server::builder()
             .layer(MetricsLayer::new("iam-service"))
+            .layer(GrcRateLimitLayer::in_memory("iam-service"))
             .add_service(IamServiceServer::new(iam_service))
             .serve_with_shutdown(addr, async {
                 tokio::signal::ctrl_c().await.ok();

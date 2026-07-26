@@ -28,6 +28,7 @@ platform-messaging.workspace = true
 platform-db.workspace = true
 platform-health.workspace = true
 platform-metrics.workspace = true
+platform-middleware.workspace = true
 
 [dev-dependencies]
 proptest.workspace = true

@@ -1,6 +1,7 @@
 //! Authentication middleware — validates JWT tokens and API keys.
 //!
-//! JWT tokens are validated using HS256 with a shared secret.
+//! JWT tokens are validated using RS256 (AUTH-017) with a PEM-encoded public key.
+//! Falls back to HS256 with a shared secret if no public key is configured (dev mode).
 //! API keys are validated by prefix lookup and hash comparison.
 //!
 //! Both methods return an `AuthContext` containing the principal's identity and permissions.
@@ -60,12 +61,37 @@ pub struct AuthResult {
 
 /// Validate a JWT token and return the decoded claims.
 ///
-/// Uses HS256 with the provided secret. Validates:
-/// - Signature
+/// Uses RS256 if `JWT_PUBLIC_KEY_PEM` env var is set (production, AUTH-017).
+/// Falls back to HS256 with `jwt_secret` (dev mode).
+/// Validates:
+/// - Signature (RS256 with PEM public key, or HS256 with shared secret)
 /// - Expiry (`exp` claim)
 /// - Issuer (must match `expected_issuer`, if provided)
 /// - Audience (must match `expected_audience`, if provided)
 pub fn validate_jwt(token: &str, jwt_secret: &str, expected_issuer: Option<&str>, expected_audience: Option<&str>) -> Result<JwtClaims, PlatformError> {
+    // Try RS256 with PEM-encoded public key first (production, AUTH-017)
+    if let Ok(pem) = std::env::var("JWT_PUBLIC_KEY_PEM") {
+        if !pem.is_empty() {
+            match DecodingKey::from_rsa_pem(pem.as_bytes()) {
+                Ok(key) => {
+                    let mut validation = Validation::new(Algorithm::RS256);
+                    validation.validate_exp = true;
+                    validation.required_spec_claims = HashSet::from_iter(["sub".to_string(), "exp".to_string(), "iat".to_string()]);
+                    if let Some(issuer) = expected_issuer { validation.set_issuer(&[issuer]); }
+                    if let Some(audience) = expected_audience { validation.set_audience(&[audience]); }
+
+                    return decode::<JwtClaims>(token, &key, &validation)
+                        .map(|d| d.claims)
+                        .map_err(|e| PlatformError::AuthorizationDenied(format!("JWT RS256 validation failed: {}", e)));
+                }
+                Err(e) => {
+                    tracing::warn!(error = %e, "Failed to parse JWT_PUBLIC_KEY_PEM, falling back to HS256");
+                }
+            }
+        }
+    }
+
+    // Fallback: HS256 with shared secret (dev mode)
     let mut validation = Validation::new(Algorithm::HS256);
     validation.validate_exp = true;
     validation.required_spec_claims = HashSet::from_iter(["sub".to_string(), "exp".to_string(), "iat".to_string()]);
@@ -79,7 +105,7 @@ pub fn validate_jwt(token: &str, jwt_secret: &str, expected_issuer: Option<&str>
 
     let key = DecodingKey::from_secret(jwt_secret.as_bytes());
     let token_data = decode::<JwtClaims>(token, &key, &validation)
-        .map_err(|e| PlatformError::AuthorizationDenied(format!("JWT validation failed: {}", e)))?;
+        .map_err(|e| PlatformError::AuthorizationDenied(format!("JWT HS256 validation failed: {}", e)))?;
 
     Ok(token_data.claims)
 }

@@ -28,6 +28,7 @@ use repository::{InMemoryComplianceRepository, PostgresComplianceRepository};
 use api::grpc::ComplianceGrpcService;
 use platform_proto::compliance::compliance_service_server::ComplianceServiceServer;
 use platform_metrics::grpc_interceptor::MetricsLayer;
+use platform_middleware::rate_limit::GrcRateLimitLayer;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -91,6 +92,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tokio::select! {
         result = tonic::transport::Server::builder()
             .layer(MetricsLayer::new("compliance-service"))
+            .layer(GrcRateLimitLayer::in_memory("compliance-service"))
             .add_service(ComplianceServiceServer::new(compliance_service))
             .serve_with_shutdown(addr, async {
                 tokio::signal::ctrl_c().await.ok();

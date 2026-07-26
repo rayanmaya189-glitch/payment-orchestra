@@ -28,6 +28,7 @@ use repository::{InMemoryLinkRepository, PostgresLinkRepository};
 use api::grpc::LinkGrpcService;
 use platform_proto::connector::merchant_acquirer_link_service_server::MerchantAcquirerLinkServiceServer;
 use platform_metrics::grpc_interceptor::MetricsLayer;
+use platform_middleware::rate_limit::GrcRateLimitLayer;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -92,6 +93,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tokio::select! {
         result = tonic::transport::Server::builder()
             .layer(MetricsLayer::new("merchant-acquirer-link-service"))
+            .layer(GrcRateLimitLayer::in_memory("merchant-acquirer-link-service"))
             .add_service(MerchantAcquirerLinkServiceServer::new(link_service))
             .serve_with_shutdown(addr, async {
                 tokio::signal::ctrl_c().await.ok();

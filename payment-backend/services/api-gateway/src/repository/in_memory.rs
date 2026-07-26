@@ -25,13 +25,10 @@ impl Default for InMemoryGatewayRepository {
 
 impl InMemoryGatewayRepository {
     pub fn new() -> Self {
-        let mut keys = HashMap::new();
-        keys.insert("sk_live_test_key_12345".into(), Uuid::now_v7());
-        keys.insert("sk_test_test_key_67890".into(), Uuid::now_v7());
         Self {
             routes: Arc::new(default_routes()),
             rate_limit_counters: Arc::new(RwLock::new(HashMap::new())),
-            api_keys: Arc::new(RwLock::new(keys)),
+            api_keys: Arc::new(RwLock::new(HashMap::new())),
             request_log: Arc::new(RwLock::new(HashMap::new())),
         }
     }

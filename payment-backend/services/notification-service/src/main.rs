@@ -1,5 +1,5 @@
-//! Notification Service
-//! BC-14: Email/SMS notifications, webhook delivery
+//! Notification Service — BC-14
+//! Email/SMS notifications, webhook delivery with HMAC-SHA256 signing
 
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -7,6 +7,7 @@ use tracing::info;
 
 use notification_service::api::grpc::NotificationGrpcService;
 use notification_service::commands::{CommandHandler, NotificationCommandHandler};
+use notification_service::delivery::{start_delivery_engine, MAX_CONCURRENT_DELIVERIES};
 use notification_service::queries::{NotificationQueryHandler, QueryHandler};
 use notification_service::repository::{
     InMemoryNotificationRepository, InMemoryWebhookRepository, PostgresNotificationRepository,
@@ -14,6 +15,7 @@ use notification_service::repository::{
 };
 use platform_proto::notification::notification_service_server::NotificationServiceServer;
 use platform_metrics::grpc_interceptor::MetricsLayer;
+use platform_middleware::rate_limit::GrcRateLimitLayer;
 use platform_db::connection::create_service_pool;
 use platform_messaging::event_bus::{EventBus, NoopEventBus};
 use platform_messaging::nats_event_bus::NatsJetStreamEventBus;
@@ -24,7 +26,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     platform_logging::telemetry::init();
     platform_metrics::init_uptime_tracker();
 
-    let _event_bus: Arc<dyn EventBus> = if let Ok(url) = std::env::var("NATS_URL") {
+    let event_bus: Arc<dyn EventBus> = if let Ok(url) = std::env::var("NATS_URL") {
         let nats_username = std::env::var("NOTIFICATION_NATS_USERNAME").ok();
         let nats_password = std::env::var("NOTIFICATION_NATS_PASSWORD").ok();
         match NatsJetStreamEventBus::connect_with_auth(
@@ -50,15 +52,44 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let grpc_service = if let Ok(db) = create_service_pool("NOTIFICATION").await {
         tracing::info!("Connected to PostgreSQL for notification-service");
         let repo = PostgresNotificationRepository::new(db);
+        let webhook_repo = repo.clone();
+
+        // Start the webhook delivery engine as a background task
+        let delivery_repo = Arc::new(repo.clone()) as Arc<dyn notification_service::repository::NotificationRepository>;
+        let delivery_wh_repo = Arc::new(webhook_repo.clone()) as Arc<dyn WebhookRepository>;
+        let delivery_eb = event_bus.clone();
+        tokio::spawn(async move {
+            start_delivery_engine(
+                delivery_repo,
+                delivery_wh_repo,
+                delivery_eb,
+                MAX_CONCURRENT_DELIVERIES,
+            ).await;
+        });
+
         NotificationGrpcService::new(
             Box::new(NotificationCommandHandler::new(repo.clone())) as Box<dyn CommandHandler>,
             Box::new(NotificationQueryHandler::new(repo.clone())) as Box<dyn QueryHandler>,
-            Box::new(repo) as Box<dyn WebhookRepository>,
+            Box::new(webhook_repo) as Box<dyn WebhookRepository>,
         )
     } else {
         tracing::warn!("PostgreSQL unavailable for notification-service, using InMemory");
         let repo = InMemoryNotificationRepository::new();
         let webhook_repo = InMemoryWebhookRepository::new();
+
+        // Start the webhook delivery engine as a background task (in-memory mode)
+        let delivery_repo = Arc::new(repo.clone()) as Arc<dyn notification_service::repository::NotificationRepository>;
+        let delivery_wh_repo = Arc::new(webhook_repo.clone()) as Arc<dyn WebhookRepository>;
+        let delivery_eb = event_bus.clone();
+        tokio::spawn(async move {
+            start_delivery_engine(
+                delivery_repo,
+                delivery_wh_repo,
+                delivery_eb,
+                MAX_CONCURRENT_DELIVERIES,
+            ).await;
+        });
+
         NotificationGrpcService::new(
             Box::new(NotificationCommandHandler::new(repo.clone())) as Box<dyn CommandHandler>,
             Box::new(NotificationQueryHandler::new(repo)) as Box<dyn QueryHandler>,
@@ -81,6 +112,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tokio::select! {
         result = tonic::transport::Server::builder()
             .layer(MetricsLayer::new("notification-service"))
+            .layer(GrcRateLimitLayer::in_memory("notification-service"))
             .add_service(NotificationServiceServer::new(grpc_service))
             .serve_with_shutdown(addr, async {
                 tokio::signal::ctrl_c().await.ok();

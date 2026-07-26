@@ -14,6 +14,7 @@ use platform_db::connection::create_service_pool;
 use platform_messaging::event_bus::{EventBus, NoopEventBus};
 use platform_messaging::nats_event_bus::NatsJetStreamEventBus;
 use platform_metrics::grpc_interceptor::MetricsLayer;
+use platform_middleware::rate_limit::GrcRateLimitLayer;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -71,6 +72,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tokio::select! {
         result = Server::builder()
             .layer(MetricsLayer::new("reconciliation-service"))
+            .layer(GrcRateLimitLayer::in_memory("reconciliation-service"))
             .add_service(platform_proto::reconciliation::reconciliation_service_server::ReconciliationServiceServer::new(reconciliation_service))
             .serve_with_shutdown(grpc_addr, async {
                 tokio::signal::ctrl_c().await.ok();

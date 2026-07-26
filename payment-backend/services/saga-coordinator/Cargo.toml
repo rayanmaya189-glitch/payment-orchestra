@@ -17,6 +17,7 @@ thiserror.workspace = true
 futures.workspace = true
 async-trait.workspace = true
 platform-metrics.workspace = true
+platform-middleware.workspace = true
 platform-proto.workspace = true
 platform-logging.workspace = true
 dotenvy.workspace = true

@@ -5,6 +5,7 @@ use std::sync::Arc;
 use tracing::info;
 
 use platform_metrics::grpc_interceptor::MetricsLayer;
+use platform_middleware::rate_limit::GrcRateLimitLayer;
 use risk_service::api::grpc::RiskGrpcService;
 use risk_service::commands::{RiskCommandHandler, CommandHandler};
 use risk_service::queries::{RiskQueryHandler, QueryHandler};
@@ -77,6 +78,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tokio::select! {
         result = tonic::transport::Server::builder()
             .layer(MetricsLayer::new("risk-service"))
+            .layer(GrcRateLimitLayer::in_memory("risk-service"))
             .add_service(RiskServiceServer::new(grpc_service))
             .serve_with_shutdown(addr, async {
                 tokio::signal::ctrl_c().await.ok();

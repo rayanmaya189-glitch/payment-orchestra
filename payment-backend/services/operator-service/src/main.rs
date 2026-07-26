@@ -28,6 +28,7 @@ use repository::{InMemoryOperatorRepository, PostgresOperatorRepository};
 use api::grpc::OperatorGrpcService;
 use platform_proto::operator::operator_service_server::OperatorServiceServer;
 use platform_metrics::grpc_interceptor::MetricsLayer;
+use platform_middleware::rate_limit::GrcRateLimitLayer;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -98,6 +99,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tokio::select! {
         result = tonic::transport::Server::builder()
             .layer(MetricsLayer::new("operator-service"))
+            .layer(GrcRateLimitLayer::in_memory("operator-service"))
             .add_service(OperatorServiceServer::new(operator_service))
             .serve_with_shutdown(addr, async {
                 tokio::signal::ctrl_c().await.ok();

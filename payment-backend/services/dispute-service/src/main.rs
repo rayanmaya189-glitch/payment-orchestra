@@ -11,6 +11,7 @@ use dispute_service::queries::{DisputeQueryHandler, QueryHandler};
 use dispute_service::repository::{InMemoryDisputeRepository, PostgresDisputeRepository};
 use platform_proto::dispute::dispute_service_server::DisputeServiceServer;
 use platform_metrics::grpc_interceptor::MetricsLayer;
+use platform_middleware::rate_limit::GrcRateLimitLayer;
 use platform_db::connection::create_service_pool;
 use platform_messaging::event_bus::{EventBus, NoopEventBus};
 use platform_messaging::nats_event_bus::NatsJetStreamEventBus;
@@ -78,6 +79,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tokio::select! {
         result = tonic::transport::Server::builder()
             .layer(MetricsLayer::new("dispute-service"))
+            .layer(GrcRateLimitLayer::in_memory("dispute-service"))
             .add_service(DisputeServiceServer::new(grpc_service))
             .serve_with_shutdown(addr, async {
                 tokio::signal::ctrl_c().await.ok();

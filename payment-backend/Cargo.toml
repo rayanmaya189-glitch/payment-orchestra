@@ -110,7 +110,9 @@ rand = "0.8"
 dotenvy = "0.15"
 # OpenTelemetry
 opentelemetry = "0.27"
+opentelemetry_sdk = { version = "0.27", features = ["rt-tokio"] }
 opentelemetry-otlp = "0.27"
+tracing-opentelemetry = "0.28"
 
 [workspace.dependencies.platform-proto]
 path = "crates/platform-proto"

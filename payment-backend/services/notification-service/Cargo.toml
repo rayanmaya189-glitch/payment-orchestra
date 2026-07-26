@@ -29,6 +29,9 @@ platform-health.workspace = true
 platform-metrics.workspace = true
 sha2.workspace = true
 hex.workspace = true
+hmac.workspace = true
+platform-middleware.workspace = true
+reqwest.workspace = true
 
 [dev-dependencies]
 proptest.workspace = true

@@ -11,6 +11,7 @@ use invoice_service::queries::{InvoiceQueryHandler, QueryHandler};
 use invoice_service::repository::{InMemoryInvoiceRepository, PostgresInvoiceRepository};
 use platform_proto::invoice::invoice_service_server::InvoiceServiceServer;
 use platform_metrics::grpc_interceptor::MetricsLayer;
+use platform_middleware::rate_limit::GrcRateLimitLayer;
 use platform_db::connection::create_service_pool;
 use platform_messaging::event_bus::{EventBus, NoopEventBus};
 use platform_messaging::nats_event_bus::NatsJetStreamEventBus;
@@ -78,6 +79,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tokio::select! {
         result = tonic::transport::Server::builder()
             .layer(MetricsLayer::new("invoice-service"))
+            .layer(GrcRateLimitLayer::in_memory("invoice-service"))
             .add_service(InvoiceServiceServer::new(invoice_service))
             .serve_with_shutdown(addr, async {
                 tokio::signal::ctrl_c().await.ok();

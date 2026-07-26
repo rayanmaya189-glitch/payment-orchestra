@@ -19,10 +19,17 @@ mod integration_tests {
     }
 
     fn create_test_principal(repo: &impl IamRepository) -> Principal {
+        use argon2::{Argon2, PasswordHasher};
+        use argon2::password_hash::SaltString;
+        use argon2::password_hash::rand_core::OsRng;
+        let salt = SaltString::generate(&mut OsRng);
+        let hash = Argon2::default()
+            .hash_password(b"password123", &salt)
+            .expect("Argon2 hashing failed");
         let principal = Principal::new_human(
             Uuid::now_v7(),
             "admin@test.com".into(),
-            ring::digest::digest(&ring::digest::SHA256, b"password123").as_ref().to_vec(),
+            hash.to_string().into_bytes(),
         );
         let _ = futures::executor::block_on(repo.save_principal(&principal));
         principal

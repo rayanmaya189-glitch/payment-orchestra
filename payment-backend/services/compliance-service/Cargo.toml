@@ -27,6 +27,7 @@ platform-messaging.workspace = true
 platform-db.workspace = true
 platform-health.workspace = true
 platform-metrics.workspace = true
+platform-middleware.workspace = true
 prost.workspace = true
 platform-registry.workspace = true
 
