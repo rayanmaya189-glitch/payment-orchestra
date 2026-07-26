@@ -3,15 +3,19 @@
 //! Dispute Management TDD tests — BC-10
 //!
 //! Spec test cases:
-//! - test_record_chargeback_success: basic creation with received status
-//! - test_record_chargeback_on_uncaptured_intent_rejected: INV-08
-//! - test_submit_representment_requires_valid_evidence: validation
-//! - test_submit_representment_success: full representment flow
-//! - test_resolve_chargeback_won: won outcome
-//! - test_resolve_chargeback_lost: lost outcome
-//! - test_resolve_already_resolved_rejected: idempotency
-//! - test_find_by_payment_intent: query
-//! - test_find_open_cases: query
+
+mod pg_repository_tests;
+
+// Spec test cases:
+// - test_record_chargeback_success: basic creation with received status
+// - test_record_chargeback_on_uncaptured_intent_rejected: INV-08
+// - test_submit_representment_requires_valid_evidence: validation
+// - test_submit_representment_success: full representment flow
+// - test_resolve_chargeback_won: won outcome
+// - test_resolve_chargeback_lost: lost outcome
+// - test_resolve_already_resolved_rejected: idempotency
+// - test_find_by_payment_intent: query
+// - test_find_open_cases: query
 
 use crate::commands::*;
 use crate::domain::*;

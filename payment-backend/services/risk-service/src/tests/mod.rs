@@ -1,15 +1,19 @@
 //! Fraud & Risk Scoring TDD tests — BC-11
 //!
 //! Spec test cases:
-//! - test_low_risk_transaction: small amount, same country → low score
-//! - test_high_risk_transaction: high amount + geo mismatch → high score
-//! - test_very_high_amount: very high amount threshold
-//! - test_geo_mismatch: different billing/shipping countries
-//! - test_new_payment_method: newly created token
-//! - test_risk_score_clamped: multiple rules max out at 1.0
-//! - test_invalid_card_bin_rejected: validation
-//! - test_unsupported_currency_rejected: validation
-//! - test_get_assessment: query by payment intent
+
+mod pg_repository_tests;
+
+// Spec test cases:
+// - test_low_risk_transaction: small amount, same country → low score
+// - test_high_risk_transaction: high amount + geo mismatch → high score
+// - test_very_high_amount: very high amount threshold
+// - test_geo_mismatch: different billing/shipping countries
+// - test_new_payment_method: newly created token
+// - test_risk_score_clamped: multiple rules max out at 1.0
+// - test_invalid_card_bin_rejected: validation
+// - test_unsupported_currency_rejected: validation
+// - test_get_assessment: query by payment intent
 
 use crate::commands::*;
 use crate::domain::*;

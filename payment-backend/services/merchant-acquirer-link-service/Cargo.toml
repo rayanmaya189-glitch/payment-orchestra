@@ -33,6 +33,10 @@ hex.workspace = true
 prost.workspace = true
 platform-registry.workspace = true
 
+[features]
+integration_test = []
+
 [dev-dependencies]
 proptest.workspace = true
 testcontainers.workspace = true
+migrations = { path = "../../migrations" }
