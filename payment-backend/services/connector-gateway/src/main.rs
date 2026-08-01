@@ -75,7 +75,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let addr: SocketAddr = runner.grpc_addr;
     info!("Connector Gateway gRPC server listening on {addr}");
-    info!("Connectors available: stripe, network_international, checkout_com, telr");
+    info!("Connectors available: stripe, network_international, checkout_com, telr, tap_payments, paytabs, mamo, amazon_ps, aani");
 
     // Spawn periodic uptime recording (30s cadence aligns with Prometheus scrape)
     tokio::spawn(async {

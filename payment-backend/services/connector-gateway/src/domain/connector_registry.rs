@@ -53,6 +53,90 @@ impl ConnectorRegistry {
         };
         registry.register(Box::new(super::stripe_connector::StripeConnector::new(&stripe_config)));
 
+        // Register UAE payment gateway connectors
+        let checkout_config = ConnectorConfig {
+            api_key: None,
+            secret_key: Some("sk_test_placeholder".into()),
+            merchant_id: None,
+            store_id: None,
+            environment: "sandbox".into(),
+            additional_fields: HashMap::new(),
+        };
+        registry.register(Box::new(super::checkout_com_connector::CheckoutComConnector::new(&checkout_config)));
+
+        let ni_config = ConnectorConfig {
+            api_key: Some("test_api_key".into()),
+            secret_key: None,
+            merchant_id: Some("test_merchant".into()),
+            store_id: None,
+            environment: "sandbox".into(),
+            additional_fields: HashMap::new(),
+        };
+        registry.register(Box::new(super::network_intl_connector::NetworkIntlConnector::new(&ni_config)));
+
+        let telr_config = ConnectorConfig {
+            api_key: Some("test_api_key".into()),
+            secret_key: None,
+            merchant_id: None,
+            store_id: Some("test_store".into()),
+            environment: "sandbox".into(),
+            additional_fields: HashMap::new(),
+        };
+        registry.register(Box::new(super::telr_connector::TelrConnector::new(&telr_config)));
+
+        let tap_config = ConnectorConfig {
+            api_key: None,
+            secret_key: Some("pk_test_placeholder".into()),
+            merchant_id: None,
+            store_id: None,
+            environment: "sandbox".into(),
+            additional_fields: HashMap::new(),
+        };
+        registry.register(Box::new(super::tap_payments_connector::TapPaymentsConnector::new(&tap_config)));
+
+        let paytabs_config = ConnectorConfig {
+            api_key: None,
+            secret_key: Some("test_server_key".into()),
+            merchant_id: Some("test_profile".into()),
+            store_id: None,
+            environment: "sandbox".into(),
+            additional_fields: HashMap::new(),
+        };
+        registry.register(Box::new(super::paytabs_connector::PayTabsConnector::new(&paytabs_config)));
+
+        let mamo_config = ConnectorConfig {
+            api_key: Some("test_api_key".into()),
+            secret_key: None,
+            merchant_id: None,
+            store_id: None,
+            environment: "sandbox".into(),
+            additional_fields: HashMap::new(),
+        };
+        registry.register(Box::new(super::mamo_connector::MamoConnector::new(&mamo_config)));
+
+        let aps_config = ConnectorConfig {
+            api_key: Some("test_access_code".into()),
+            secret_key: None,
+            merchant_id: Some("test_merchant_id".into()),
+            store_id: None,
+            environment: "sandbox".into(),
+            additional_fields: HashMap::from([
+                ("sha_request_phrase".into(), "test_phrase".into()),
+                ("sha_response_phrase".into(), "test_response_phrase".into()),
+            ]),
+        };
+        registry.register(Box::new(super::amazon_ps_connector::AmazonPsConnector::new(&aps_config)));
+
+        let aani_config = ConnectorConfig {
+            api_key: Some("test_client_id".into()),
+            secret_key: Some("test_client_secret".into()),
+            merchant_id: None,
+            store_id: None,
+            environment: "sandbox".into(),
+            additional_fields: HashMap::new(),
+        };
+        registry.register(Box::new(super::aani_connector::AaniConnector::new(&aani_config)));
+
         // Register mock connectors for testing
         registry.register(Box::new(super::mock_connectors::MockNetworkIntlConnector::new("sandbox")));
         registry.register(Box::new(super::mock_connectors::MockCheckoutComConnector::new("sandbox")));

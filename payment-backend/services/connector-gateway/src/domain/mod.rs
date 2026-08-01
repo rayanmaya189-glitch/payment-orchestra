@@ -23,6 +23,16 @@ pub mod stripe_impl;
 pub mod stripe_webhook;
 pub mod stripe_credential;
 
+// UAE payment gateway connectors
+pub mod checkout_com_connector;
+pub mod network_intl_connector;
+pub mod telr_connector;
+pub mod tap_payments_connector;
+pub mod paytabs_connector;
+pub mod mamo_connector;
+pub mod amazon_ps_connector;
+pub mod aani_connector;
+
 // Existing sub-modules
 pub mod onboarding;
 
@@ -37,4 +47,12 @@ pub use mock_connectors::{MockCheckoutComConnector, MockNetworkIntlConnector, Mo
 pub use onboarding::{OnboardingField, OnboardingSchema, SelectOption, FieldType};
 pub use routing::{RotationState, RotationStrategy};
 pub use stripe_connector::StripeConnector;
+pub use checkout_com_connector::CheckoutComConnector;
+pub use network_intl_connector::NetworkIntlConnector;
+pub use telr_connector::TelrConnector;
+pub use tap_payments_connector::TapPaymentsConnector;
+pub use paytabs_connector::PayTabsConnector;
+pub use mamo_connector::MamoConnector;
+pub use amazon_ps_connector::AmazonPsConnector;
+pub use aani_connector::AaniConnector;
 pub use types::*;

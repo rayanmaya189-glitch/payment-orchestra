@@ -81,6 +81,11 @@ pub(crate) fn connector_display_name(connector_id: &str) -> String {
         "checkout_com" => "Checkout.com".into(),
         "network_international" => "Network International".into(),
         "telr" => "Telr".into(),
+        "tap_payments" => "Tap Payments".into(),
+        "paytabs" => "PayTabs".into(),
+        "mamo" => "Mamo".into(),
+        "amazon_ps" => "Amazon Payment Services".into(),
+        "aani" => "Aani".into(),
         other => other.to_string(),
     }
 }
