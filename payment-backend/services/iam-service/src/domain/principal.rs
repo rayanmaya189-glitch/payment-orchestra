@@ -14,6 +14,9 @@ pub struct Principal {
     pub mfa_enrolled: bool,
     pub mfa_method: Option<MfaMethod>,
     pub status: PrincipalStatus,
+    pub roles: Vec<String>,
+    pub permissions: Vec<String>,
+    pub operator_id: Option<Uuid>,
     pub failed_login_attempts: i32,
     pub locked_until: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
@@ -111,12 +114,57 @@ impl Principal {
             mfa_enrolled: false,
             mfa_method: None,
             status: PrincipalStatus::Active,
+            roles: vec!["user".into()],
+            permissions: vec![],
+            operator_id: None,
             failed_login_attempts: 0,
             locked_until: None,
             created_at: now,
             last_login_at: None,
             updated_at: now,
         }
+    }
+
+    /// Get effective permissions for this principal
+    pub fn effective_permissions(&self) -> Vec<String> {
+        let mut perms = self.permissions.clone();
+        // Add role-based permissions
+        for role in &self.roles {
+            match role.as_str() {
+                "admin" => {
+                    perms.push("*".into());
+                    perms.push("operator:create".into());
+                    perms.push("operator:read".into());
+                    perms.push("operator:update".into());
+                    perms.push("operator:delete".into());
+                    perms.push("payment:create".into());
+                    perms.push("payment:read".into());
+                    perms.push("payment:refund".into());
+                    perms.push("connector:manage".into());
+                    perms.push("settings:manage".into());
+                }
+                "operator" => {
+                    perms.push("operator:read".into());
+                    perms.push("operator:update".into());
+                    perms.push("payment:create".into());
+                    perms.push("payment:read".into());
+                    perms.push("payment:refund".into());
+                    perms.push("connector:manage".into());
+                }
+                "user" => {
+                    perms.push("payment:create".into());
+                    perms.push("payment:read".into());
+                }
+                "readonly" => {
+                    perms.push("payment:read".into());
+                    perms.push("operator:read".into());
+                }
+                _ => {}
+            }
+        }
+        perms.sort();
+        perms.dedup();
+        perms
     }
 
     pub fn record_login_attempt(&mut self, success: bool) -> Result<(), AuthError> {

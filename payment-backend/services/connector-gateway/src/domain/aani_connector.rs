@@ -12,6 +12,7 @@ use super::types::*;
 pub struct AaniConnector {
     client_id: String, client_secret: String, environment: String, base_url: String,
     client: reqwest::Client, circuit_breaker: Mutex<CircuitBreaker>, decline_table: DeclineMappingTable,
+    cached_token: Mutex<Option<(String, std::time::Instant)>>,
 }
 
 impl AaniConnector {
@@ -21,15 +22,31 @@ impl AaniConnector {
         let environment = config.environment.clone();
         let base_url = if environment == "sandbox" { "https://sandbox.aani.ae/api/v1".to_string() } else { "https://api.aani.ae/v1".to_string() };
         let client = reqwest::Client::builder().connect_timeout(std::time::Duration::from_secs(10)).timeout(std::time::Duration::from_secs(30)).user_agent("PaymentOrchestra/1.0").build().expect("Failed to create HTTP client for Aani");
-        Self { client_id, client_secret, environment, base_url, client, circuit_breaker: Mutex::new(CircuitBreaker::new()), decline_table: DeclineMappingTable::new(HashMap::from([ ("insufficient_funds".into(), "InsufficientFunds".into()), ("account_blocked".into(), "DoNotHonor".into()), ("account_not_found".into(), "InvalidCard".into()), ("amount_exceeded".into(), "TransactionLimitExceeded".into()), ("processing_error".into(), "IssuerUnavailable".into()), ("generic_decline".into(), "CardDeclined".into()), ("rate_limit".into(), "RateLimitedByAcquirer".into()) ])) }
+        Self { client_id, client_secret, environment, base_url, client, circuit_breaker: Mutex::new(CircuitBreaker::new()), decline_table: DeclineMappingTable::new(HashMap::from([ ("insufficient_funds".into(), "InsufficientFunds".into()), ("account_blocked".into(), "DoNotHonor".into()), ("account_not_found".into(), "InvalidCard".into()), ("amount_exceeded".into(), "TransactionLimitExceeded".into()), ("processing_error".into(), "IssuerUnavailable".into()), ("generic_decline".into(), "CardDeclined".into()), ("rate_limit".into(), "RateLimitedByAcquirer".into()) ])), cached_token: Mutex::new(None) }
     }
 
     async fn get_access_token(&self) -> Result<String, ConnectorError> {
+        // Check cache first (valid for 240s, tokens typically last 300s)
+        {
+            let cache = self.cached_token.lock().map_err(|e| ConnectorError::NetworkError(format!("Token cache lock: {}", e)))?;
+            if let Some((token, expires_at)) = cache.as_ref() {
+                if std::time::Instant::now() < *expires_at {
+                    return Ok(token.clone());
+                }
+            }
+        }
+        // Fetch new token
         let resp = self.client.post(format!("{}/oauth/token", self.base_url)).header("Content-Type", "application/x-www-form-urlencoded")
             .form(&[("grant_type", "client_credentials"), ("client_id", &self.client_id), ("client_secret", &self.client_secret)])
             .send().await.map_err(|e| ConnectorError::NetworkError(format!("Aani token: {}", e)))?;
         let body: Value = resp.json().await.map_err(|e| ConnectorError::NetworkError(format!("Aani parse: {}", e)))?;
-        body["access_token"].as_str().map(String::from).ok_or_else(|| ConnectorError::AuthenticationFailed("Failed to get Aani access token".into()))
+        let token = body["access_token"].as_str().map(String::from).ok_or_else(|| ConnectorError::AuthenticationFailed("Failed to get Aani access token".into()))?;
+        // Cache for 240 seconds
+        {
+            let mut cache = self.cached_token.lock().map_err(|e| ConnectorError::NetworkError(format!("Token cache lock: {}", e)))?;
+            *cache = Some((token.clone(), std::time::Instant::now() + std::time::Duration::from_secs(240)));
+        }
+        Ok(token)
     }
 
     fn normalize_authorize_response(&self, body: &Value, latency_ms: u32) -> Result<AuthorizeResponse, ConnectorError> {

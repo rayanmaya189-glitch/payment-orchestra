@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use super::error::OrchestrationError;
+use super::success_rate::SuccessRateTracker;
 
 // ─── Routing Rule ────────────────────────────────────────────────────────────
 
@@ -134,18 +135,93 @@ impl RoutingPolicy {
         attempted_hops: &[Uuid],
         available_links: &[Uuid],
     ) -> Result<Uuid, OrchestrationError> {
-        for rule in &self.rules {
-            if !rule.condition.matches(card_scheme, currency, amount_minor) {
-                continue;
+        match self.rotation_strategy {
+            RotationStrategy::SuccessRateBased => {
+                self.select_route_by_success_rate(
+                    card_scheme,
+                    currency,
+                    amount_minor,
+                    attempted_hops,
+                    available_links,
+                )
             }
-            if attempted_hops.contains(&rule.acquirer_link_id) {
-                continue;
+            _ => {
+                // Default: priority-based routing
+                for rule in &self.rules {
+                    if !rule.condition.matches(card_scheme, currency, amount_minor) {
+                        continue;
+                    }
+                    if attempted_hops.contains(&rule.acquirer_link_id) {
+                        continue;
+                    }
+                    if !available_links.contains(&rule.acquirer_link_id) {
+                        continue;
+                    }
+                    return Ok(rule.acquirer_link_id);
+                }
+                Err(OrchestrationError::NoEligibleRoute)
             }
-            if !available_links.contains(&rule.acquirer_link_id) {
-                continue;
-            }
-            return Ok(rule.acquirer_link_id);
         }
-        Err(OrchestrationError::NoEligibleRoute)
+    }
+
+    /// Select a gateway based on success rate.
+    fn select_route_by_success_rate(
+        &self,
+        card_scheme: &str,
+        currency: &str,
+        amount_minor: i64,
+        attempted_hops: &[Uuid],
+        available_links: &[Uuid],
+    ) -> Result<Uuid, OrchestrationError> {
+        // Filter eligible gateways based on conditions
+        let eligible: Vec<Uuid> = self
+            .rules
+            .iter()
+            .filter(|rule| {
+                rule.condition.matches(card_scheme, currency, amount_minor)
+                    && !attempted_hops.contains(&rule.acquirer_link_id)
+                    && available_links.contains(&rule.acquirer_link_id)
+            })
+            .map(|rule| rule.acquirer_link_id)
+            .collect();
+
+        if eligible.is_empty() {
+            return Err(OrchestrationError::NoEligibleRoute);
+        }
+
+        // For now, return the first eligible gateway
+        // In production, this would use SuccessRateTracker
+        Ok(eligible[0])
+    }
+
+    /// Select a gateway using external success rate tracker.
+    pub fn select_route_with_success_rate(
+        &self,
+        card_scheme: &str,
+        currency: &str,
+        amount_minor: i64,
+        attempted_hops: &[Uuid],
+        available_links: &[Uuid],
+        tracker: &SuccessRateTracker,
+    ) -> Result<Uuid, OrchestrationError> {
+        // Filter eligible gateways based on conditions
+        let eligible: Vec<Uuid> = self
+            .rules
+            .iter()
+            .filter(|rule| {
+                rule.condition.matches(card_scheme, currency, amount_minor)
+                    && !attempted_hops.contains(&rule.acquirer_link_id)
+                    && available_links.contains(&rule.acquirer_link_id)
+            })
+            .map(|rule| rule.acquirer_link_id)
+            .collect();
+
+        if eligible.is_empty() {
+            return Err(OrchestrationError::NoEligibleRoute);
+        }
+
+        // Select based on success rate
+        let best = tracker.select_best_gateway(&eligible);
+        best.ok_or(OrchestrationError::NoEligibleRoute)
     }
 }

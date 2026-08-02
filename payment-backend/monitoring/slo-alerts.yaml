@@ -1,0 +1,226 @@
+# =============================================================================
+# SLO Monitoring and Alerting Rules for Payment Orchestration Platform
+# =============================================================================
+# This file contains Prometheus alerting rules for SLO monitoring.
+
+groups:
+- name: payment_orchestration_slo
+  rules:
+  # ─── Availability SLO ───────────────────────────────────────────────────────
+  # 99.9% availability SLO (error budget: 0.1%)
+  
+  - record: payment:availability:ratio:5m
+    expr: |
+      sum(rate(grpc_server_handled_total{grpc_code!="Internal",grpc_code!="Unavailable"}[5m])) by (service)
+      /
+      sum(rate(grpc_server_handled_total[5m])) by (service)
+  
+  - record: payment:availability:ratio:30m
+    expr: |
+      sum(rate(grpc_server_handled_total{grpc_code!="Internal",grpc_code!="Unavailable"}[30m])) by (service)
+      /
+      sum(rate(grpc_server_handled_total[30m])) by (service)
+  
+  - record: payment:availability:ratio:1h
+    expr: |
+      sum(rate(grpc_server_handled_total{grpc_code!="Internal",grpc_code!="Unavailable"}[1h])) by (service)
+      /
+      sum(rate(grpc_server_handled_total[1h])) by (service)
+  
+  # Alert: SLO violation (availability below 99.9%)
+  - alert: PaymentOrchestrationSLOViolation
+    expr: payment:availability:ratio:30m < 0.999
+    for: 5m
+    labels:
+      severity: critical
+      service: payment-orchestration
+    annotations:
+      summary: "Payment orchestration SLO violation"
+      description: "Availability is {{ $value | humanizePercentage }} (SLO: 99.9%)"
+      runbook: "https://wiki.internal/runbooks/payment-slo-violation"
+  
+  # Alert: Error budget burn rate (2% in 1h)
+  - alert: PaymentOrchestrationErrorBudgetBurn
+    expr: |
+      (
+        1 - payment:availability:ratio:5m
+      ) / (1 - 0.999) > 2
+    for: 5m
+    labels:
+      severity: warning
+      service: payment-orchestration
+    annotations:
+      summary: "High error budget burn rate"
+      description: "Error budget burn rate is {{ $value }}x (threshold: 2x)"
+  
+  # ─── Latency SLO ───────────────────────────────────────────────────────────
+  # p99 latency under 500ms for payment operations
+  
+  - record: payment:latency:p99:5m
+    expr: |
+      histogram_quantile(0.99, 
+        sum(rate(grpc_server_handling_seconds_bucket{grpc_method=~"CreatePaymentIntent|AuthorizePaymentIntent|CapturePaymentIntent"}[5m])) by (le)
+      )
+  
+  - record: payment:latency:p99:30m
+    expr: |
+      histogram_quantile(0.99, 
+        sum(rate(grpc_server_handling_seconds_bucket{grpc_method=~"CreatePaymentIntent|AuthorizePaymentIntent|CapturePaymentIntent"}[30m])) by (le)
+      )
+  
+  # Alert: p99 latency SLO violation
+  - alert: PaymentLatencySLOViolation
+    expr: payment:latency:p99:30m > 0.5
+    for: 5m
+    labels:
+      severity: critical
+      service: payment-orchestration
+    annotations:
+      summary: "Payment latency SLO violation"
+      description: "p99 latency is {{ $value }}s (SLO: 500ms)"
+  
+  # ─── Transaction Success Rate ───────────────────────────────────────────────
+  # Target: 95% transaction success rate
+  
+  - record: payment:success_rate:ratio:5m
+    expr: |
+      sum(rate(payment_intent_authorized_total{status="approved"}[5m]))
+      /
+      sum(rate(payment_intent_authorized_total[5m]))
+  
+  # Alert: Low transaction success rate
+  - alert: PaymentLowSuccessRate
+    expr: payment:success_rate:ratio:5m < 0.95
+    for: 10m
+    labels:
+      severity: warning
+      service: payment-orchestration
+    annotations:
+      summary: "Low transaction success rate"
+      description: "Success rate is {{ $value | humanizePercentage }} (target: 95%)"
+  
+  # ─── Circuit Breaker Alerts ─────────────────────────────────────────────────
+  
+  - alert: CircuitBreakerOpen
+    expr: gateway_circuit_breaker_state == 1
+    for: 1m
+    labels:
+      severity: warning
+      service: payment-orchestration
+    annotations:
+      summary: "Circuit breaker open for {{ $labels.gateway }}"
+      description: "Gateway {{ $labels.gateway }} circuit breaker is open"
+  
+  # ─── Database Connection Pool ───────────────────────────────────────────────
+  
+  - alert: DatabaseConnectionPoolExhausted
+    expr: |
+      pgbouncer_pools_client_active_connections / pgbouncer_pools_client_waiting_connections > 0.9
+    for: 5m
+    labels:
+      severity: warning
+      service: payment-orchestration
+    annotations:
+      summary: "Database connection pool nearly exhausted"
+      description: "Active connections ratio is {{ $value | humanizePercentage }}"
+  
+  # ─── Event Sourcing Lag ─────────────────────────────────────────────────────
+  
+  - alert: EventSourcingLag
+    expr: |
+      event_store_lag_seconds > 30
+    for: 5m
+    labels:
+      severity: warning
+      service: payment-orchestration
+    annotations:
+      summary: "Event sourcing lag detected"
+      description: "Event store lag is {{ $value }}s"
+  
+  # ─── NATS JetStream Lag ─────────────────────────────────────────────────────
+  
+  - alert: NATSStreamLag
+    expr: |
+      nats_stream_consumer_pending_count > 1000
+    for: 5m
+    labels:
+      severity: warning
+      service: payment-orchestration
+    annotations:
+      summary: "NATS stream consumer lag"
+      description: "Consumer has {{ $value }} pending messages"
+  
+  # ─── Gateway Health ─────────────────────────────────────────────────────────
+  
+  - alert: GatewayUnhealthy
+    expr: gateway_health_score < 0.8
+    for: 5m
+    labels:
+      severity: warning
+      service: payment-orchestration
+    annotations:
+      summary: "Gateway {{ $labels.gateway }} unhealthy"
+      description: "Health score is {{ $value }}"
+  
+  # ─── Response Time Alerts ───────────────────────────────────────────────────
+  
+  - alert: HighResponseTime
+    expr: |
+      rate(grpc_server_handling_seconds_sum[5m]) / rate(grpc_server_handling_seconds_count[5m]) > 0.2
+    for: 5m
+    labels:
+      severity: warning
+      service: payment-orchestration
+    annotations:
+      summary: "High average response time"
+      description: "Average response time is {{ $value }}s"
+
+# Recording rules for dashboarding
+groups:
+- name: payment_orchestration_recording
+  rules:
+  # Availability metrics
+  - record: payment:availability:ratio:5m
+    expr: |
+      sum(rate(grpc_server_handled_total{grpc_code!="Internal",grpc_code!="Unavailable"}[5m])) by (service)
+      /
+      sum(rate(grpc_server_handled_total[5m])) by (service)
+  
+  # Latency percentiles
+  - record: payment:latency:p50:5m
+    expr: |
+      histogram_quantile(0.50, 
+        sum(rate(grpc_server_handling_seconds_bucket[5m])) by (le, service)
+      )
+  
+  - record: payment:latency:p95:5m
+    expr: |
+      histogram_quantile(0.95, 
+        sum(rate(grpc_server_handling_seconds_bucket[5m])) by (le, service)
+      )
+  
+  - record: payment:latency:p99:5m
+    expr: |
+      histogram_quantile(0.99, 
+        sum(rate(grpc_server_handling_seconds_bucket[5m])) by (le, service)
+      )
+  
+  # Transaction metrics
+  - record: payment:transactions:total:5m
+    expr: sum(rate(payment_intent_created_total[5m])) by (currency, status)
+  
+  - record: payment:transactions:amount:5m
+    expr: sum(rate(payment_intent_amount_total[5m])) by (currency)
+  
+  # Gateway metrics
+  - record: payment:gateway:success_rate:5m
+    expr: |
+      sum(rate(payment_gateway_response_total{status="success"}[5m])) by (gateway)
+      /
+      sum(rate(payment_gateway_response_total[5m])) by (gateway)
+  
+  - record: payment:gateway:latency:p99:5m
+    expr: |
+      histogram_quantile(0.99, 
+        sum(rate(payment_gateway_latency_seconds_bucket[5m])) by (le, gateway)
+      )

@@ -25,21 +25,9 @@ impl TelrConnector {
     }
 
     fn auth_header(&self) -> String {
-        // Base64 encode "store_id:api_key" for Basic auth
+        use base64::Engine;
         let raw = format!("{}:{}", self.store_id, self.api_key);
-        const CHARS: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-        let bytes = raw.as_bytes();
-        let mut encoded = String::with_capacity((bytes.len() + 2) / 3 * 4);
-        for chunk in bytes.chunks(3) {
-            let b0 = chunk[0] as u32;
-            let b1 = if chunk.len() > 1 { chunk[1] as u32 } else { 0 };
-            let b2 = if chunk.len() > 2 { chunk[2] as u32 } else { 0 };
-            let triple = (b0 << 16) | (b1 << 8) | b2;
-            encoded.push(CHARS[((triple >> 18) & 0x3F) as usize] as char);
-            encoded.push(CHARS[((triple >> 12) & 0x3F) as usize] as char);
-            if chunk.len() > 1 { encoded.push(CHARS[((triple >> 6) & 0x3F) as usize] as char); } else { encoded.push('='); }
-            if chunk.len() > 2 { encoded.push(CHARS[(triple & 0x3F) as usize] as char); } else { encoded.push('='); }
-        }
+        let encoded = base64::engine::general_purpose::STANDARD.encode(raw.as_bytes());
         format!("Basic {}", encoded)
     }
 

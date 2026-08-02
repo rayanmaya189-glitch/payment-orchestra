@@ -23,7 +23,7 @@ impl std::fmt::Display for CardScheme {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum SettlementCycle {
     SameDay,
     NextDay,

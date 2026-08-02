@@ -9,6 +9,7 @@ pub mod api_key;
 pub mod error;
 pub mod pending_change;
 pub mod principal;
+pub mod sso;
 
 // Re-export all types for convenience
 pub use api_key::{ApiKey, ApiKeyStatus};
@@ -17,6 +18,7 @@ pub use pending_change::PendingChange;
 #[allow(unused_imports)]
 pub use pending_change::ChangeStatus;
 pub use principal::{MfaMethod, Principal, PrincipalStatus, PrincipalType};
+pub use sso::{AttributeMapping, OidcUserInfo, SamlResponse, SsoError, SsoManager, SsoProvider, SsoProviderType, SsoSession, SsoUserInfo};
 
 // ─── Tests ─────────────────────────────────────────────────────────────────
 

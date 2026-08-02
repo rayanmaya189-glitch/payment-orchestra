@@ -26,7 +26,7 @@ use crate::repository::{
 
 /// Event-sourced reconciliation repository.
 ///
-/// SettlementBatchRepository is implemented via event sourcing.
+/// SettlementBatchRepository is implemented via event sourcing with projections.
 /// Other traits use in-memory stores.
 pub struct EventSourcedReconciliationRepository {
     event_store: PlatformEventStore,
@@ -34,6 +34,10 @@ pub struct EventSourcedReconciliationRepository {
     ledger: Arc<RwLock<Vec<LedgerEntry>>>,
     expectations: Arc<RwLock<HashMap<Uuid, SettlementExpectation>>>,
     fee_variances: Arc<RwLock<HashMap<Uuid, FeeVariance>>>,
+    // Projection indexes for efficient queries
+    batches_by_checksum: Arc<RwLock<HashMap<String, Uuid>>>,
+    all_batch_ids: Arc<RwLock<Vec<Uuid>>>,
+    batches_cache: Arc<RwLock<HashMap<Uuid, SettlementBatch>>>,
 }
 
 impl EventSourcedReconciliationRepository {
@@ -43,7 +47,26 @@ impl EventSourcedReconciliationRepository {
             ledger: Arc::new(RwLock::new(Vec::new())),
             expectations: Arc::new(RwLock::new(HashMap::new())),
             fee_variances: Arc::new(RwLock::new(HashMap::new())),
+            batches_by_checksum: Arc::new(RwLock::new(HashMap::new())),
+            all_batch_ids: Arc::new(RwLock::new(Vec::new())),
+            batches_cache: Arc::new(RwLock::new(HashMap::new())),
         }
+    }
+
+    /// Update projection indexes when a batch is loaded or saved.
+    async fn update_projections(&self, batch: &SettlementBatch) {
+        if !batch.file_checksum.is_empty() {
+            let mut by_checksum = self.batches_by_checksum.write().await;
+            by_checksum.insert(batch.file_checksum.clone(), batch.settlement_batch_id);
+        }
+
+        let mut all_ids = self.all_batch_ids.write().await;
+        if !all_ids.contains(&batch.settlement_batch_id) {
+            all_ids.push(batch.settlement_batch_id);
+        }
+
+        let mut cache = self.batches_cache.write().await;
+        cache.insert(batch.settlement_batch_id, batch.clone());
     }
 
     async fn append_events(
@@ -77,6 +100,14 @@ impl EventSourcedReconciliationRepository {
 #[async_trait]
 impl SettlementBatchRepository for EventSourcedReconciliationRepository {
     async fn load_settlement_batch(&self, id: Uuid) -> Result<Option<SettlementBatch>, ReconciliationError> {
+        // Check cache first
+        {
+            let cache = self.batches_cache.read().await;
+            if let Some(batch) = cache.get(&id) {
+                return Ok(Some(batch.clone()));
+            }
+        }
+
         let stored_events = self
             .event_store
             .read_all_events("SettlementBatch", id)
@@ -119,6 +150,11 @@ impl SettlementBatchRepository for EventSourcedReconciliationRepository {
             }
         }
 
+        // Update projections
+        if let Some(ref b) = batch {
+            self.update_projections(b).await;
+        }
+
         Ok(batch)
     }
 
@@ -127,17 +163,29 @@ impl SettlementBatchRepository for EventSourcedReconciliationRepository {
             return Ok(());
         }
         let events = std::mem::take(&mut batch.pending_events);
-        self.append_events(batch.settlement_batch_id, &events).await
+        self.append_events(batch.settlement_batch_id, &events).await?;
+        // Update projections after saving
+        self.update_projections(batch).await;
+        Ok(())
     }
 
-    async fn find_batch_by_checksum(&self, _checksum: &str) -> Result<Option<SettlementBatch>, ReconciliationError> {
-        // TODO: Requires a projection or snapshot store.
+    async fn find_batch_by_checksum(&self, checksum: &str) -> Result<Option<SettlementBatch>, ReconciliationError> {
+        let by_checksum = self.batches_by_checksum.read().await;
+        let cache = self.batches_cache.read().await;
+        if let Some(batch_id) = by_checksum.get(checksum) {
+            return Ok(cache.get(batch_id).cloned());
+        }
         Ok(None)
     }
 
     async fn list_all_batches(&self) -> Result<Vec<SettlementBatch>, ReconciliationError> {
-        // TODO: Requires a projection or snapshot store for efficient listing.
-        Ok(Vec::new())
+        let all_ids = self.all_batch_ids.read().await;
+        let cache = self.batches_cache.read().await;
+        let batches: Vec<SettlementBatch> = all_ids
+            .iter()
+            .filter_map(|id| cache.get(id).cloned())
+            .collect();
+        Ok(batches)
     }
 }
 

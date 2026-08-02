@@ -49,8 +49,8 @@ impl<R: IamRepository + Send + Sync> IamCommandHandler<R> {
         self.repository.save_principal(&p).await?;
 
         // Generate tokens using proper JWT with Argon2id-secured credentials
-        let permissions: Vec<String> = vec![]; // TODO: load permissions from principal roles
-        let operator_id: Option<Uuid> = None; // TODO: load operator context
+        let permissions = p.effective_permissions();
+        let operator_id = p.operator_id;
         let access_token = self.generate_token(
             &p.id,
             p.principal_type.as_str(),

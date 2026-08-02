@@ -10,17 +10,18 @@ use super::onboarding::{FieldType, OnboardingField, OnboardingSchema, SelectOpti
 use super::types::*;
 
 pub struct TapPaymentsConnector {
-    secret_key: String, environment: String, base_url: String,
+    secret_key: String, webhook_secret: String, environment: String, base_url: String,
     client: reqwest::Client, circuit_breaker: Mutex<CircuitBreaker>, decline_table: DeclineMappingTable,
 }
 
 impl TapPaymentsConnector {
     pub fn new(config: &ConnectorConfig) -> Self {
         let secret_key = config.secret_key.clone().unwrap_or_default();
+        let webhook_secret = config.additional_fields.get("webhook_secret").cloned().unwrap_or_default();
         let environment = config.environment.clone();
         let base_url = if environment == "sandbox" { "https://Tap-sandbox.payments.com/v1".to_string() } else { "https://Tap-api.payments.com/v1".to_string() };
         let client = reqwest::Client::builder().connect_timeout(std::time::Duration::from_secs(10)).timeout(std::time::Duration::from_secs(30)).user_agent("PaymentOrchestra/1.0").build().expect("Failed to create HTTP client for Tap Payments");
-        Self { secret_key, environment, base_url, client, circuit_breaker: Mutex::new(CircuitBreaker::new()), decline_table: DeclineMappingTable::new(HashMap::from([ ("insufficient_funds".into(), "InsufficientFunds".into()), ("do_not_honor".into(), "DoNotHonor".into()), ("expired_card".into(), "ExpiredCard".into()), ("invalid_card_number".into(), "InvalidCard".into()), ("card_declined".into(), "SuspectedFraud".into()), ("processing_error".into(), "IssuerUnavailable".into()), ("generic_decline".into(), "CardDeclined".into()), ("rate_limit".into(), "RateLimitedByAcquirer".into()) ])) }
+        Self { secret_key, webhook_secret, environment, base_url, client, circuit_breaker: Mutex::new(CircuitBreaker::new()), decline_table: DeclineMappingTable::new(HashMap::from([ ("insufficient_funds".into(), "InsufficientFunds".into()), ("do_not_honor".into(), "DoNotHonor".into()), ("expired_card".into(), "ExpiredCard".into()), ("invalid_card_number".into(), "InvalidCard".into()), ("card_declined".into(), "SuspectedFraud".into()), ("processing_error".into(), "IssuerUnavailable".into()), ("generic_decline".into(), "CardDeclined".into()), ("rate_limit".into(), "RateLimitedByAcquirer".into()) ])) }
     }
 
     fn auth_header(&self) -> String { format!("Bearer {}", self.secret_key) }
@@ -108,8 +109,11 @@ impl AcquirerConnector for TapPaymentsConnector {
     async fn poll_settlement(&self, _req: PollSettlementRequest) -> Result<Vec<RawSettlementRecord>, ConnectorError> { Ok(vec![]) }
 
     fn verify_webhook_signature(&self, headers: &HashMap<String, String>, body: &[u8]) -> Result<(), ConnectorError> {
-        let webhook_secret = headers.get("x-webhook-secret").or_else(|| headers.get("X-Webhook-Secret"));
-        match webhook_secret { Some(s) if !s.is_empty() => { use ring::hmac; let key = hmac::Key::new(hmac::HMAC_SHA256, s.as_bytes()); let computed = hmac::sign(&key, body); let computed_hex = hex::encode(computed.as_ref()); if computed_hex == *s { Ok(()) } else { Err(ConnectorError::InvalidSignature) } } _ => Err(ConnectorError::InvalidSignature) }
+        // SECURITY: Use self.webhook_secret from config, NOT from request headers
+        if self.webhook_secret.is_empty() { return Err(ConnectorError::InvalidSignature); }
+        let signature = headers.get("x-tap-signature").or_else(|| headers.get("X-Tap-Signature")).ok_or(ConnectorError::InvalidSignature)?;
+        use ring::hmac; let key = hmac::Key::new(hmac::HMAC_SHA256, self.webhook_secret.as_bytes()); let computed = hmac::sign(&key, body); let computed_hex = hex::encode(computed.as_ref());
+        if computed_hex == *signature { Ok(()) } else { Err(ConnectorError::InvalidSignature) }
     }
 
     fn parse_webhook(&self, body: &[u8]) -> Result<ConnectorEvent, ConnectorError> {

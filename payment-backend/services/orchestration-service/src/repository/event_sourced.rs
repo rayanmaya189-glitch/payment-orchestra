@@ -28,7 +28,7 @@ use crate::repository::{
 
 /// Event-sourced orchestration repository.
 ///
-/// PaymentIntentRepository is implemented via event sourcing.
+/// PaymentIntentRepository is implemented via event sourcing with projections.
 /// Other traits use in-memory stores.
 pub struct EventSourcedOrchestrationRepository {
     event_store: PlatformEventStore,
@@ -38,6 +38,10 @@ pub struct EventSourcedOrchestrationRepository {
     tokens: Arc<RwLock<HashMap<Uuid, PaymentMethodToken>>>,
     idempotency_cache: Arc<RwLock<HashMap<String, serde_json::Value>>>,
     active_links: Arc<RwLock<HashMap<Uuid, Vec<Uuid>>>>,
+    // Projection indexes for efficient queries
+    intents_by_operator: Arc<RwLock<HashMap<Uuid, Vec<Uuid>>>>,
+    intents_by_status: Arc<RwLock<HashMap<String, Vec<Uuid>>>>,
+    intents_cache: Arc<RwLock<HashMap<Uuid, PaymentIntent>>>,
 }
 
 impl EventSourcedOrchestrationRepository {
@@ -49,7 +53,29 @@ impl EventSourcedOrchestrationRepository {
             tokens: Arc::new(RwLock::new(HashMap::new())),
             idempotency_cache: Arc::new(RwLock::new(HashMap::new())),
             active_links: Arc::new(RwLock::new(HashMap::new())),
+            intents_by_operator: Arc::new(RwLock::new(HashMap::new())),
+            intents_by_status: Arc::new(RwLock::new(HashMap::new())),
+            intents_cache: Arc::new(RwLock::new(HashMap::new())),
         }
+    }
+
+    /// Update projection indexes when an intent is loaded or saved.
+    async fn update_projections(&self, intent: &PaymentIntent) {
+        let mut by_operator = self.intents_by_operator.write().await;
+        by_operator
+            .entry(intent.operator_id)
+            .or_insert_with(Vec::new)
+            .push(intent.payment_intent_id);
+
+        let mut by_status = self.intents_by_status.write().await;
+        let status_key = format!("{:?}", intent.status);
+        by_status
+            .entry(status_key)
+            .or_insert_with(Vec::new)
+            .push(intent.payment_intent_id);
+
+        let mut cache = self.intents_cache.write().await;
+        cache.insert(intent.payment_intent_id, intent.clone());
     }
 }
 
@@ -61,6 +87,14 @@ impl PaymentIntentRepository for EventSourcedOrchestrationRepository {
         &self,
         id: Uuid,
     ) -> Result<Option<PaymentIntent>, OrchestrationError> {
+        // Check cache first
+        {
+            let cache = self.intents_cache.read().await;
+            if let Some(intent) = cache.get(&id) {
+                return Ok(Some(intent.clone()));
+            }
+        }
+
         let stored_events = self
             .event_store
             .read_all_events("PaymentIntent", id)
@@ -91,6 +125,11 @@ impl PaymentIntentRepository for EventSourcedOrchestrationRepository {
             }
         }
 
+        // Update projections after loading
+        if let Some(ref pi) = intent {
+            self.update_projections(pi).await;
+        }
+
         Ok(intent)
     }
 
@@ -104,16 +143,26 @@ impl PaymentIntentRepository for EventSourcedOrchestrationRepository {
             return Ok(());
         }
         let events = std::mem::take(&mut intent.pending_events);
-        self.append_payment_events(intent.payment_intent_id, &events).await
+        self.append_payment_events(intent.payment_intent_id, &events).await?;
+        // Update projections after saving
+        self.update_projections(intent).await;
+        Ok(())
     }
 
     async fn list_payment_intents_for_operator(
         &self,
-        _operator_id: Uuid,
+        operator_id: Uuid,
     ) -> Result<Vec<PaymentIntent>, OrchestrationError> {
-        // TODO: Requires a projection or snapshot store for efficient listing.
-        // Phase 2: implement a `payment_intent_by_operator` projection
-        // that subscribes to PaymentIntent events and maintains a lookup index.
+        // Use projection index for efficient lookup
+        let by_operator = self.intents_by_operator.read().await;
+        if let Some(intent_ids) = by_operator.get(&operator_id) {
+            let cache = self.intents_cache.read().await;
+            let intents: Vec<PaymentIntent> = intent_ids
+                .iter()
+                .filter_map(|id| cache.get(id).cloned())
+                .collect();
+            return Ok(intents);
+        }
         Ok(Vec::new())
     }
 }

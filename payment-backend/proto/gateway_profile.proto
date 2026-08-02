@@ -32,7 +32,7 @@ service GatewayProfileService {
 
 message CreateGatewayProfileRequest {
   string operator_id = 1;
-  string connector_id = 2;       // 'stripe' | 'checkout_com' | 'network_international' | 'telr'
+  string connector_id = 2;       // 'stripe' | 'checkout_com' | 'network_international' | 'telr' | 'tap_payments' | 'paytabs' | 'mamo' | 'amazon_ps' | 'aani' | 'billdesk' | 'cashfree' | 'payu' | 'phonepe' | 'razorpay' | 'ccavenue' | 'paytm' | 'juspay' | 'instamojo' | 'easebuzz' | 'icici' | 'hdfc' | 'axis' | 'sbi' | 'kotak' | 'yesbank' | 'indusind' | 'mswipe' | 'fampay' | 'zestmoney' | 'direcpay' | 'atom' | 'pinelabs' | 'worldline' | 'zaakpay' | 'payglocal' | 'adyen' | 'paypal' | 'upi'
   string merchant_acquirer_link_id = 3;
   int64 min_amount_minor = 4;
   int64 max_amount_minor = 5;

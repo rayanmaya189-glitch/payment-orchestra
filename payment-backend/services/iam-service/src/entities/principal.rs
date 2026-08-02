@@ -15,6 +15,12 @@ pub struct Model {
     pub mfa_enrolled: bool,
     pub mfa_method: Option<String>,
     pub status: String,
+    /// Roles assigned to this principal (JSON array)
+    pub roles: String,
+    /// Direct permissions assigned to this principal (JSON array)
+    pub permissions: String,
+    /// Operator context ID (for operator-specific access)
+    pub operator_id: Option<Uuid>,
     pub failed_login_attempts: i32,
     pub locked_until: Option<DateTimeUtc>,
     pub created_at: DateTimeUtc,

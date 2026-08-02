@@ -6,6 +6,7 @@ mod fee_calculation_tests;
 mod handler_tests;
 mod repository_tests;
 mod stripe_tests;
+mod india_connector_tests;
 
 pub(crate) mod helpers {
     use uuid::Uuid;

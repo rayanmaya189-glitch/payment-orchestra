@@ -19,6 +19,7 @@ members = [
     "crates/platform-metrics",
     "crates/platform-registry",
     "crates/platform-clients",
+    "crates/platform-security",
 
     # Database migrations
     "migrations",
@@ -46,6 +47,7 @@ members = [
     "services/api-gateway",
     "services/ai-gateway",
     "services/merchant-connector-onboarding",
+    "services/ai-fraud-service",
 ]
 
 [workspace.package]
@@ -80,6 +82,8 @@ sha2 = "0.10"
 hex = "0.4"
 # Crypto primitives
 ring = "0.17"
+# Base64 encoding
+base64 = "0.22"
 # Serialization
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -161,6 +165,9 @@ path = "crates/platform-registry"
 
 [workspace.dependencies.platform-clients]
 path = "crates/platform-clients"
+
+[workspace.dependencies.platform-security]
+path = "crates/platform-security"
 
 [workspace.dependencies.shared-types]
 path = "crates/shared-types"

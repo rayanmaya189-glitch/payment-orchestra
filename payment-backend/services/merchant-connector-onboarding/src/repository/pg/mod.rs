@@ -43,7 +43,14 @@ fn parse_status(s: &str) -> Option<OnboardingStatus> {
     }
 }
 
-// TODO Phase 4: Add parse_health_status() when entity gains health_status column
+fn parse_health_status(s: &str) -> Option<HealthStatus> {
+    match s {
+        "healthy" => Some(HealthStatus::Healthy),
+        "degraded" => Some(HealthStatus::Degraded),
+        "down" => Some(HealthStatus::Down),
+        _ => Some(HealthStatus::Unknown),
+    }
+}
 
 // ─── Domain ←→ Entity Conversion ─────────────────────────────────────────────
 
@@ -59,12 +66,16 @@ fn domain_to_model(request: &OnboardingRequest) -> Result<OnboardingModel, Onboa
         onboarding_id: request.link_id,
         operator_id: request.operator_id,
         connector_id: request.connector_id.clone(),
+        display_name: request.display_name.clone(),
         credentials_json,
+        encrypted_credentials: request.encrypted_credentials.clone(),
         environment: request.environment.clone(),
         status: request.status.to_string(),
-        // TODO: Phase 4 - entity needs health_status, display_name, encrypted_credentials columns
+        health_status: request.health_status.to_string(),
         test_result: test_result_json,
         error_message: None,
+        last_tested_at: request.last_tested_at,
+        credential_expires_at: request.credential_expires_at,
         created_at: request.created_at,
         updated_at: request.updated_at,
     })
@@ -82,20 +93,22 @@ fn model_to_domain(m: OnboardingModel) -> Result<OnboardingRequest, OnboardingEr
     };
     let status = parse_status(&m.status)
         .ok_or_else(|| OnboardingError::InvalidFieldValue(format!("Invalid status: {}", m.status)))?;
+    let health_status = parse_health_status(&m.health_status)
+        .unwrap_or(HealthStatus::Unknown);
 
     Ok(OnboardingRequest {
         link_id: m.onboarding_id,
         operator_id: m.operator_id,
         connector_id: m.connector_id,
-        display_name: String::new(),  // TODO: Phase 4 - add display_name column
+        display_name: m.display_name,
         environment: m.environment,
         status,
-        health_status: HealthStatus::Unknown, // TODO: Phase 4 - add health_status column
+        health_status,
         credentials,
-        encrypted_credentials: Vec::new(), // TODO: Phase 4 - add encrypted_credentials column
-        last_tested_at: None, // TODO: Phase 4 - add last_tested_at column
+        encrypted_credentials: m.encrypted_credentials,
+        last_tested_at: m.last_tested_at,
         last_test_result,
-        credential_expires_at: None, // TODO: Phase 4 - add credential_expires_at column
+        credential_expires_at: m.credential_expires_at,
         created_at: m.created_at,
         updated_at: m.updated_at,
     })

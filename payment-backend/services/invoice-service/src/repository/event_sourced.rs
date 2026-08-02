@@ -8,6 +8,8 @@
 use async_trait::async_trait;
 use chrono::Utc;
 use sea_orm::DatabaseConnection;
+use std::collections::HashMap;
+use std::sync::Arc;
 use uuid::Uuid;
 
 use platform_event_store::{EventStore as PlatformEventStore, StoredEvent};
@@ -19,13 +21,44 @@ use crate::repository::InvoiceRepository;
 /// Event-sourced invoice repository.
 pub struct EventSourcedInvoiceRepository {
     event_store: PlatformEventStore,
+    // Projection indexes for efficient queries
+    invoices_by_operator: Arc<tokio::sync::RwLock<HashMap<Uuid, Vec<Uuid>>>>,
+    invoices_by_order_ref: Arc<tokio::sync::RwLock<HashMap<String, Uuid>>>,
+    invoices_by_payment_intent: Arc<tokio::sync::RwLock<HashMap<Uuid, Uuid>>>,
+    invoices_cache: Arc<tokio::sync::RwLock<HashMap<Uuid, Invoice>>>,
 }
 
 impl EventSourcedInvoiceRepository {
     pub fn new(db: DatabaseConnection) -> Self {
         Self {
             event_store: PlatformEventStore::new(db),
+            invoices_by_operator: Arc::new(tokio::sync::RwLock::new(HashMap::new())),
+            invoices_by_order_ref: Arc::new(tokio::sync::RwLock::new(HashMap::new())),
+            invoices_by_payment_intent: Arc::new(tokio::sync::RwLock::new(HashMap::new())),
+            invoices_cache: Arc::new(tokio::sync::RwLock::new(HashMap::new())),
         }
+    }
+
+    /// Update projection indexes when an invoice is loaded or saved.
+    async fn update_projections(&self, invoice: &Invoice) {
+        let mut by_operator = self.invoices_by_operator.write().await;
+        by_operator
+            .entry(invoice.operator_id)
+            .or_insert_with(Vec::new)
+            .push(invoice.invoice_id);
+
+        if !invoice.order_reference.is_empty() {
+            let mut by_order_ref = self.invoices_by_order_ref.write().await;
+            by_order_ref.insert(invoice.order_reference.clone(), invoice.invoice_id);
+        }
+
+        for pi_id in &invoice.payment_intent_ids {
+            let mut by_payment_intent = self.invoices_by_payment_intent.write().await;
+            by_payment_intent.insert(*pi_id, invoice.invoice_id);
+        }
+
+        let mut cache = self.invoices_cache.write().await;
+        cache.insert(invoice.invoice_id, invoice.clone());
     }
 
     async fn append_events(
@@ -59,6 +92,14 @@ impl EventSourcedInvoiceRepository {
 #[async_trait]
 impl InvoiceRepository for EventSourcedInvoiceRepository {
     async fn load_invoice(&self, id: Uuid) -> Result<Option<Invoice>, InvoiceError> {
+        // Check cache first
+        {
+            let cache = self.invoices_cache.read().await;
+            if let Some(invoice) = cache.get(&id) {
+                return Ok(Some(invoice.clone()));
+            }
+        }
+
         let stored_events = self
             .event_store
             .read_all_events("Invoice", id)
@@ -94,6 +135,9 @@ impl InvoiceRepository for EventSourcedInvoiceRepository {
             invoice.apply_event(&event);
         }
 
+        // Update projections
+        self.update_projections(&invoice).await;
+
         Ok(Some(invoice))
     }
 
@@ -102,37 +146,69 @@ impl InvoiceRepository for EventSourcedInvoiceRepository {
             return Ok(());
         }
         let events = std::mem::take(&mut invoice.pending_events);
-        self.append_events(invoice.invoice_id, &events).await
+        self.append_events(invoice.invoice_id, &events).await?;
+        // Update projections after saving
+        self.update_projections(invoice).await;
+        Ok(())
     }
 
     async fn find_by_order_reference(
         &self,
         _operator_id: Uuid,
-        _order_ref: &str,
+        order_ref: &str,
     ) -> Result<Option<Invoice>, InvoiceError> {
-        // TODO: Requires a projection or snapshot store.
+        let by_order_ref = self.invoices_by_order_ref.read().await;
+        let cache = self.invoices_cache.read().await;
+        if let Some(invoice_id) = by_order_ref.get(order_ref) {
+            return Ok(cache.get(invoice_id).cloned());
+        }
         Ok(None)
     }
 
     async fn find_by_payment_intent(
         &self,
-        _payment_intent_id: Uuid,
+        payment_intent_id: Uuid,
     ) -> Result<Option<Invoice>, InvoiceError> {
-        // TODO: Requires a projection or snapshot store.
+        let by_payment_intent = self.invoices_by_payment_intent.read().await;
+        let cache = self.invoices_cache.read().await;
+        if let Some(invoice_id) = by_payment_intent.get(&payment_intent_id) {
+            return Ok(cache.get(invoice_id).cloned());
+        }
         Ok(None)
     }
 
-    async fn find_overdue(&self, _operator_id: Uuid) -> Result<Vec<Invoice>, InvoiceError> {
-        // TODO: Requires a projection or snapshot store.
+    async fn find_overdue(&self, operator_id: Uuid) -> Result<Vec<Invoice>, InvoiceError> {
+        let by_operator = self.invoices_by_operator.read().await;
+        let cache = self.invoices_cache.read().await;
+        let now = Utc::now();
+        if let Some(invoice_ids) = by_operator.get(&operator_id) {
+            let invoices: Vec<Invoice> = invoice_ids
+                .iter()
+                .filter_map(|id| cache.get(id))
+                .filter(|inv| inv.due_date < now && inv.status != InvoiceStatus::Paid)
+                .cloned()
+                .collect();
+            return Ok(invoices);
+        }
         Ok(Vec::new())
     }
 
     async fn list_invoices(
         &self,
-        _operator_id: Uuid,
-        _status_filter: Option<InvoiceStatus>,
+        operator_id: Uuid,
+        status_filter: Option<InvoiceStatus>,
     ) -> Result<Vec<Invoice>, InvoiceError> {
-        // TODO: Requires a projection or snapshot store.
+        let by_operator = self.invoices_by_operator.read().await;
+        let cache = self.invoices_cache.read().await;
+        if let Some(invoice_ids) = by_operator.get(&operator_id) {
+            let invoices: Vec<Invoice> = invoice_ids
+                .iter()
+                .filter_map(|id| cache.get(id))
+                .filter(|inv| status_filter.as_ref().map_or(true, |s| inv.status == *s))
+                .cloned()
+                .collect();
+            return Ok(invoices);
+        }
         Ok(Vec::new())
     }
 }

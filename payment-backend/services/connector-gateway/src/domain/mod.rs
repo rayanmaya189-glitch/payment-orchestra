@@ -33,6 +33,48 @@ pub mod mamo_connector;
 pub mod amazon_ps_connector;
 pub mod aani_connector;
 
+// India payment gateway connectors
+pub mod billdesk_connector;
+pub mod cashfree_connector;
+pub mod payu_connector;
+pub mod phonepe_connector;
+pub mod razorpay_connector;
+pub mod ccavenue_connector;
+pub mod paytm_connector;
+pub mod juspay_connector;
+pub mod instamojo_connector;
+pub mod easebuzz_connector;
+
+// India bank-specific connectors
+pub mod icici_connector;
+pub mod hdfc_connector;
+pub mod axis_connector;
+pub mod sbi_connector;
+
+// Additional India connectors
+pub mod pinelabs_connector;
+pub mod worldline_connector;
+pub mod zaakpay_connector;
+pub mod payglocal_connector;
+pub mod kotak_connector;
+pub mod yesbank_connector;
+pub mod indusind_connector;
+pub mod mswipe_connector;
+pub mod fampay_connector;
+pub mod zestmoney_connector;
+pub mod direcpay_connector;
+pub mod atom_connector;
+
+// Enterprise connectors
+pub mod adyen_connector;
+pub mod paypal_connector;
+
+// UPI ecosystem connector
+pub mod upi_connector;
+
+// Central FX rate service
+pub mod fx_service;
+
 // Existing sub-modules
 pub mod onboarding;
 
@@ -55,4 +97,34 @@ pub use paytabs_connector::PayTabsConnector;
 pub use mamo_connector::MamoConnector;
 pub use amazon_ps_connector::AmazonPsConnector;
 pub use aani_connector::AaniConnector;
+pub use billdesk_connector::BilldeskConnector;
+pub use cashfree_connector::CashfreeConnector;
+pub use payu_connector::PayuConnector;
+pub use phonepe_connector::PhonepeConnector;
+pub use razorpay_connector::RazorpayConnector;
+pub use ccavenue_connector::CcavenueConnector;
+pub use paytm_connector::PaytmConnector;
+pub use juspay_connector::JuspayConnector;
+pub use instamojo_connector::InstamojoConnector;
+pub use easebuzz_connector::EasebuzzConnector;
+pub use icici_connector::IciciConnector;
+pub use hdfc_connector::HdfcConnector;
+pub use axis_connector::AxisConnector;
+pub use sbi_connector::SbiConnector;
+pub use pinelabs_connector::PineLabsConnector;
+pub use worldline_connector::WorldlineConnector;
+pub use zaakpay_connector::ZaakpayConnector;
+pub use payglocal_connector::PayGlocalConnector;
+pub use kotak_connector::KotakConnector;
+pub use yesbank_connector::YesbankConnector;
+pub use indusind_connector::IndusindConnector;
+pub use mswipe_connector::MswipeConnector;
+pub use fampay_connector::FampayConnector;
+pub use zestmoney_connector::ZestmoneyConnector;
+pub use direcpay_connector::DirecpayConnector;
+pub use atom_connector::AtomConnector;
+pub use adyen_connector::AdyenConnector;
+pub use paypal_connector::PaypalConnector;
+pub use upi_connector::UpiConnector;
+pub use fx_service::FxRateService;
 pub use types::*;
