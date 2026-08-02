@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
-use rand::Rng;
+use rand::{Rng, SeedableRng};
+use rand::rngs::StdRng;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -31,12 +32,23 @@ pub struct RotationState {
 }
 
 impl RotationState {
+    /// Select a gateway profile for a transaction.
+    ///
+    /// # Deterministic A/B Testing
+    ///
+    /// When `idempotency_key` is provided, the weighted random selection uses
+    /// a seeded RNG derived from the key, ensuring the same transaction always
+    /// routes to the same gateway. This enables reproducible A/B test results
+    /// and consistent retry behavior.
+    ///
+    /// When `idempotency_key` is `None`, a thread-local RNG is used (non-deterministic).
     pub fn select_gateway_profile(
         &self,
         profiles: &[GatewayProfile],
         amount: &Money,
         card_scheme: &CardScheme,
         currency: &str,
+        idempotency_key: Option<&str>,
     ) -> Result<Uuid, ConnectorError> {
         let eligible: Vec<&GatewayProfile> = profiles
             .iter()
@@ -66,7 +78,19 @@ impl RotationState {
                 if total_weight == 0 {
                     return Ok(eligible[0].profile_id);
                 }
-                let mut random = rand::thread_rng().gen_range(0..total_weight);
+
+                // Use seeded RNG for deterministic A/B testing when idempotency_key is provided
+                let mut rng = match idempotency_key {
+                    Some(key) => {
+                        // Create a deterministic seed using FNV-1a hash over the full key
+                        // for uniform distribution regardless of key prefix patterns
+                        let seed = fnv_hash(key.as_bytes());
+                        StdRng::seed_from_u64(seed)
+                    }
+                    None => StdRng::from_entropy(),
+                };
+
+                let mut random = rng.gen_range(0..total_weight);
                 for (gateway_id, weight) in weights {
                     if random < *weight {
                         return Ok(*gateway_id);
@@ -101,4 +125,21 @@ impl RotationState {
             }
         }
     }
+}
+
+/// FNV-1a hash for deterministic seed generation.
+///
+/// FNV-1a is chosen for its excellent distribution properties and speed.
+/// It provides uniform hash values even for keys with common prefixes
+/// (e.g., `sk_test_...` style API keys).
+fn fnv_hash(data: &[u8]) -> u64 {
+    const FNV_OFFSET_BASIS: u64 = 0xcbf29ce484222325;
+    const FNV_PRIME: u64 = 0x100000001b3;
+
+    let mut hash = FNV_OFFSET_BASIS;
+    for &byte in data {
+        hash ^= byte as u64;
+        hash = hash.wrapping_mul(FNV_PRIME);
+    }
+    hash
 }

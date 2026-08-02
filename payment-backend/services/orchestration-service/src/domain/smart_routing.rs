@@ -45,6 +45,17 @@ pub struct RoutingFeatures {
     pub risk_score: Option<f64>,
 }
 
+/// How the routing decision was made.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum RoutingDecisionSource {
+    /// ML model provided a high-confidence prediction.
+    MlPrediction,
+    /// ML model confidence was too low; fell back to highest-scored gateway.
+    MlFallbackToHighestScore,
+    /// ML was disabled; fell back to priority routing.
+    PriorityFallback,
+}
+
 /// ML routing prediction result.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RoutingPrediction {
@@ -62,6 +73,8 @@ pub struct RoutingPrediction {
     pub routing_reason: String,
     /// Alternative gateways with scores
     pub alternatives: Vec<(Uuid, f64)>,
+    /// How this decision was made (ML vs fallback)
+    pub decision_source: RoutingDecisionSource,
 }
 
 /// ML routing model configuration.
@@ -145,6 +158,10 @@ impl SmartRoutingEngine {
     }
 
     /// Predict the best gateway for a transaction.
+    ///
+    /// Returns `None` only when ML is disabled or no gateways are available.
+    /// When ML is enabled but confidence is below threshold, falls back to
+    /// the highest-scored gateway instead of returning `None`.
     pub fn predict(
         &self,
         features: &RoutingFeatures,
@@ -180,10 +197,24 @@ impl SmartRoutingEngine {
 
         // Check confidence threshold
         let confidence = self.calculate_confidence(&scored_gateways);
-        if confidence < self.config.min_confidence {
-            // Fall back to priority routing
-            return None;
-        }
+        let (decision_source, routing_reason) = if confidence >= self.config.min_confidence {
+            (
+                RoutingDecisionSource::MlPrediction,
+                self.generate_routing_reason(best_score, self.estimate_success_rate(
+                    features,
+                    &gateway_features.iter().find(|(id, _)| *id == best_gateway).map(|(_, f)| f.clone())?,
+                )),
+            )
+        } else {
+            // Fall back to highest-scored gateway (not returning None)
+            (
+                RoutingDecisionSource::MlFallbackToHighestScore,
+                format!(
+                    "Low ML confidence ({:.2} < {:.2}), using highest-scored gateway",
+                    confidence, self.config.min_confidence
+                ),
+            )
+        };
 
         // Calculate expected metrics
         let best_features = gateway_features
@@ -200,8 +231,9 @@ impl SmartRoutingEngine {
             expected_success_rate,
             expected_latency_ms,
             expected_cost: self.estimate_cost(features, best_features),
-            routing_reason: self.generate_routing_reason(best_score, expected_success_rate),
+            routing_reason,
             alternatives: scored_gateways[1..].to_vec().into_iter().take(3).collect(),
+            decision_source,
         })
     }
 
@@ -376,6 +408,59 @@ impl CircuitBreakerState {
 mod tests {
     use super::*;
 
+    fn test_features() -> RoutingFeatures {
+        RoutingFeatures {
+            amount_minor: 10000,
+            currency: "USD".into(),
+            card_scheme: "visa".into(),
+            issuer_country: Some("US".into()),
+            card_bin: Some("411111".into()),
+            merchant_category_code: Some("5411".into()),
+            hour_of_day: 14,
+            day_of_week: 1,
+            gateway_success_rate: 0.95,
+            gateway_avg_latency_ms: 200,
+            gateway_health_score: 0.9,
+            is_retry: false,
+            previous_gateway: None,
+            risk_score: None,
+        }
+    }
+
+    fn high_quality_gateway(id: Uuid) -> (Uuid, GatewayFeatures) {
+        (
+            id,
+            GatewayFeatures {
+                success_rate: 0.95,
+                avg_latency_ms: 150,
+                health_score: 0.9,
+                transaction_fee_bps: Some(150),
+                max_amount_minor: Some(1000000),
+                supported_currencies: vec!["USD".into()],
+                supported_card_schemes: vec!["visa".into()],
+                is_available: true,
+                circuit_breaker_state: CircuitBreakerState::Closed,
+            },
+        )
+    }
+
+    fn lower_quality_gateway(id: Uuid) -> (Uuid, GatewayFeatures) {
+        (
+            id,
+            GatewayFeatures {
+                success_rate: 0.85,
+                avg_latency_ms: 250,
+                health_score: 0.7,
+                transaction_fee_bps: Some(200),
+                max_amount_minor: Some(1000000),
+                supported_currencies: vec!["USD".into()],
+                supported_card_schemes: vec!["visa".into()],
+                is_available: true,
+                circuit_breaker_state: CircuitBreakerState::Closed,
+            },
+        )
+    }
+
     #[test]
     fn test_smart_routing_disabled() {
         let config = SmartRoutingConfig {
@@ -383,105 +468,98 @@ mod tests {
             ..Default::default()
         };
         let engine = SmartRoutingEngine::new(config);
-
-        let features = RoutingFeatures {
-            amount_minor: 10000,
-            currency: "USD".into(),
-            card_scheme: "visa".into(),
-            issuer_country: Some("US".into()),
-            card_bin: Some("411111".into()),
-            merchant_category_code: Some("5411".into()),
-            hour_of_day: 14,
-            day_of_week: 1,
-            gateway_success_rate: 0.95,
-            gateway_avg_latency_ms: 200,
-            gateway_health_score: 0.9,
-            is_retry: false,
-            previous_gateway: None,
-            risk_score: None,
-        };
-
+        let features = test_features();
         let gw_id = Uuid::now_v7();
-        let gw_features = GatewayFeatures {
-            success_rate: 0.95,
-            avg_latency_ms: 200,
-            health_score: 0.9,
-            transaction_fee_bps: Some(150),
-            max_amount_minor: Some(1000000),
-            supported_currencies: vec!["USD".into()],
-            supported_card_schemes: vec!["visa".into()],
-            is_available: true,
-            circuit_breaker_state: CircuitBreakerState::Closed,
-        };
+        let gw_features = high_quality_gateway(gw_id);
 
-        let result = engine.predict(&features, &[gw_id], &[(gw_id, gw_features)]);
-        assert!(result.is_none());
+        let result = engine.predict(&features, &[gw_id], &[gw_features]);
+        assert!(result.is_none(), "Disabled ML should return None");
     }
 
     #[test]
-    fn test_smart_routing_enabled() {
+    fn test_smart_routing_enabled_high_confidence() {
         let config = SmartRoutingConfig {
             enabled: true,
             min_confidence: 0.5,
             ..Default::default()
         };
         let engine = SmartRoutingEngine::new(config);
-
-        let features = RoutingFeatures {
-            amount_minor: 10000,
-            currency: "USD".into(),
-            card_scheme: "visa".into(),
-            issuer_country: Some("US".into()),
-            card_bin: Some("411111".into()),
-            merchant_category_code: Some("5411".into()),
-            hour_of_day: 14,
-            day_of_week: 1,
-            gateway_success_rate: 0.95,
-            gateway_avg_latency_ms: 200,
-            gateway_health_score: 0.9,
-            is_retry: false,
-            previous_gateway: None,
-            risk_score: None,
-        };
+        let features = test_features();
 
         let gw1_id = Uuid::now_v7();
         let gw2_id = Uuid::now_v7();
+        let gw1 = high_quality_gateway(gw1_id);
+        let gw2 = lower_quality_gateway(gw2_id);
 
-        let gw1_features = GatewayFeatures {
-            success_rate: 0.95,
-            avg_latency_ms: 150,
-            health_score: 0.9,
-            transaction_fee_bps: Some(150),
-            max_amount_minor: Some(1000000),
-            supported_currencies: vec!["USD".into()],
-            supported_card_schemes: vec!["visa".into()],
-            is_available: true,
-            circuit_breaker_state: CircuitBreakerState::Closed,
-        };
-
-        let gw2_features = GatewayFeatures {
-            success_rate: 0.85,
-            avg_latency_ms: 250,
-            health_score: 0.7,
-            transaction_fee_bps: Some(200),
-            max_amount_minor: Some(1000000),
-            supported_currencies: vec!["USD".into()],
-            supported_card_schemes: vec!["visa".into()],
-            is_available: true,
-            circuit_breaker_state: CircuitBreakerState::Closed,
-        };
-
-        let result = engine.predict(
-            &features,
-            &[gw1_id, gw2_id],
-            &[(gw1_id, gw1_features), (gw2_id, gw2_features)],
-        );
+        let result = engine.predict(&features, &[gw1_id, gw2_id], &[gw1, gw2]);
 
         assert!(result.is_some());
         let prediction = result.unwrap();
         assert_eq!(prediction.gateway_id, gw1_id);
         assert!(prediction.confidence > 0.5);
         assert!(prediction.expected_success_rate > 0.8);
+        assert_eq!(prediction.decision_source, RoutingDecisionSource::MlPrediction);
+    }
+
+    #[test]
+    fn test_smart_routing_low_confidence_falls_back() {
+        // High confidence threshold so it always triggers fallback
+        let config = SmartRoutingConfig {
+            enabled: true,
+            min_confidence: 0.99,
+            ..Default::default()
+        };
+        let engine = SmartRoutingEngine::new(config);
+        let features = test_features();
+
+        let gw1_id = Uuid::now_v7();
+        let gw2_id = Uuid::now_v7();
+        // Gateways with very similar scores -> low confidence
+        let gw1 = high_quality_gateway(gw1_id);
+        let gw2 = (
+            gw2_id,
+            GatewayFeatures {
+                success_rate: 0.94,
+                avg_latency_ms: 155,
+                health_score: 0.89,
+                transaction_fee_bps: Some(150),
+                max_amount_minor: Some(1000000),
+                supported_currencies: vec!["USD".into()],
+                supported_card_schemes: vec!["visa".into()],
+                is_available: true,
+                circuit_breaker_state: CircuitBreakerState::Closed,
+            },
+        );
+
+        let result = engine.predict(&features, &[gw1_id, gw2_id], &[gw1, gw2]);
+
+        // Should NOT return None — should fall back to highest-scored gateway
+        assert!(result.is_some(), "Low confidence should fall back, not return None");
+        let prediction = result.unwrap();
+        assert_eq!(prediction.gateway_id, gw1_id);
+        assert_eq!(prediction.decision_source, RoutingDecisionSource::MlFallbackToHighestScore);
+        assert!(prediction.routing_reason.contains("Low ML confidence"));
+    }
+
+    #[test]
+    fn test_smart_routing_single_gateway() {
+        let config = SmartRoutingConfig {
+            enabled: true,
+            min_confidence: 0.5,
+            ..Default::default()
+        };
+        let engine = SmartRoutingEngine::new(config);
+        let features = test_features();
+
+        let gw_id = Uuid::now_v7();
+        let gw = high_quality_gateway(gw_id);
+
+        let result = engine.predict(&features, &[gw_id], &[gw]);
+        assert!(result.is_some());
+        let prediction = result.unwrap();
+        assert_eq!(prediction.gateway_id, gw_id);
+        // Single gateway => confidence = 1.0
+        assert!((prediction.confidence - 1.0).abs() < f64::EPSILON);
     }
 
     #[test]

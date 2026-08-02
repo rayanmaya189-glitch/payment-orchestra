@@ -9,6 +9,7 @@
 //! - audit_logs (audit trail for compliance)
 
 use sea_orm_migration::prelude::*;
+use uuid::Uuid;
 
 #[derive(DeriveMigrationName)]
 pub struct Migration;
@@ -206,189 +207,40 @@ impl Migration {
     }
 
     async fn seed_saas_plans(&self, manager: &SchemaManager<'_>) -> Result<(), DbErr> {
-        use sea_orm_migration::prelude::*;
-
+        let conn = manager.get_connection();
         let now = chrono::Utc::now();
         
         // Free plan
-        manager.exec_stmt(
-            Query::insert()
-                .into_table(SaasPlans::Table)
-                .columns(vec![
-                    SaasPlans::PlanId,
-                    SaasPlans::Name,
-                    SaasPlans::Slug,
-                    SaasPlans::Description,
-                    SaasPlans::PriceMonthlyMinor,
-                    SaasPlans::PricePerTxnMinor,
-                    SaasPlans::IncludedTxnsMonthly,
-                    SaasPlans::MaxGateways,
-                    SaasPlans::MaxTeamMembers,
-                    SaasPlans::MaxApiKeys,
-                    SaasPlans::MaxWebhooks,
-                    SaasPlans::DataRetentionDays,
-                    SaasPlans::Features,
-                    SaasPlans::IsActive,
-                    SaasPlans::SortOrder,
-                    SaasPlans::CreatedAt,
-                    SaasPlans::UpdatedAt,
-                ])
-                .values_panic(vec![
-                    Uuid::parse_str("00000000-0000-0000-0000-000000000001").unwrap().into(),
-                    "Free".into(),
-                    "free".into(),
-                    "Get started with sandbox mode and basic features".into(),
-                    0_i64.into(),
-                    30_i64.into(),
-                    100_i32.into(),
-                    1_i32.into(),
-                    1_i32.into(),
-                    1_i32.into(),
-                    1_i32.into(),
-                    30_i32.into(),
-                    serde_json::json!({"sandbox_only": true, "email_support": false}).to_string().into(),
-                    true.into(),
-                    0_i32.into(),
-                    now.into(),
-                    now.into(),
-                ])
-                .to_owned(),
-        ).await?;
+        conn.execute(sea_orm::Statement::from_string(
+            manager.get_database_backend(),
+            r#"INSERT INTO saas_plans (plan_id, name, slug, description, price_monthly_minor, price_per_txn_minor, included_txns_monthly, max_gateways, max_team_members, max_api_keys, max_webhooks, data_retention_days, features, is_active, sort_order, created_at, updated_at)
+            VALUES ('00000000-0000-0000-0000-000000000001', 'Free', 'free', 'Get started with sandbox mode and basic features', 0, 30, 100, 1, 1, 1, 1, 30, '{"sandbox_only": true, "email_support": false}', true, 0, NOW(), NOW())
+            ON CONFLICT DO NOTHING;"#.to_string(),
+        )).await?;
 
         // Starter plan
-        manager.exec_stmt(
-            Query::insert()
-                .into_table(SaasPlans::Table)
-                .columns(vec![
-                    SaasPlans::PlanId,
-                    SaasPlans::Name,
-                    SaasPlans::Slug,
-                    SaasPlans::Description,
-                    SaasPlans::PriceMonthlyMinor,
-                    SaasPlans::PricePerTxnMinor,
-                    SaasPlans::IncludedTxnsMonthly,
-                    SaasPlans::MaxGateways,
-                    SaasPlans::MaxTeamMembers,
-                    SaasPlans::MaxApiKeys,
-                    SaasPlans::MaxWebhooks,
-                    SaasPlans::DataRetentionDays,
-                    SaasPlans::Features,
-                    SaasPlans::IsActive,
-                    SaasPlans::SortOrder,
-                    SaasPlans::CreatedAt,
-                    SaasPlans::UpdatedAt,
-                ])
-                .values_panic(vec![
-                    Uuid::parse_str("00000000-0000-0000-0000-000000000002").unwrap().into(),
-                    "Starter".into(),
-                    "starter".into(),
-                    "Perfect for small businesses getting started with payment orchestration".into(),
-                    9900_i64.into(),
-                    15_i64.into(),
-                    1000_i32.into(),
-                    3_i32.into(),
-                    5_i32.into(),
-                    3_i32.into(),
-                    5_i32.into(),
-                    365_i32.into(),
-                    serde_json::json!({"analytics": true, "webhooks": true, "email_support": true}).to_string().into(),
-                    true.into(),
-                    1_i32.into(),
-                    now.into(),
-                    now.into(),
-                ])
-                .to_owned(),
-        ).await?;
+        conn.execute(sea_orm::Statement::from_string(
+            manager.get_database_backend(),
+            r#"INSERT INTO saas_plans (plan_id, name, slug, description, price_monthly_minor, price_per_txn_minor, included_txns_monthly, max_gateways, max_team_members, max_api_keys, max_webhooks, data_retention_days, features, is_active, sort_order, created_at, updated_at)
+            VALUES ('00000000-0000-0000-0000-000000000002', 'Starter', 'starter', 'Perfect for small businesses getting started with payment orchestration', 9900, 15, 1000, 3, 5, 3, 5, 365, '{"analytics": true, "webhooks": true, "email_support": true}', true, 1, NOW(), NOW())
+            ON CONFLICT DO NOTHING;"#.to_string(),
+        )).await?;
 
         // Professional plan
-        manager.exec_stmt(
-            Query::insert()
-                .into_table(SaasPlans::Table)
-                .columns(vec![
-                    SaasPlans::PlanId,
-                    SaasPlans::Name,
-                    SaasPlans::Slug,
-                    SaasPlans::Description,
-                    SaasPlans::PriceMonthlyMinor,
-                    SaasPlans::PricePerTxnMinor,
-                    SaasPlans::IncludedTxnsMonthly,
-                    SaasPlans::MaxGateways,
-                    SaasPlans::MaxTeamMembers,
-                    SaasPlans::MaxApiKeys,
-                    SaasPlans::MaxWebhooks,
-                    SaasPlans::DataRetentionDays,
-                    SaasPlans::Features,
-                    SaasPlans::IsActive,
-                    SaasPlans::SortOrder,
-                    SaasPlans::CreatedAt,
-                    SaasPlans::UpdatedAt,
-                ])
-                .values_panic(vec![
-                    Uuid::parse_str("00000000-0000-0000-0000-000000000003").unwrap().into(),
-                    "Professional".into(),
-                    "professional".into(),
-                    "For growing businesses that need advanced features and priority support".into(),
-                    49900_i64.into(),
-                    8_i64.into(),
-                    10000_i32.into(),
-                    (-1_i32).into(), // Unlimited
-                    20_i32.into(),
-                    10_i32.into(),
-                    20_i32.into(),
-                    730_i32.into(),
-                    serde_json::json!({"analytics": true, "webhooks": true, "ai_assistant": true, "priority_support": true, "advanced_routing": true}).to_string().into(),
-                    true.into(),
-                    2_i32.into(),
-                    now.into(),
-                    now.into(),
-                ])
-                .to_owned(),
-        ).await?;
+        conn.execute(sea_orm::Statement::from_string(
+            manager.get_database_backend(),
+            r#"INSERT INTO saas_plans (plan_id, name, slug, description, price_monthly_minor, price_per_txn_minor, included_txns_monthly, max_gateways, max_team_members, max_api_keys, max_webhooks, data_retention_days, features, is_active, sort_order, created_at, updated_at)
+            VALUES ('00000000-0000-0000-0000-000000000003', 'Professional', 'professional', 'For growing businesses that need advanced features and priority support', 49900, 8, 10000, -1, 20, 10, 20, 730, '{"analytics": true, "webhooks": true, "ai_assistant": true, "priority_support": true, "advanced_routing": true}', true, 2, NOW(), NOW())
+            ON CONFLICT DO NOTHING;"#.to_string(),
+        )).await?;
 
         // Enterprise plan
-        manager.exec_stmt(
-            Query::insert()
-                .into_table(SaasPlans::Table)
-                .columns(vec![
-                    SaasPlans::PlanId,
-                    SaasPlans::Name,
-                    SaasPlans::Slug,
-                    SaasPlans::Description,
-                    SaasPlans::PriceMonthlyMinor,
-                    SaasPlans::PricePerTxnMinor,
-                    SaasPlans::IncludedTxnsMonthly,
-                    SaasPlans::MaxGateways,
-                    SaasPlans::MaxTeamMembers,
-                    SaasPlans::MaxApiKeys,
-                    SaasPlans::MaxWebhooks,
-                    SaasPlans::DataRetentionDays,
-                    SaasPlans::Features,
-                    SaasPlans::IsActive,
-                    SaasPlans::SortOrder,
-                    SaasPlans::CreatedAt,
-                    SaasPlans::UpdatedAt,
-                ])
-                .values_panic(vec![
-                    Uuid::parse_str("00000000-0000-0000-0000-000000000004").unwrap().into(),
-                    "Enterprise".into(),
-                    "enterprise".into(),
-                    "Custom pricing for large enterprises with dedicated support and SLA".into(),
-                    0_i64.into(),
-                    0_i64.into(),
-                    (-1_i32).into(), // Unlimited
-                    (-1_i32).into(), // Unlimited
-                    (-1_i32).into(), // Unlimited
-                    (-1_i32).into(), // Unlimited
-                    (-1_i32).into(), // Unlimited
-                    (-1_i32).into(), // Unlimited
-                    serde_json::json!({"analytics": true, "webhooks": true, "ai_assistant": true, "priority_support": true, "advanced_routing": true, "custom_branding": true, "sso": true, "dedicated_support": true, "sla": true}).to_string().into(),
-                    true.into(),
-                    3_i32.into(),
-                    now.into(),
-                    now.into(),
-                ])
-                .to_owned(),
-        ).await?;
+        conn.execute(sea_orm::Statement::from_string(
+            manager.get_database_backend(),
+            r#"INSERT INTO saas_plans (plan_id, name, slug, description, price_monthly_minor, price_per_txn_minor, included_txns_monthly, max_gateways, max_team_members, max_api_keys, max_webhooks, data_retention_days, features, is_active, sort_order, created_at, updated_at)
+            VALUES ('00000000-0000-0000-0000-000000000004', 'Enterprise', 'enterprise', 'Custom pricing for large enterprises with dedicated support and SLA', 0, 0, -1, -1, -1, -1, -1, -1, '{"analytics": true, "webhooks": true, "ai_assistant": true, "priority_support": true, "advanced_routing": true, "custom_branding": true, "sso": true, "dedicated_support": true, "sla": true}', true, 3, NOW(), NOW())
+            ON CONFLICT DO NOTHING;"#.to_string(),
+        )).await?;
 
         Ok(())
     }

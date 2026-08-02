@@ -19,7 +19,7 @@ thiserror.workspace = true
 futures.workspace = true
 async-trait.workspace = true
 rand.workspace = true
-reqwest.workspace = true
+reqwest = { workspace = true, features = ["multipart"] }
 platform-proto.workspace = true
 platform-logging.workspace = true
 dotenvy.workspace = true

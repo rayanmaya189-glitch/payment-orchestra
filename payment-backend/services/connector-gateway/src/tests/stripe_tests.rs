@@ -77,6 +77,7 @@ fn test_rotation_strategy_priority_selects_first() {
         &amount,
         &CardScheme::Visa,
         "AED",
+        None,
     );
 
     assert_eq!(result.unwrap(), profile_id1);
@@ -103,6 +104,7 @@ fn test_rotation_strategy_no_eligible_gateways() {
         &amount,
         &CardScheme::Visa,
         "EUR",
+        None,
     );
 
     assert!(result.is_err());
