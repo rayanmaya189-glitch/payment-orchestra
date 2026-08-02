@@ -40,37 +40,50 @@ impl MigrationTrait for Migration {
         // Step 6: Rename old table for safety
         self.rename_old_table(manager).await?;
 
+        // Step 7: Rename partitioned table back to payment_intents
+        // This allows the application code to use the same table name
+        self.rename_partitioned_table(manager).await?;
+
         Ok(())
     }
 
     async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
-        // Rename old table back if it exists
-        manager.get_connection().execute(sea_orm::Statement::from_string(
+        let conn = manager.get_connection();
+
+        // Step 1: Rename current payment_intents to payment_intents_partitioned
+        conn.execute(sea_orm::Statement::from_string(
+            manager.get_database_backend(),
+            "ALTER TABLE IF EXISTS payment_intents RENAME TO payment_intents_partitioned;".to_string(),
+        ))
+        .await?;
+
+        // Step 2: Rename old table back if it exists
+        conn.execute(sea_orm::Statement::from_string(
             manager.get_database_backend(),
             "ALTER TABLE IF EXISTS payment_intents_old RENAME TO payment_intents;".to_string(),
         ))
         .await?;
 
-        // Drop partitioned table and functions
-        manager.get_connection().execute(sea_orm::Statement::from_string(
+        // Step 3: Drop partitioned table and functions
+        conn.execute(sea_orm::Statement::from_string(
             manager.get_database_backend(),
             "DROP TABLE IF EXISTS payment_intents_partitioned CASCADE;".to_string(),
         ))
         .await?;
 
-        manager.get_connection().execute(sea_orm::Statement::from_string(
+        conn.execute(sea_orm::Statement::from_string(
             manager.get_database_backend(),
             "DROP FUNCTION IF EXISTS create_monthly_partition CASCADE;".to_string(),
         ))
         .await?;
 
-        manager.get_connection().execute(sea_orm::Statement::from_string(
+        conn.execute(sea_orm::Statement::from_string(
             manager.get_database_backend(),
             "DROP FUNCTION IF EXISTS drop_old_partitions CASCADE;".to_string(),
         ))
         .await?;
 
-        manager.get_connection().execute(sea_orm::Statement::from_string(
+        conn.execute(sea_orm::Statement::from_string(
             manager.get_database_backend(),
             "DROP FUNCTION IF EXISTS get_next_partition_date CASCADE;".to_string(),
         ))
@@ -365,6 +378,20 @@ impl Migration {
             ))
             .await?;
         }
+
+        Ok(())
+    }
+
+    /// Rename partitioned table back to payment_intents.
+    /// This allows the application code to use the same table name.
+    async fn rename_partitioned_table(&self, manager: &SchemaManager<'_>) -> Result<(), DbErr> {
+        let conn = manager.get_connection();
+
+        conn.execute(sea_orm::Statement::from_string(
+            manager.get_database_backend(),
+            "ALTER TABLE IF EXISTS payment_intents_partitioned RENAME TO payment_intents;".to_string(),
+        ))
+        .await?;
 
         Ok(())
     }
