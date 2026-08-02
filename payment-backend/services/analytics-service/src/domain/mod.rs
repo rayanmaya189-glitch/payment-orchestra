@@ -4,6 +4,8 @@
 //! (simulated with in-memory store for Phase 1) and provides 8 analytics
 //! read endpoints.
 
+pub mod advanced_analytics;
+
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
