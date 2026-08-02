@@ -1,27 +1,31 @@
 """
-Payment Orchestration Platform SDK for Python
+Payment Orchestra Python SDK
 
-A complete Python SDK for integrating with the Payment Orchestra platform.
+Usage:
+    from payment_orchestra import PaymentOrchestra
+
+    client = PaymentOrchestra(api_key="pk_live_...")
+
+    # Create a payment intent
+    intent = client.payment_intents.create(
+        amount=5000,
+        currency="USD",
+        purpose="payment"
+    )
+
+    # Authorize
+    client.payment_intents.authorize(
+        intent["id"],
+        payment_method_token="tok_visa_4242",
+        card_scheme="visa"
+    )
+
+    # Capture
+    client.payment_intents.capture(intent["id"], amount=5000)
 """
 
 from .client import PaymentOrchestra
-from .resources import PaymentIntents, GatewayProfiles, RoutingPolicies, Webhooks
-from .exceptions import (
-    PaymentOrchestraError,
-    AuthenticationError,
-    RateLimitError,
-    ValidationError,
-)
+from .exceptions import PaymentOrchestraError
 
-__version__ = "1.0.0"
-__all__ = [
-    "PaymentOrchestra",
-    "PaymentIntents",
-    "GatewayProfiles",
-    "RoutingPolicies",
-    "Webhooks",
-    "PaymentOrchestraError",
-    "AuthenticationError",
-    "RateLimitError",
-    "ValidationError",
-]
+__version__ = "0.1.0"
+__all__ = ["PaymentOrchestra", "PaymentOrchestraError"]

@@ -20,6 +20,8 @@ members = [
     "crates/platform-registry",
     "crates/platform-clients",
     "crates/platform-security",
+    "crates/platform-cache",
+    "crates/platform-feature-flags",
 
     # Database migrations
     "migrations",
@@ -169,6 +171,12 @@ path = "crates/platform-clients"
 
 [workspace.dependencies.platform-security]
 path = "crates/platform-security"
+
+[workspace.dependencies.platform-cache]
+path = "crates/platform-cache"
+
+[workspace.dependencies.platform-feature-flags]
+path = "crates/platform-feature-flags"
 
 [workspace.dependencies.shared-types]
 path = "crates/shared-types"

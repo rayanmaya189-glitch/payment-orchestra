@@ -1,16 +1,21 @@
 """
-Exception classes for the Payment Orchestra SDK.
+Payment Orchestra Python SDK Exceptions
 """
 
 
 class PaymentOrchestraError(Exception):
-    """Base exception for Payment Orchestra API errors."""
+    """Base exception for Payment Orchestra SDK."""
 
-    def __init__(self, status_code: int, message: str, details: dict = None):
-        self.status_code = status_code
+    def __init__(
+        self,
+        message: str,
+        status_code: int = 0,
+        response: dict = None,
+    ):
+        super().__init__(message)
         self.message = message
-        self.details = details or {}
-        super().__init__(self.message)
+        self.status_code = status_code
+        self.response = response or {}
 
     def __str__(self) -> str:
         if self.status_code:
@@ -19,35 +24,30 @@ class PaymentOrchestraError(Exception):
 
 
 class AuthenticationError(PaymentOrchestraError):
-    """Raised when API key is invalid or missing."""
-
-    def __init__(self, message: str = "Authentication failed"):
-        super().__init__(status_code=401, message=message)
+    """Raised when authentication fails (401)."""
+    pass
 
 
-class RateLimitError(PaymentOrchestraError):
-    """Raised when rate limit is exceeded."""
-
-    def __init__(self, message: str = "Rate limit exceeded"):
-        super().__init__(status_code=429, message=message)
-
-
-class ValidationError(PaymentOrchestraError):
-    """Raised when request validation fails."""
-
-    def __init__(self, message: str = "Validation error", details: dict = None):
-        super().__init__(status_code=422, message=message, details=details)
+class AuthorizationError(PaymentOrchestraError):
+    """Raised when authorization fails (403)."""
+    pass
 
 
 class NotFoundError(PaymentOrchestraError):
-    """Raised when requested resource is not found."""
-
-    def __init__(self, message: str = "Resource not found"):
-        super().__init__(status_code=404, message=message)
+    """Raised when a resource is not found (404)."""
+    pass
 
 
-class APIError(PaymentOrchestraError):
-    """Raised for general API errors."""
+class ValidationError(PaymentOrchestraError):
+    """Raised when validation fails (400)."""
+    pass
 
-    def __init__(self, status_code: int, message: str, details: dict = None):
-        super().__init__(status_code=status_code, message=message, details=details)
+
+class RateLimitError(PaymentOrchestraError):
+    """Raised when rate limit is exceeded (429)."""
+    pass
+
+
+class IdempotencyError(PaymentOrchestraError):
+    """Raised when idempotency key conflicts (409)."""
+    pass

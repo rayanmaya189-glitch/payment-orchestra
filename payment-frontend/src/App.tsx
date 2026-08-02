@@ -19,6 +19,7 @@ import { AiAssistantPage } from '@/pages/AiAssistantPage';
 import { SsoPage } from '@/pages/SsoPage';
 import { BrandingPage } from '@/pages/BrandingPage';
 import { ConnectorMarketplacePage } from '@/pages/ConnectorMarketplacePage';
+import { StatusPage } from '@/pages/StatusPage';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated } = useAppStore();
@@ -85,6 +86,7 @@ export default function App() {
         <Route path="assistant" element={<AiAssistantPage />} />
         <Route path="sso" element={<SsoPage />} />
         <Route path="branding" element={<BrandingPage />} />
+        <Route path="status" element={<StatusPage />} />
         <Route path="developer" element={<DeveloperPortalPage />} />
         <Route path="webhooks" element={<WebhooksPage />} />
         <Route path="settings" element={<SettingsPage />} />
