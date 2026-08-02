@@ -229,9 +229,11 @@ mod tests {
         assert_eq!(stats.window_failure_count, 2);
         assert!((stats.success_rate() - 0.6).abs() < f64::EPSILON);
         
-        // Record 1 more success (should push out oldest)
+        // Record 1 more success (should push out oldest success)
+        // Window before: [true, true, true, false, false]
+        // Window after:  [true, true, false, false, true]
         stats.record(true);
-        assert_eq!(stats.window_success_count, 4);
+        assert_eq!(stats.window_success_count, 3);
         assert_eq!(stats.window_failure_count, 2);
     }
 

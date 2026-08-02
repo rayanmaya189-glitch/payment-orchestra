@@ -75,6 +75,9 @@ pub mod upi_connector;
 // Central FX rate service
 pub mod fx_service;
 
+// Network token management
+pub mod network_token;
+
 // Existing sub-modules
 pub mod onboarding;
 
@@ -127,4 +130,5 @@ pub use adyen_connector::AdyenConnector;
 pub use paypal_connector::PaypalConnector;
 pub use upi_connector::UpiConnector;
 pub use fx_service::FxRateService;
+pub use network_token::{NetworkToken, NetworkTokenStatus, NetworkType, NetworkTokenRepository};
 pub use types::*;

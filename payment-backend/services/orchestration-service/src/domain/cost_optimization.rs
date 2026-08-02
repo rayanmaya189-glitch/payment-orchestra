@@ -365,12 +365,17 @@ mod tests {
             last_updated: Utc::now(),
         });
 
-        // 290 bps = 2.9%, budget is 3% (300 bps)
-        let within_budget = optimizer.is_within_budget(&gateway_id, 10000, "USD", false, "USD", 300);
+        // For $100 (10000 minor units):
+        // - fixed_fee: 30
+        // - percentage_fee: 10000 * 290 / 10000 = 290
+        // - total_fee: 30 + 290 = 320
+        // - effective_rate_bps: 320 * 10000 / 10000 = 320 bps (3.2%)
+        // Budget is 4% (400 bps) - should be within budget
+        let within_budget = optimizer.is_within_budget(&gateway_id, 10000, "USD", false, "USD", 400);
         assert!(within_budget);
 
-        // Budget is 2% (200 bps)
-        let over_budget = optimizer.is_within_budget(&gateway_id, 10000, "USD", false, "USD", 200);
+        // Budget is 3% (300 bps) - should NOT be within budget (320 > 300)
+        let over_budget = optimizer.is_within_budget(&gateway_id, 10000, "USD", false, "USD", 300);
         assert!(!over_budget);
     }
 }
