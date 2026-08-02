@@ -1,5 +1,6 @@
 pub mod auth;
 pub mod abac;
+pub mod tenant;
 pub mod rate_limit;
 pub mod cors;
 pub mod request_id;

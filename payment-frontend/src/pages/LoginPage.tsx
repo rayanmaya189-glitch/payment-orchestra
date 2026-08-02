@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Zap, Mail, Lock, ArrowRight } from 'lucide-react';
+import { useNavigate, Link } from 'react-router-dom';
+import { Zap, Mail, Lock, ArrowRight, Loader2, Eye, EyeOff, AlertCircle } from 'lucide-react';
 import { useAppStore } from '@/store';
+import { api, ApiError } from '@/services/api';
 import toast from 'react-hot-toast';
 
 export function LoginPage() {
@@ -10,32 +11,63 @@ export function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [showPassword, setShowPassword] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
+    setError(null);
 
-    // Simulate login
-    setTimeout(() => {
+    try {
+      const response = await api.login(email, password);
+      
+      // Store auth data
       login(
         {
-          id: 'user_001',
-          email,
-          name: 'John Doe',
-          role: 'owner',
+          id: response.user.id,
+          email: response.user.email,
+          name: response.user.name,
+          role: response.user.role as any,
         },
         {
-          id: 'org_001',
-          name: 'Acme Inc',
-          tier: 'growth',
-          status: 'active',
+          id: response.organization.id,
+          name: response.organization.name,
+          tier: response.organization.tier as any,
+          status: response.organization.status as any,
         },
-        'mock_jwt_token'
+        response.token
       );
+
+      // Store organization ID for API calls
+      localStorage.setItem('organization_id', response.organization.id);
+
       toast.success('Welcome back!');
       navigate('/');
+    } catch (err) {
+      const errorMessage = err instanceof ApiError 
+        ? err.message 
+        : err instanceof Error 
+          ? err.message 
+          : 'An unexpected error occurred';
+      
+      setError(errorMessage);
+      
+      // Show specific error messages
+      if (err instanceof ApiError) {
+        if (err.code === 'INVALID_CREDENTIALS') {
+          toast.error('Invalid email or password');
+        } else if (err.code === 'ACCOUNT_LOCKED') {
+          toast.error('Account locked. Please try again later or contact support.');
+        } else if (err.code === 'ACCOUNT_SUSPENDED') {
+          toast.error('Account suspended. Please contact support.');
+        } else {
+          toast.error(errorMessage);
+        }
+      }
+    } finally {
       setIsLoading(false);
-    }, 1000);
+    }
   };
 
   return (
@@ -52,34 +84,63 @@ export function LoginPage() {
 
         {/* Login Form */}
         <div className="bg-white rounded-2xl shadow-xl p-8">
+          {/* Error Display */}
+          {error && (
+            <div className="mb-6 p-4 bg-danger-50 border border-danger-200 rounded-lg flex items-start gap-3">
+              <AlertCircle className="w-5 h-5 text-danger-600 mt-0.5 flex-shrink-0" />
+              <div>
+                <p className="text-sm font-medium text-danger-800">Login failed</p>
+                <p className="text-sm text-danger-600 mt-1">{error}</p>
+              </div>
+            </div>
+          )}
+
           <form onSubmit={handleSubmit} className="space-y-6">
             <div>
-              <label className="label">Email address</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Email address
+              </label>
               <div className="relative">
                 <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
                 <input
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  className="input pl-10"
+                  className="w-full pl-10 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
                   placeholder="you@company.com"
                   required
+                  disabled={isLoading}
                 />
               </div>
             </div>
 
             <div>
-              <label className="label">Password</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Password
+              </label>
               <div className="relative">
                 <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
                 <input
-                  type="password"
+                  type={showPassword ? 'text' : 'password'}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="input pl-10"
+                  className="w-full pl-10 pr-10 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
                   placeholder="••••••••"
                   required
+                  disabled={isLoading}
                 />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                  disabled={isLoading}
+                >
+                  {showPassword ? (
+                    <EyeOff className="w-5 h-5" />
+                  ) : (
+                    <Eye className="w-5 h-5" />
+                  )}
+                </button>
               </div>
             </div>
 
@@ -87,45 +148,34 @@ export function LoginPage() {
               <label className="flex items-center gap-2">
                 <input
                   type="checkbox"
-                  className="rounded border-gray-300 text-primary-600"
+                  className="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                  disabled={isLoading}
                 />
                 <span className="text-sm text-gray-600">Remember me</span>
               </label>
-              <a href="#" className="text-sm text-primary-600 hover:text-primary-700">
+              <Link
+                to="/forgot-password"
+                className="text-sm text-primary-600 hover:text-primary-700"
+              >
                 Forgot password?
-              </a>
+              </Link>
             </div>
 
             <button
               type="submit"
-              disabled={isLoading}
-              className="w-full btn-primary py-3"
+              disabled={isLoading || !email || !password}
+              className="w-full btn-primary py-3 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {isLoading ? (
-                <span className="flex items-center justify-center gap-2">
-                  <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
-                    <circle
-                      className="opacity-25"
-                      cx="12"
-                      cy="12"
-                      r="10"
-                      stroke="currentColor"
-                      strokeWidth="4"
-                      fill="none"
-                    />
-                    <path
-                      className="opacity-75"
-                      fill="currentColor"
-                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                    />
-                  </svg>
+                <>
+                  <Loader2 className="w-5 h-5 animate-spin" />
                   Signing in...
-                </span>
+                </>
               ) : (
-                <span className="flex items-center justify-center gap-2">
+                <>
                   Sign in
                   <ArrowRight className="w-4 h-4" />
-                </span>
+                </>
               )}
             </button>
           </form>
@@ -133,9 +183,19 @@ export function LoginPage() {
           <div className="mt-6 text-center">
             <p className="text-sm text-gray-600">
               Don't have an account?{' '}
-              <a href="#" className="text-primary-600 hover:text-primary-700 font-medium">
+              <Link
+                to="/register"
+                className="text-primary-600 hover:text-primary-700 font-medium"
+              >
                 Sign up for free
-              </a>
+              </Link>
+            </p>
+          </div>
+
+          {/* Demo credentials hint */}
+          <div className="mt-6 p-4 bg-gray-50 rounded-lg">
+            <p className="text-xs text-gray-500 text-center">
+              <strong>Demo:</strong> Use any email and password to login
             </p>
           </div>
         </div>

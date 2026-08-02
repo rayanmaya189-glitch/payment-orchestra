@@ -48,6 +48,7 @@ members = [
     "services/ai-gateway",
     "services/merchant-connector-onboarding",
     "services/ai-fraud-service",
+    "services/saas-billing-service",
 ]
 
 [workspace.package]

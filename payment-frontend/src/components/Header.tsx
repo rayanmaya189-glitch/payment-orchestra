@@ -1,18 +1,26 @@
 import { useState } from 'react';
-import { Bell, Search, ChevronDown, LogOut, User, Settings } from 'lucide-react';
+import { Bell, Search, ChevronDown, LogOut, User, Settings, Menu } from 'lucide-react';
 import { useAppStore } from '@/store';
-import { clsx } from 'clsx';
+import { EnvironmentToggle } from './EnvironmentToggle';
 
 export function Header() {
-  const { user, logout } = useAppStore();
+  const { user, logout, toggleSidebar } = useAppStore();
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
 
   return (
     <header className="sticky top-0 z-40 h-16 bg-white border-b border-gray-200">
-      <div className="flex items-center justify-between h-full px-6">
+      <div className="flex items-center justify-between h-full px-4 sm:px-6">
+        {/* Mobile menu button */}
+        <button
+          onClick={toggleSidebar}
+          className="lg:hidden p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg"
+        >
+          <Menu className="w-5 h-5" />
+        </button>
+
         {/* Search */}
-        <div className="flex-1 max-w-lg">
+        <div className="flex-1 max-w-lg mx-4">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
             <input
@@ -29,11 +37,10 @@ export function Header() {
         </div>
 
         {/* Right side */}
-        <div className="flex items-center gap-4">
-          {/* Environment Badge */}
-          <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 bg-warning-50 border border-warning-500/20 rounded-full">
-            <span className="w-2 h-2 bg-warning-500 rounded-full animate-pulse" />
-            <span className="text-xs font-medium text-warning-700">Sandbox</span>
+        <div className="flex items-center gap-2 sm:gap-4">
+          {/* Environment Toggle */}
+          <div className="hidden sm:block">
+            <EnvironmentToggle />
           </div>
 
           {/* Notifications */}
@@ -46,7 +53,7 @@ export function Header() {
           <div className="relative">
             <button
               onClick={() => setShowUserMenu(!showUserMenu)}
-              className="flex items-center gap-3 px-3 py-1.5 rounded-lg hover:bg-gray-100 transition-colors"
+              className="flex items-center gap-2 sm:gap-3 px-2 sm:px-3 py-1.5 rounded-lg hover:bg-gray-100 transition-colors"
             >
               <div className="w-8 h-8 bg-primary-100 rounded-full flex items-center justify-center">
                 <span className="text-sm font-medium text-primary-700">
@@ -61,7 +68,7 @@ export function Header() {
                   {user?.role || 'Owner'}
                 </p>
               </div>
-              <ChevronDown className="w-4 h-4 text-gray-400" />
+              <ChevronDown className="w-4 h-4 text-gray-400 hidden sm:block" />
             </button>
 
             {/* Dropdown Menu */}

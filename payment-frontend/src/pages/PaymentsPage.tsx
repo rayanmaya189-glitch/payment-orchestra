@@ -1,36 +1,58 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Search, Filter, Download, RefreshCw } from 'lucide-react';
-import { api } from '@/services/api';
+import { Search, Filter, Download, RefreshCw, Eye, ChevronLeft, ChevronRight, AlertCircle } from 'lucide-react';
+import { api, ApiError } from '@/services/api';
 import { Card } from '@/components/ui/Card';
 import { StatusBadge } from '@/components/ui/StatusBadge';
-import { formatCurrency, formatRelativeTime } from '@/utils/format';
+import { formatCurrency } from '@/utils/format';
+import type { PaymentIntent } from '@/types';
 
-const mockPayments = [
-  { id: 'pi_abc123def', amount: 9900, currency: 'USD', status: 'captured', gateway: 'Stripe', order_id: 'ORD-001', created_at: new Date(Date.now() - 120000) },
-  { id: 'pi_ghi456jkl', amount: 14900, currency: 'AED', status: 'authorized', gateway: 'Network Intl', order_id: 'ORD-002', created_at: new Date(Date.now() - 300000) },
-  { id: 'pi_mno789pqr', amount: 2499, currency: 'INR', status: 'failed', gateway: 'Razorpay', order_id: 'ORD-003', created_at: new Date(Date.now() - 480000) },
-  { id: 'pi_stu012vwx', amount: 49900, currency: 'USD', status: 'captured', gateway: 'Checkout.com', order_id: 'ORD-004', created_at: new Date(Date.now() - 720000) },
-  { id: 'pi_yza345bcd', amount: 7500, currency: 'EUR', status: 'pending', gateway: 'Adyen', order_id: 'ORD-005', created_at: new Date(Date.now() - 900000) },
-  { id: 'pi_efg678hij', amount: 25000, currency: 'USD', status: 'captured', gateway: 'Stripe', order_id: 'ORD-006', created_at: new Date(Date.now() - 1200000) },
-  { id: 'pi_klm901nop', amount: 3450, currency: 'GBP', status: 'refunded', gateway: 'Checkout.com', order_id: 'ORD-007', created_at: new Date(Date.now() - 1800000) },
-  { id: 'pi_qrs234tuv', amount: 8900, currency: 'USD', status: 'captured', gateway: 'Stripe', order_id: 'ORD-008', created_at: new Date(Date.now() - 2400000) },
-];
-
-const statusFilters = ['All', 'Captured', 'Authorized', 'Pending', 'Failed', 'Refunded'];
+const statusFilters = ['All', 'Created', 'Authorizing', 'Authorized', 'Captured', 'Failed', 'Refunded'];
 
 export function PaymentsPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('All');
+  const [page, setPage] = useState(1);
+  const [pageSize] = useState(20);
 
-  const filteredPayments = mockPayments.filter((payment) => {
-    const matchesSearch =
-      payment.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      payment.order_id?.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesStatus =
-      statusFilter === 'All' || payment.status === statusFilter.toLowerCase();
-    return matchesSearch && matchesStatus;
+  // Build query params
+  const queryParams = {
+    limit: pageSize,
+    offset: (page - 1) * pageSize,
+    ...(statusFilter !== 'All' && { status: statusFilter.toLowerCase() }),
+    ...(searchQuery && { search: searchQuery }),
+  };
+
+  // Fetch payments
+  const {
+    data: paymentsData,
+    isLoading,
+    error,
+    refetch,
+  } = useQuery({
+    queryKey: ['payments', queryParams],
+    queryFn: () => api.listPaymentIntents(queryParams),
+    placeholderData: (previousData) => previousData,
   });
+
+  const payments = (paymentsData as any)?.items || [];
+  const totalPayments = (paymentsData as any)?.total || 0;
+  const totalPages = Math.ceil(totalPayments / pageSize);
+
+  const handleSearch = (value: string) => {
+    setSearchQuery(value);
+    setPage(1); // Reset to first page on search
+  };
+
+  const handleStatusFilter = (status: string) => {
+    setStatusFilter(status);
+    setPage(1); // Reset to first page on filter change
+  };
+
+  const handleExport = async () => {
+    // TODO: Implement CSV export
+    console.log('Exporting payments...');
+  };
 
   return (
     <div className="space-y-6">
@@ -41,16 +63,38 @@ export function PaymentsPage() {
           <p className="text-gray-500">View and manage all payment transactions</p>
         </div>
         <div className="flex items-center gap-3">
-          <button className="btn-secondary">
-            <Download className="w-4 h-4 mr-2" />
+          <button
+            onClick={handleExport}
+            className="btn-secondary flex items-center gap-2"
+          >
+            <Download className="w-4 h-4" />
             Export
           </button>
-          <button className="btn-primary">
-            <RefreshCw className="w-4 h-4 mr-2" />
+          <button
+            onClick={() => refetch()}
+            disabled={isLoading}
+            className="btn-secondary flex items-center gap-2"
+          >
+            <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
             Refresh
           </button>
         </div>
       </div>
+
+      {/* Error State */}
+      {error && (
+        <Card className="border-danger-200 bg-danger-50">
+          <div className="flex items-center gap-3">
+            <AlertCircle className="w-5 h-5 text-danger-600" />
+            <div>
+              <p className="text-sm font-medium text-danger-800">Error loading payments</p>
+              <p className="text-sm text-danger-600">
+                {error instanceof ApiError ? error.message : 'Failed to load payments'}
+              </p>
+            </div>
+          </div>
+        </Card>
+      )}
 
       {/* Filters */}
       <Card padding={false}>
@@ -61,9 +105,9 @@ export function PaymentsPage() {
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
               <input
                 type="text"
-                placeholder="Search by ID or order reference..."
+                placeholder="Search by payment ID, order reference, or amount..."
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                onChange={(e) => handleSearch(e.target.value)}
                 className="w-full pl-10 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
               />
             </div>
@@ -71,11 +115,11 @@ export function PaymentsPage() {
             {/* Status Filter */}
             <div className="flex items-center gap-2">
               <Filter className="w-5 h-5 text-gray-400" />
-              <div className="flex gap-1">
+              <div className="flex gap-1 flex-wrap">
                 {statusFilters.map((status) => (
                   <button
                     key={status}
-                    onClick={() => setStatusFilter(status)}
+                    onClick={() => handleStatusFilter(status)}
                     className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors ${
                       statusFilter === status
                         ? 'bg-primary-100 text-primary-700'
@@ -92,65 +136,122 @@ export function PaymentsPage() {
 
         {/* Table */}
         <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead>
-              <tr className="text-left text-sm text-gray-500 bg-gray-50">
-                <th className="px-4 py-3 font-medium">Payment ID</th>
-                <th className="px-4 py-3 font-medium">Order</th>
-                <th className="px-4 py-3 font-medium">Amount</th>
-                <th className="px-4 py-3 font-medium">Status</th>
-                <th className="px-4 py-3 font-medium">Gateway</th>
-                <th className="px-4 py-3 font-medium">Time</th>
-                <th className="px-4 py-3 font-medium">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {filteredPayments.map((payment) => (
-                <tr
-                  key={payment.id}
-                  className="hover:bg-gray-50 transition-colors cursor-pointer"
-                >
-                  <td className="px-4 py-4 text-sm font-mono text-primary-600 hover:text-primary-700">
-                    {payment.id}
-                  </td>
-                  <td className="px-4 py-4 text-sm text-gray-600">
-                    {payment.order_id || '-'}
-                  </td>
-                  <td className="px-4 py-4 text-sm font-medium text-gray-900">
-                    {formatCurrency(payment.amount, payment.currency)}
-                  </td>
-                  <td className="px-4 py-4">
-                    <StatusBadge status={payment.status} />
-                  </td>
-                  <td className="px-4 py-4 text-sm text-gray-600">
-                    {payment.gateway}
-                  </td>
-                  <td className="px-4 py-4 text-sm text-gray-500">
-                    {formatRelativeTime(payment.created_at)}
-                  </td>
-                  <td className="px-4 py-4">
-                    <button className="text-sm text-primary-600 hover:text-primary-700 font-medium">
-                      View
-                    </button>
-                  </td>
+          {isLoading ? (
+            <div className="flex items-center justify-center py-12">
+              <RefreshCw className="w-6 h-6 text-gray-400 animate-spin" />
+            </div>
+          ) : payments.length > 0 ? (
+            <table className="w-full">
+              <thead>
+                <tr className="text-left text-sm text-gray-500 bg-gray-50">
+                  <th className="px-4 py-3 font-medium">Payment ID</th>
+                  <th className="px-4 py-3 font-medium">Order</th>
+                  <th className="px-4 py-3 font-medium">Amount</th>
+                  <th className="px-4 py-3 font-medium">Status</th>
+                  <th className="px-4 py-3 font-medium">Gateway</th>
+                  <th className="px-4 py-3 font-medium">Risk</th>
+                  <th className="px-4 py-3 font-medium">Time</th>
+                  <th className="px-4 py-3 font-medium">Actions</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {payments.map((payment: PaymentIntent) => (
+                  <tr
+                    key={payment.id}
+                    className="hover:bg-gray-50 transition-colors"
+                  >
+                    <td className="px-4 py-4 text-sm font-mono text-primary-600 hover:text-primary-700 cursor-pointer">
+                      {payment.id}
+                    </td>
+                    <td className="px-4 py-4 text-sm text-gray-600">
+                      {payment.order_id || '-'}
+                    </td>
+                    <td className="px-4 py-4 text-sm font-medium text-gray-900">
+                      {formatCurrency(payment.amount, payment.currency)}
+                    </td>
+                    <td className="px-4 py-4">
+                      <StatusBadge status={payment.status} />
+                    </td>
+                    <td className="px-4 py-4 text-sm text-gray-600">
+                      {payment.gateway_profile_id || '-'}
+                    </td>
+                    <td className="px-4 py-4 text-sm">
+                      {payment.risk_score !== undefined ? (
+                        <span
+                          className={`font-medium ${
+                            payment.risk_score < 30
+                              ? 'text-success-600'
+                              : payment.risk_score < 70
+                              ? 'text-warning-600'
+                              : 'text-danger-600'
+                          }`}
+                        >
+                          {payment.risk_score.toFixed(1)}%
+                        </span>
+                      ) : (
+                        '-'
+                      )}
+                    </td>
+                    <td className="px-4 py-4 text-sm text-gray-500">
+                      {new Date(payment.created_at).toLocaleString()}
+                    </td>
+                    <td className="px-4 py-4">
+                      <button className="text-sm text-primary-600 hover:text-primary-700 font-medium flex items-center gap-1">
+                        <Eye className="w-4 h-4" />
+                        View
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : (
+            <div className="text-center py-12 text-gray-500">
+              {searchQuery || statusFilter !== 'All' ? (
+                <>
+                  <p className="text-lg font-medium">No payments found</p>
+                  <p className="text-sm mt-1">Try adjusting your search or filters</p>
+                </>
+              ) : (
+                <>
+                  <p className="text-lg font-medium">No payments yet</p>
+                  <p className="text-sm mt-1">Payments will appear here once you start processing transactions</p>
+                </>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Pagination */}
-        <div className="px-4 py-3 border-t border-gray-100 flex items-center justify-between">
-          <p className="text-sm text-gray-500">
-            Showing {filteredPayments.length} of {mockPayments.length} payments
-          </p>
-          <div className="flex items-center gap-2">
-            <button className="btn-secondary text-sm" disabled>
-              Previous
-            </button>
-            <button className="btn-secondary text-sm">Next</button>
+        {totalPayments > 0 && (
+          <div className="px-4 py-3 border-t border-gray-100 flex items-center justify-between">
+            <p className="text-sm text-gray-500">
+              Showing {Math.min((page - 1) * pageSize + 1, totalPayments)} to{' '}
+              {Math.min(page * pageSize, totalPayments)} of {totalPayments} payments
+            </p>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setPage(p => Math.max(1, p - 1))}
+                disabled={page === 1}
+                className="btn-secondary text-sm flex items-center gap-1"
+              >
+                <ChevronLeft className="w-4 h-4" />
+                Previous
+              </button>
+              <span className="text-sm text-gray-600">
+                Page {page} of {totalPages}
+              </span>
+              <button
+                onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                disabled={page === totalPages}
+                className="btn-secondary text-sm flex items-center gap-1"
+              >
+                Next
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
           </div>
-        </div>
+        )}
       </Card>
     </div>
   );

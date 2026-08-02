@@ -1,20 +1,23 @@
-import { type ReactNode } from 'react';
+import { type ReactNode, type MouseEventHandler } from 'react';
 import { clsx } from 'clsx';
 
 interface CardProps {
   children: ReactNode;
   className?: string;
   padding?: boolean;
+  onClick?: MouseEventHandler<HTMLDivElement>;
 }
 
-export function Card({ children, className, padding = true }: CardProps) {
+export function Card({ children, className, padding = true, onClick }: CardProps) {
   return (
     <div
       className={clsx(
         'bg-white rounded-xl shadow-sm border border-gray-100',
         padding && 'p-6',
+        onClick && 'cursor-pointer',
         className
       )}
+      onClick={onClick}
     >
       {children}
     </div>

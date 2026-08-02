@@ -1,13 +1,13 @@
 import { useQuery } from '@tanstack/react-query';
 import {
   TrendingUp,
-  TrendingDown,
   CreditCard,
   Activity,
   Plug,
   DollarSign,
   ArrowUpRight,
-  ArrowDownRight,
+  AlertCircle,
+  RefreshCw,
 } from 'lucide-react';
 import {
   LineChart,
@@ -20,82 +20,214 @@ import {
   AreaChart,
   Area,
 } from 'recharts';
-import { api } from '@/services/api';
+import { api, ApiError } from '@/services/api';
 import { formatCurrency, formatNumber, formatPercentage } from '@/utils/format';
 import { Card } from '@/components/ui/Card';
 import { MetricCard } from '@/components/ui/MetricCard';
 import { StatusBadge } from '@/components/ui/StatusBadge';
+import { useAppStore } from '@/store';
 
-// Mock data for demo
-const mockDailyMetrics = [
-  { date: 'Mon', count: 1250, amount: 125000, success_rate: 98.2 },
-  { date: 'Tue', count: 1380, amount: 138000, success_rate: 97.8 },
-  { date: 'Wed', count: 1420, amount: 142000, success_rate: 98.5 },
-  { date: 'Thu', count: 1180, amount: 118000, success_rate: 96.9 },
-  { date: 'Fri', count: 1560, amount: 156000, success_rate: 98.1 },
-  { date: 'Sat', count: 890, amount: 89000, success_rate: 97.5 },
-  { date: 'Sun', count: 720, amount: 72000, success_rate: 98.8 },
-];
+// Loading skeleton component
+function LoadingSkeleton() {
+  return (
+    <div className="animate-pulse">
+      <div className="h-8 bg-gray-200 rounded w-1/4 mb-4"></div>
+      <div className="h-4 bg-gray-200 rounded w-1/2"></div>
+    </div>
+  );
+}
 
-const mockRecentTransactions = [
-  { id: 'pi_abc123', amount: 9900, currency: 'USD', status: 'captured', gateway: 'Stripe', created_at: '2 min ago' },
-  { id: 'pi_def456', amount: 14900, currency: 'AED', status: 'authorized', gateway: 'Network Intl', created_at: '5 min ago' },
-  { id: 'pi_ghi789', amount: 2499, currency: 'INR', status: 'failed', gateway: 'Razorpay', created_at: '8 min ago' },
-  { id: 'pi_jkl012', amount: 49900, currency: 'USD', status: 'captured', gateway: 'Checkout.com', created_at: '12 min ago' },
-  { id: 'pi_mno345', amount: 7500, currency: 'EUR', status: 'pending', gateway: 'Adyen', created_at: '15 min ago' },
-];
-
-const mockGatewayPerformance = [
-  { name: 'Stripe', success_rate: 98.5, latency: 120, volume: 45000 },
-  { name: 'Checkout.com', success_rate: 97.8, latency: 145, volume: 32000 },
-  { name: 'Network Intl', success_rate: 96.2, latency: 180, volume: 28000 },
-  { name: 'Razorpay', success_rate: 95.8, latency: 210, volume: 18000 },
-  { name: 'Adyen', success_rate: 98.1, latency: 135, volume: 15000 },
-];
+// Error component
+function ErrorDisplay({ message, onRetry }: { message: string; onRetry?: () => void }) {
+  return (
+    <Card className="border-danger-200 bg-danger-50">
+      <div className="flex items-center gap-3">
+        <AlertCircle className="w-5 h-5 text-danger-600" />
+        <div className="flex-1">
+          <p className="text-sm font-medium text-danger-800">Error loading data</p>
+          <p className="text-sm text-danger-600">{message}</p>
+        </div>
+        {onRetry && (
+          <button
+            onClick={onRetry}
+            className="p-2 text-danger-600 hover:bg-danger-100 rounded-lg transition-colors"
+          >
+            <RefreshCw className="w-4 h-4" />
+          </button>
+        )}
+      </div>
+    </Card>
+  );
+}
 
 export function DashboardPage() {
-  // In production, these would fetch from the API
-  // const { data: metrics } = useQuery(['dashboard-metrics'], api.getDashboardMetrics);
-  // const { data: dailyMetrics } = useQuery(['daily-metrics'], () => api.getDailyMetrics('7d'));
+  const { organization } = useAppStore();
+  
+  // Fetch dashboard metrics
+  const {
+    data: metrics,
+    isLoading: metricsLoading,
+    error: metricsError,
+    refetch: refetchMetrics,
+  } = useQuery({
+    queryKey: ['dashboard-metrics'],
+    queryFn: () => api.getDashboardMetrics(),
+    retry: 2,
+    staleTime: 30000, // 30 seconds
+  });
+
+  // Fetch daily metrics for chart (last 7 days)
+  const {
+    data: dailyMetrics,
+    isLoading: dailyLoading,
+    error: dailyError,
+    refetch: refetchDaily,
+  } = useQuery({
+    queryKey: ['daily-metrics', '7d'],
+    queryFn: () => {
+      const end = new Date().toISOString().split('T')[0];
+      const start = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+      return api.getDailyMetrics(start, end);
+    },
+    retry: 2,
+    staleTime: 60000, // 1 minute
+  });
+
+  // Fetch gateway performance
+  const {
+    data: gatewayPerformance,
+    isLoading: gatewayLoading,
+    error: gatewayError,
+    refetch: refetchGateway,
+  } = useQuery({
+    queryKey: ['gateway-performance'],
+    queryFn: () => api.getGatewayPerformance(),
+    retry: 2,
+    staleTime: 60000,
+  });
+
+  // Fetch recent transactions
+  const {
+    data: recentTransactions,
+    isLoading: transactionsLoading,
+    error: transactionsError,
+    refetch: refetchTransactions,
+  } = useQuery({
+    queryKey: ['recent-transactions'],
+    queryFn: () => api.getRecentTransactions(5),
+    retry: 2,
+    staleTime: 15000, // 15 seconds for real-time feel
+  });
+
+  // Fetch transaction summary
+  const {
+    data: transactionSummary,
+  } = useQuery({
+    queryKey: ['transaction-summary', '7d'],
+    queryFn: () => api.getTransactionSummary('7d'),
+    retry: 2,
+    staleTime: 60000,
+  });
+
+  // Loading state
+  const isLoading = metricsLoading || dailyLoading || gatewayLoading || transactionsLoading;
+  
+  // Combined error state
+  const error = metricsError || dailyError || gatewayError || transactionsError;
+  const errorMessage = error instanceof ApiError 
+    ? error.message 
+    : error instanceof Error 
+      ? error.message 
+      : 'An unexpected error occurred';
+
+  // Retry all queries
+  const handleRetry = () => {
+    refetchMetrics();
+    refetchDaily();
+    refetchGateway();
+    refetchTransactions();
+  };
+
+  // Format chart data
+  const chartData = dailyMetrics?.map((m) => ({
+    date: new Date(m.date).toLocaleDateString('en-US', { weekday: 'short' }),
+    amount: m.amount / 100, // Convert from cents
+    count: m.count,
+    success_rate: m.success_rate,
+  })) || [];
 
   return (
     <div className="space-y-6">
       {/* Page Header */}
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
-        <p className="text-gray-500">Welcome back! Here's what's happening with your payments.</p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
+          <p className="text-gray-500">
+            Welcome back! Here's what's happening with your payments.
+            {organization && (
+              <span className="ml-2 text-sm text-gray-400">
+                ({organization.name})
+              </span>
+            )}
+          </p>
+        </div>
+        <button
+          onClick={handleRetry}
+          disabled={isLoading}
+          className="btn-secondary flex items-center gap-2"
+        >
+          <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
+          Refresh
+        </button>
       </div>
+
+      {/* Error State */}
+      {error && !isLoading && (
+        <ErrorDisplay message={errorMessage} onRetry={handleRetry} />
+      )}
 
       {/* Metric Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <MetricCard
-          title="Total Transactions"
-          value={formatNumber(8400)}
-          change={12.5}
-          icon={CreditCard}
-          color="primary"
-        />
-        <MetricCard
-          title="Success Rate"
-          value={formatPercentage(97.8)}
-          change={0.3}
-          icon={Activity}
-          color="success"
-        />
-        <MetricCard
-          title="Total Volume"
-          value={formatCurrency(840000, 'USD')}
-          change={8.2}
-          icon={DollarSign}
-          color="primary"
-        />
-        <MetricCard
-          title="Active Gateways"
-          value="5"
-          change={0}
-          icon={Plug}
-          color="info"
-        />
+        {metricsLoading ? (
+          // Loading skeletons
+          Array.from({ length: 4 }).map((_, i) => (
+            <Card key={i}>
+              <LoadingSkeleton />
+            </Card>
+          ))
+        ) : metrics ? (
+          <>
+            <MetricCard
+              title="Total Transactions"
+              value={formatNumber(metrics.total_transactions)}
+              change={transactionSummary?.total_count ? 
+                ((metrics.total_transactions - transactionSummary.total_count) / transactionSummary.total_count * 100) : 0}
+              icon={CreditCard}
+              color="primary"
+            />
+            <MetricCard
+              title="Success Rate"
+              value={formatPercentage(metrics.success_rate)}
+              change={0.3} // Would compare to previous period
+              icon={Activity}
+              color="success"
+            />
+            <MetricCard
+              title="Total Volume"
+              value={formatCurrency(metrics.total_volume, 'USD')}
+              change={8.2}
+              icon={DollarSign}
+              color="primary"
+            />
+            <MetricCard
+              title="Active Gateways"
+              value={String(metrics.active_gateways)}
+              change={0}
+              icon={Plug}
+              color="info"
+            />
+          </>
+        ) : null}
       </div>
 
       {/* Charts Row */}
@@ -111,35 +243,42 @@ export function DashboardPage() {
             </select>
           </div>
           <div className="h-64">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={mockDailyMetrics}>
-                <defs>
-                  <linearGradient id="colorVolume" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#0ea5e9" stopOpacity={0.1} />
-                    <stop offset="95%" stopColor="#0ea5e9" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-                <XAxis dataKey="date" stroke="#9ca3af" fontSize={12} />
-                <YAxis stroke="#9ca3af" fontSize={12} />
-                <Tooltip
-                  contentStyle={{
-                    backgroundColor: '#fff',
-                    border: '1px solid #e5e7eb',
-                    borderRadius: '8px',
-                    boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)',
-                  }}
-                />
-                <Area
-                  type="monotone"
-                  dataKey="amount"
-                  stroke="#0ea5e9"
-                  strokeWidth={2}
-                  fillOpacity={1}
-                  fill="url(#colorVolume)"
-                />
-              </AreaChart>
-            </ResponsiveContainer>
+            {dailyLoading ? (
+              <div className="flex items-center justify-center h-full">
+                <RefreshCw className="w-6 h-6 text-gray-400 animate-spin" />
+              </div>
+            ) : (
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={chartData}>
+                  <defs>
+                    <linearGradient id="colorVolume" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#0ea5e9" stopOpacity={0.1} />
+                      <stop offset="95%" stopColor="#0ea5e9" stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                  <XAxis dataKey="date" stroke="#9ca3af" fontSize={12} />
+                  <YAxis stroke="#9ca3af" fontSize={12} />
+                  <Tooltip
+                    contentStyle={{
+                      backgroundColor: '#fff',
+                      border: '1px solid #e5e7eb',
+                      borderRadius: '8px',
+                      boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)',
+                    }}
+                    formatter={(value: number) => [`$${value.toLocaleString()}`, 'Volume']}
+                  />
+                  <Area
+                    type="monotone"
+                    dataKey="amount"
+                    stroke="#0ea5e9"
+                    strokeWidth={2}
+                    fillOpacity={1}
+                    fill="url(#colorVolume)"
+                  />
+                </AreaChart>
+              </ResponsiveContainer>
+            )}
           </div>
         </Card>
 
@@ -147,41 +286,49 @@ export function DashboardPage() {
         <Card>
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-lg font-semibold text-gray-900">Success Rate</h3>
-            <span className="text-sm text-success-600 font-medium flex items-center gap-1">
-              <TrendingUp className="w-4 h-4" />
-              +0.3%
-            </span>
+            {metrics && (
+              <span className="text-sm text-success-600 font-medium flex items-center gap-1">
+                <TrendingUp className="w-4 h-4" />
+                {metrics.success_rate >= 97 ? '+' : ''}{(metrics.success_rate - 97).toFixed(1)}%
+              </span>
+            )}
           </div>
           <div className="h-64">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={mockDailyMetrics}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-                <XAxis dataKey="date" stroke="#9ca3af" fontSize={12} />
-                <YAxis
-                  stroke="#9ca3af"
-                  fontSize={12}
-                  domain={[95, 100]}
-                  tickFormatter={(value) => `${value}%`}
-                />
-                <Tooltip
-                  contentStyle={{
-                    backgroundColor: '#fff',
-                    border: '1px solid #e5e7eb',
-                    borderRadius: '8px',
-                    boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)',
-                  }}
-                  formatter={(value: number) => [`${value}%`, 'Success Rate']}
-                />
-                <Line
-                  type="monotone"
-                  dataKey="success_rate"
-                  stroke="#22c55e"
-                  strokeWidth={2}
-                  dot={{ fill: '#22c55e', strokeWidth: 2 }}
-                  activeDot={{ r: 6 }}
-                />
-              </LineChart>
-            </ResponsiveContainer>
+            {dailyLoading ? (
+              <div className="flex items-center justify-center h-full">
+                <RefreshCw className="w-6 h-6 text-gray-400 animate-spin" />
+              </div>
+            ) : (
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={chartData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                  <XAxis dataKey="date" stroke="#9ca3af" fontSize={12} />
+                  <YAxis
+                    stroke="#9ca3af"
+                    fontSize={12}
+                    domain={[95, 100]}
+                    tickFormatter={(value) => `${value}%`}
+                  />
+                  <Tooltip
+                    contentStyle={{
+                      backgroundColor: '#fff',
+                      border: '1px solid #e5e7eb',
+                      borderRadius: '8px',
+                      boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)',
+                    }}
+                    formatter={(value: number) => [`${value.toFixed(1)}%`, 'Success Rate']}
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="success_rate"
+                    stroke="#22c55e"
+                    strokeWidth={2}
+                    dot={{ fill: '#22c55e', strokeWidth: 2 }}
+                    activeDot={{ r: 6 }}
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            )}
           </div>
         </Card>
       </div>
@@ -201,32 +348,44 @@ export function DashboardPage() {
             </a>
           </div>
           <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr className="text-left text-sm text-gray-500 border-b border-gray-100">
-                  <th className="pb-3 font-medium">ID</th>
-                  <th className="pb-3 font-medium">Amount</th>
-                  <th className="pb-3 font-medium">Status</th>
-                  <th className="pb-3 font-medium">Gateway</th>
-                  <th className="pb-3 font-medium">Time</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                {mockRecentTransactions.map((tx) => (
-                  <tr key={tx.id} className="hover:bg-gray-50 transition-colors">
-                    <td className="py-3 text-sm font-mono text-gray-900">{tx.id}</td>
-                    <td className="py-3 text-sm text-gray-900">
-                      {formatCurrency(tx.amount, tx.currency)}
-                    </td>
-                    <td className="py-3">
-                      <StatusBadge status={tx.status} />
-                    </td>
-                    <td className="py-3 text-sm text-gray-600">{tx.gateway}</td>
-                    <td className="py-3 text-sm text-gray-500">{tx.created_at}</td>
+            {transactionsLoading ? (
+              <div className="flex items-center justify-center py-8">
+                <RefreshCw className="w-6 h-6 text-gray-400 animate-spin" />
+              </div>
+            ) : recentTransactions && recentTransactions.length > 0 ? (
+              <table className="w-full">
+                <thead>
+                  <tr className="text-left text-sm text-gray-500 border-b border-gray-100">
+                    <th className="pb-3 font-medium hidden sm:table-cell">ID</th>
+                    <th className="pb-3 font-medium">Amount</th>
+                    <th className="pb-3 font-medium">Status</th>
+                    <th className="pb-3 font-medium hidden md:table-cell">Gateway</th>
+                    <th className="pb-3 font-medium hidden lg:table-cell">Time</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {recentTransactions.map((tx) => (
+                    <tr key={tx.id} className="hover:bg-gray-50 transition-colors">
+                      <td className="py-3 text-sm font-mono text-gray-900 hidden sm:table-cell">{tx.id.slice(0, 12)}...</td>
+                      <td className="py-3 text-sm text-gray-900">
+                        {formatCurrency(tx.amount, tx.currency)}
+                      </td>
+                      <td className="py-3">
+                        <StatusBadge status={tx.status} />
+                      </td>
+                      <td className="py-3 text-sm text-gray-600 hidden md:table-cell">{tx.gateway_profile_id || '-'}</td>
+                      <td className="py-3 text-sm text-gray-500 hidden lg:table-cell">
+                        {new Date(tx.created_at).toLocaleString()}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            ) : (
+              <div className="text-center py-8 text-gray-500">
+                No transactions yet
+              </div>
+            )}
           </div>
         </Card>
 
@@ -234,20 +393,36 @@ export function DashboardPage() {
         <Card>
           <h3 className="text-lg font-semibold text-gray-900 mb-4">Gateway Performance</h3>
           <div className="space-y-4">
-            {mockGatewayPerformance.map((gw) => (
-              <div key={gw.name} className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium text-gray-700">{gw.name}</span>
-                  <span className="text-sm text-gray-500">{gw.success_rate}%</span>
-                </div>
-                <div className="w-full bg-gray-100 rounded-full h-2">
-                  <div
-                    className="bg-primary-500 h-2 rounded-full transition-all duration-500"
-                    style={{ width: `${gw.success_rate}%` }}
-                  />
-                </div>
+            {gatewayLoading ? (
+              <div className="flex items-center justify-center py-8">
+                <RefreshCw className="w-6 h-6 text-gray-400 animate-spin" />
               </div>
-            ))}
+            ) : gatewayPerformance && gatewayPerformance.length > 0 ? (
+              gatewayPerformance.map((gw) => (
+                <div key={gw.gateway_id} className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-medium text-gray-700">{gw.name}</span>
+                    <span className="text-sm text-gray-500">
+                      {formatPercentage(gw.success_rate)}
+                    </span>
+                  </div>
+                  <div className="w-full bg-gray-100 rounded-full h-2">
+                    <div
+                      className="bg-primary-500 h-2 rounded-full transition-all duration-500"
+                      style={{ width: `${Math.min(gw.success_rate, 100)}%` }}
+                    />
+                  </div>
+                  <div className="flex justify-between text-xs text-gray-400">
+                    <span>{gw.avg_latency_ms}ms avg latency</span>
+                    <span>{formatNumber(gw.transaction_count)} txns</span>
+                  </div>
+                </div>
+              ))
+            ) : (
+              <div className="text-center py-8 text-gray-500">
+                No gateway data available
+              </div>
+            )}
           </div>
         </Card>
       </div>

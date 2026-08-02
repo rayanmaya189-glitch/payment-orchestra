@@ -10,6 +10,15 @@ import { AnalyticsPage } from '@/pages/AnalyticsPage';
 import { SettingsPage } from '@/pages/SettingsPage';
 import { LoginPage } from '@/pages/LoginPage';
 import { OnboardingPage } from '@/pages/OnboardingPage';
+import { DeveloperPortalPage } from '@/pages/DeveloperPortalPage';
+import { WebhooksPage } from '@/pages/WebhooksPage';
+import { ReconciliationPage } from '@/pages/ReconciliationPage';
+import { AuditLogsPage } from '@/pages/AuditLogsPage';
+import { RateLimitsPage } from '@/pages/RateLimitsPage';
+import { AiAssistantPage } from '@/pages/AiAssistantPage';
+import { SsoPage } from '@/pages/SsoPage';
+import { BrandingPage } from '@/pages/BrandingPage';
+import { ConnectorMarketplacePage } from '@/pages/ConnectorMarketplacePage';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated } = useAppStore();
@@ -67,8 +76,17 @@ export default function App() {
         <Route path="payments" element={<PaymentsPage />} />
         <Route path="routing" element={<RoutingPage />} />
         <Route path="connectors" element={<ConnectorsPage />} />
+        <Route path="marketplace" element={<ConnectorMarketplacePage />} />
         <Route path="api-keys" element={<ApiKeysPage />} />
         <Route path="analytics" element={<AnalyticsPage />} />
+        <Route path="reconciliation" element={<ReconciliationPage />} />
+        <Route path="audit-logs" element={<AuditLogsPage />} />
+        <Route path="rate-limits" element={<RateLimitsPage />} />
+        <Route path="assistant" element={<AiAssistantPage />} />
+        <Route path="sso" element={<SsoPage />} />
+        <Route path="branding" element={<BrandingPage />} />
+        <Route path="developer" element={<DeveloperPortalPage />} />
+        <Route path="webhooks" element={<WebhooksPage />} />
         <Route path="settings" element={<SettingsPage />} />
       </Route>
 

@@ -15,3 +15,4 @@ pub mod fx_rate;
 pub mod settlement;
 pub mod fee_variance;
 pub mod white_label;
+pub mod saas_billing;

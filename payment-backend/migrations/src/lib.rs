@@ -13,6 +13,8 @@ mod m20260101_000003_create_supporting_tables;
 mod m20260101_000003a_reconciliation;
 mod m20260101_000003b_compliance_notifications;
 mod m20260101_000003c_operations;
+mod m20260101_000004_saas_billing;
+mod m20260101_000005_row_level_security;
 
 pub struct Migrator;
 
@@ -29,6 +31,8 @@ impl MigratorTrait for Migrator {
             Box::new(m20260101_000003b_compliance_notifications::Migration),
             Box::new(m20260101_000003c_operations::Migration),
             Box::new(m20260101_000003_create_supporting_tables::Migration),
+            Box::new(m20260101_000004_saas_billing::Migration),
+            Box::new(m20260101_000005_row_level_security::Migration),
         ]
     }
 }

@@ -1,18 +1,23 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useQuery, useMutation } from '@tanstack/react-query';
 import { 
   Zap, 
   Building2, 
-  CreditCard, 
   Settings, 
   Check,
   ArrowRight,
   ArrowLeft,
   Plug,
   Key,
+  Loader2,
+  Copy,
+  CheckCircle,
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import toast from 'react-hot-toast';
+import { api, ApiError } from '@/services/api';
+import { useAppStore } from '@/store';
 
 const steps = [
   { id: 1, title: 'Organization', icon: Building2 },
@@ -21,32 +26,75 @@ const steps = [
   { id: 4, title: 'API Keys', icon: Key },
 ];
 
-const connectors = [
-  { id: 'stripe', name: 'Stripe', description: 'Accept payments globally' },
-  { id: 'checkout_com', name: 'Checkout.com', description: 'Enterprise payment processing' },
-  { id: 'adyen', name: 'Adyen', description: 'Global payment platform' },
-  { id: 'razorpay', name: 'Razorpay', description: 'India-focused payments' },
-  { id: 'network_intl', name: 'Network International', description: 'UAE payment solutions' },
-];
-
 export function OnboardingPage() {
   const navigate = useNavigate();
+  useAppStore();
   const [currentStep, setCurrentStep] = useState(1);
   const [formData, setFormData] = useState({
     organizationName: '',
     industry: '',
     website: '',
     selectedConnector: '',
-    connectorCredentials: {},
+    connectorCredentials: {} as Record<string, string>,
     routingStrategy: 'success_rate',
   });
+  const [createdApiKey, setCreatedApiKey] = useState<string | null>(null);
 
-  const handleNext = () => {
-    if (currentStep < steps.length) {
-      setCurrentStep(currentStep + 1);
-    } else {
+  // Fetch available connectors
+  const { data: connectors, isLoading: connectorsLoading } = useQuery({
+    queryKey: ['connectors'],
+    queryFn: () => api.listConnectors(),
+    retry: 2,
+  });
+
+  // Create API key mutation
+  const createKeyMutation = useMutation({
+    mutationFn: api.createApiKey,
+    onSuccess: (data) => {
+      setCreatedApiKey(data.key);
+      toast.success('API key created');
+    },
+    onError: (error) => {
+      toast.error(error instanceof ApiError ? error.message : 'Failed to create API key');
+    },
+  });
+
+  const handleNext = async () => {
+    if (currentStep === 1) {
+      // Validate organization step
+      if (!formData.organizationName.trim()) {
+        toast.error('Please enter an organization name');
+        return;
+      }
+      // Update organization settings
+      try {
+        await api.updateOrganizationSettings({
+          name: formData.organizationName,
+        });
+      } catch (error) {
+        // Continue even if update fails
+        console.error('Failed to update organization:', error);
+      }
+    }
+
+    if (currentStep === 4) {
+      // Complete onboarding
       toast.success('Onboarding complete!');
       navigate('/');
+      return;
+    }
+
+    if (currentStep < steps.length) {
+      setCurrentStep(currentStep + 1);
+    }
+
+    // Create API key when reaching step 4
+    if (currentStep === 3) {
+      createKeyMutation.mutate({
+        name: 'Onboarding API Key',
+        scopes: ['payments:read', 'payments:write'],
+        environment: 'sandbox',
+      });
     }
   };
 
@@ -54,6 +102,11 @@ export function OnboardingPage() {
     if (currentStep > 1) {
       setCurrentStep(currentStep - 1);
     }
+  };
+
+  const handleCopyKey = async (key: string) => {
+    await navigator.clipboard.writeText(key);
+    toast.success('API key copied to clipboard');
   };
 
   return (
@@ -128,10 +181,12 @@ export function OnboardingPage() {
 
               <div className="space-y-4">
                 <div>
-                  <label className="label">Organization Name *</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Organization Name *
+                  </label>
                   <input
                     type="text"
-                    className="input"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
                     placeholder="e.g., Acme Inc"
                     value={formData.organizationName}
                     onChange={(e) =>
@@ -140,9 +195,11 @@ export function OnboardingPage() {
                   />
                 </div>
                 <div>
-                  <label className="label">Industry *</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Industry *
+                  </label>
                   <select
-                    className="input"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
                     value={formData.industry}
                     onChange={(e) =>
                       setFormData({ ...formData, industry: e.target.value })
@@ -158,10 +215,12 @@ export function OnboardingPage() {
                   </select>
                 </div>
                 <div>
-                  <label className="label">Website</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Website
+                  </label>
                   <input
                     type="url"
-                    className="input"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
                     placeholder="https://yourcompany.com"
                     value={formData.website}
                     onChange={(e) =>
@@ -182,48 +241,92 @@ export function OnboardingPage() {
                 </p>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                {connectors.map((connector) => (
-                  <button
-                    key={connector.id}
-                    onClick={() =>
-                      setFormData({ ...formData, selectedConnector: connector.id })
-                    }
-                    className={clsx(
-                      'p-4 rounded-xl border-2 text-left transition-all',
-                      formData.selectedConnector === connector.id
-                        ? 'border-primary-500 bg-primary-50'
-                        : 'border-gray-200 hover:border-gray-300'
-                    )}
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center">
-                        <CreditCard className="w-5 h-5 text-gray-600" />
+              {connectorsLoading ? (
+                <div className="flex items-center justify-center py-12">
+                  <Loader2 className="w-6 h-6 text-gray-400 animate-spin" />
+                </div>
+              ) : connectors && connectors.length > 0 ? (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {connectors.slice(0, 6).map((connector) => (
+                    <button
+                      key={connector.id}
+                      onClick={() =>
+                        setFormData({ ...formData, selectedConnector: connector.id })
+                      }
+                      className={clsx(
+                        'p-4 rounded-xl border-2 text-left transition-all',
+                        formData.selectedConnector === connector.id
+                          ? 'border-primary-500 bg-primary-50'
+                          : 'border-gray-200 hover:border-gray-300'
+                      )}
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center">
+                          <Plug className="w-5 h-5 text-gray-600" />
+                        </div>
+                        <div>
+                          <h3 className="font-medium text-gray-900">{connector.name}</h3>
+                          <p className="text-sm text-gray-500">
+                            {connector.supported_currencies.length} currencies
+                          </p>
+                        </div>
                       </div>
-                      <div>
-                        <h3 className="font-medium text-gray-900">{connector.name}</h3>
-                        <p className="text-sm text-gray-500">{connector.description}</p>
-                      </div>
-                    </div>
-                  </button>
-                ))}
-              </div>
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-12 text-gray-500">
+                  No connectors available. You can add one later.
+                </div>
+              )}
 
               {formData.selectedConnector && (
                 <div className="p-4 bg-gray-50 rounded-xl space-y-4">
                   <h3 className="font-medium text-gray-900">Enter Credentials</h3>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
-                      <label className="label">API Key</label>
-                      <input type="password" className="input" placeholder="sk_test_..." />
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        API Key
+                      </label>
+                      <input
+                        type="password"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+                        placeholder="sk_test_..."
+                        value={formData.connectorCredentials.api_key || ''}
+                        onChange={(e) =>
+                          setFormData({
+                            ...formData,
+                            connectorCredentials: {
+                              ...formData.connectorCredentials,
+                              api_key: e.target.value,
+                            },
+                          })
+                        }
+                      />
                     </div>
                     <div>
-                      <label className="label">Secret Key</label>
-                      <input type="password" className="input" placeholder="whsec_..." />
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Secret Key
+                      </label>
+                      <input
+                        type="password"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+                        placeholder="whsec_..."
+                        value={formData.connectorCredentials.secret_key || ''}
+                        onChange={(e) =>
+                          setFormData({
+                            ...formData,
+                            connectorCredentials: {
+                              ...formData.connectorCredentials,
+                              secret_key: e.target.value,
+                            },
+                          })
+                        }
+                      />
                     </div>
                   </div>
-                  <button className="btn-secondary text-sm">
-                    <Plug className="w-4 h-4 mr-2" />
+                  <button className="btn-secondary text-sm flex items-center gap-2">
+                    <Plug className="w-4 h-4" />
                     Test Connection
                   </button>
                 </div>
@@ -241,7 +344,9 @@ export function OnboardingPage() {
               </div>
 
               <div className="space-y-4">
-                <label className="label">Routing Strategy</label>
+                <label className="block text-sm font-medium text-gray-700">
+                  Routing Strategy
+                </label>
                 {[
                   { id: 'success_rate', label: 'Success Rate (Recommended)', description: 'Route to gateways with highest success rates' },
                   { id: 'priority', label: 'Priority', description: 'Route based on priority order' },
@@ -285,46 +390,52 @@ export function OnboardingPage() {
                 </p>
               </div>
 
-              <div className="p-6 bg-gray-50 rounded-xl">
-                <div className="flex items-center gap-4 mb-4">
-                  <div className="w-12 h-12 bg-success-100 rounded-full flex items-center justify-center">
-                    <Check className="w-6 h-6 text-success-600" />
-                  </div>
-                  <div>
-                    <h3 className="font-medium text-gray-900">You're all set!</h3>
-                    <p className="text-sm text-gray-500">
-                      Your API keys are ready. Use them to integrate with the platform.
-                    </p>
-                  </div>
+              {createKeyMutation.isPending ? (
+                <div className="flex items-center justify-center py-12">
+                  <Loader2 className="w-6 h-6 text-gray-400 animate-spin" />
                 </div>
+              ) : createdApiKey ? (
+                <div className="p-6 bg-success-50 border border-success-200 rounded-xl">
+                  <div className="flex items-center gap-4 mb-4">
+                    <div className="w-12 h-12 bg-success-100 rounded-full flex items-center justify-center">
+                      <CheckCircle className="w-6 h-6 text-success-600" />
+                    </div>
+                    <div>
+                      <h3 className="font-medium text-success-900">API Key Created!</h3>
+                      <p className="text-sm text-success-700">
+                        Copy this key now - you won't be able to see it again.
+                      </p>
+                    </div>
+                  </div>
 
-                <div className="space-y-4">
-                  <div>
-                    <label className="label">Sandbox API Key</label>
-                    <div className="flex gap-2">
-                      <input
-                        type="text"
-                        className="input font-mono"
-                        value="pk_sandbox_xxxxxxxxxxxxxxxxxxxxxxxx"
-                        readOnly
-                      />
-                      <button className="btn-secondary">Copy</button>
-                    </div>
-                  </div>
-                  <div>
-                    <label className="label">Production API Key</label>
-                    <div className="flex gap-2">
-                      <input
-                        type="text"
-                        className="input font-mono"
-                        value="pk_live_xxxxxxxxxxxxxxxxxxxxxxxx"
-                        readOnly
-                      />
-                      <button className="btn-secondary">Copy</button>
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-medium text-success-800 mb-1">
+                        Your API Key
+                      </label>
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          className="flex-1 px-3 py-2 bg-white border border-success-300 rounded-lg font-mono text-sm"
+                          value={createdApiKey}
+                          readOnly
+                        />
+                        <button
+                          onClick={() => handleCopyKey(createdApiKey)}
+                          className="btn-secondary flex items-center gap-2"
+                        >
+                          <Copy className="w-4 h-4" />
+                          Copy
+                        </button>
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
+              ) : (
+                <div className="text-center py-12">
+                  <p className="text-gray-500">Click "Complete Setup" to generate your first API key</p>
+                </div>
+              )}
             </div>
           )}
 
@@ -334,16 +445,20 @@ export function OnboardingPage() {
               onClick={handleBack}
               disabled={currentStep === 1}
               className={clsx(
-                'btn-secondary',
+                'btn-secondary flex items-center gap-2',
                 currentStep === 1 && 'opacity-50 cursor-not-allowed'
               )}
             >
-              <ArrowLeft className="w-4 h-4 mr-2" />
+              <ArrowLeft className="w-4 h-4" />
               Back
             </button>
-            <button onClick={handleNext} className="btn-primary">
+            <button
+              onClick={handleNext}
+              disabled={createKeyMutation.isPending}
+              className="btn-primary flex items-center gap-2"
+            >
               {currentStep === steps.length ? 'Complete Setup' : 'Continue'}
-              <ArrowRight className="w-4 h-4 ml-2" />
+              <ArrowRight className="w-4 h-4" />
             </button>
           </div>
         </div>
