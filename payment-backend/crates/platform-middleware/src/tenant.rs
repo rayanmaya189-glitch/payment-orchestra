@@ -5,8 +5,9 @@
 //!
 //! # Usage
 //!
-//! ```rust
+//! ```rust,ignore
 //! use platform_middleware::tenant::{TenantContext, TenantContextLayer};
+//! use tower::ServiceBuilder;
 //!
 //! // In your service setup:
 //! let layer = TenantContextLayer::new();

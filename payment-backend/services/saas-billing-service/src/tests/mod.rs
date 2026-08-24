@@ -1,6 +1,7 @@
 //! Tests for SaaS Billing service.
 
 use uuid::Uuid;
+use chrono::{Datelike, Timelike};
 use crate::pipeline::SaasBillingPipeline;
 use crate::commands::types::*;
 use crate::domain::*;
@@ -117,7 +118,9 @@ async fn test_invoice_creation() {
     }
     
     // Create invoice
-    let period_start = chrono::Utc::now().date_naive();
+    // Must match the period_start used by record_transaction_usage (truncated to 1st of month midnight)
+    let now = chrono::Utc::now();
+    let period_start = now.with_day(1).unwrap().with_hour(0).unwrap().with_minute(0).unwrap().with_second(0).unwrap().with_nanosecond(0).unwrap();
     let period_end = period_start + chrono::Duration::days(30);
     
     let invoice = pipeline.command_handler.create_invoice(

@@ -1,0 +1,917 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Payment Orchestra API",
+    "description": "REST API for the Payment Orchestra platform — a multi-tenant payment orchestration system supporting smart routing, reconciliation, disputes, and SaaS billing.",
+    "version": "1.0.0",
+    "contact": {
+      "name": "Payment Orchestra Team"
+    },
+    "license": {
+      "name": "Proprietary"
+    }
+  },
+  "servers": [
+    {
+      "url": "http://localhost:9020",
+      "description": "Local development"
+    },
+    {
+      "url": "https://api.payment-orchestra.com",
+      "description": "Production"
+    }
+  ],
+  "security": [
+    { "BearerAuth": [] },
+    { "ApiKeyAuth": [] }
+  ],
+  "paths": {
+    "/api/v1/auth/login": {
+      "post": {
+        "tags": ["Authentication"],
+        "summary": "Authenticate user and obtain JWT token",
+        "operationId": "login",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/LoginRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Login successful",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/LoginResponse" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "423": {
+            "description": "Account locked",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/me": {
+      "get": {
+        "tags": ["Authentication"],
+        "summary": "Get current user info",
+        "operationId": "getMe",
+        "responses": {
+          "200": {
+            "description": "Current user info",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/CurrentUserResponse" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/api/v1/dashboard/metrics": {
+      "get": {
+        "tags": ["Dashboard"],
+        "summary": "Get dashboard metrics",
+        "operationId": "getDashboardMetrics",
+        "responses": {
+          "200": {
+            "description": "Dashboard metrics",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/DashboardMetrics" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/dashboard/transactions": {
+      "get": {
+        "tags": ["Dashboard"],
+        "summary": "Get recent transactions for dashboard",
+        "operationId": "getRecentTransactions",
+        "responses": {
+          "200": {
+            "description": "Recent transactions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "$ref": "#/components/schemas/TransactionSummary" }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/dashboard/gateway-performance": {
+      "get": {
+        "tags": ["Dashboard"],
+        "summary": "Get gateway performance metrics",
+        "operationId": "getGatewayPerformance",
+        "responses": {
+          "200": {
+            "description": "Gateway performance data",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "$ref": "#/components/schemas/GatewayPerformance" }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/payment-intents": {
+      "get": {
+        "tags": ["Payments"],
+        "summary": "List payment intents with filtering and pagination",
+        "operationId": "listPaymentIntents",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": { "type": "integer", "default": 20, "maximum": 100 }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "schema": { "type": "integer", "default": 0 }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": ["created", "authorizing", "authorized", "captured", "failed", "refunded", "voided"]
+            }
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "schema": { "type": "string" },
+            "description": "Search by payment ID or description"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paginated list of payment intents",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/PaymentIntent" }
+                    },
+                    "total": { "type": "integer" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": ["Payments"],
+        "summary": "Create a new payment intent",
+        "operationId": "createPaymentIntent",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/CreatePaymentIntentRequest" }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Payment intent created",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/PaymentIntent" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/payment-intents/{id}": {
+      "get": {
+        "tags": ["Payments"],
+        "summary": "Get payment intent by ID",
+        "operationId": "getPaymentIntent",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "format": "uuid" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Payment intent details",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/PaymentIntent" }
+              }
+            }
+          },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/api/v1/connectors": {
+      "get": {
+        "tags": ["Connectors"],
+        "summary": "List gateway connector profiles",
+        "operationId": "listGatewayProfiles",
+        "responses": {
+          "200": {
+            "description": "List of connector profiles",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "$ref": "#/components/schemas/GatewayProfile" }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/connectors/{id}/schema": {
+      "get": {
+        "tags": ["Connectors"],
+        "summary": "Get connector configuration schema",
+        "operationId": "getConnectorSchema",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Connector schema",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "fields": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "name": { "type": "string" },
+                          "type": { "type": "string" },
+                          "required": { "type": "boolean" }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/connectors/health": {
+      "get": {
+        "tags": ["Connectors"],
+        "summary": "Get connector health status",
+        "operationId": "getConnectorHealth",
+        "responses": {
+          "200": {
+            "description": "Connector health status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "$ref": "#/components/schemas/ConnectorHealth" }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/routing-policies": {
+      "get": {
+        "tags": ["Routing"],
+        "summary": "List routing policies",
+        "operationId": "listRoutingPolicies",
+        "responses": {
+          "200": {
+            "description": "List of routing policies",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "$ref": "#/components/schemas/RoutingPolicy" }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/api-keys": {
+      "get": {
+        "tags": ["API Keys"],
+        "summary": "List API keys",
+        "operationId": "listApiKeys",
+        "responses": {
+          "200": {
+            "description": "List of API keys",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "$ref": "#/components/schemas/ApiKey" }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": ["API Keys"],
+        "summary": "Create a new API key",
+        "operationId": "createApiKey",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["name", "permissions"],
+                "properties": {
+                  "name": { "type": "string" },
+                  "permissions": {
+                    "type": "array",
+                    "items": { "type": "string" }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "API key created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "key_id": { "type": "string", "format": "uuid" },
+                    "key": { "type": "string", "description": "Secret key (shown only once)" },
+                    "name": { "type": "string" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/api-keys/{id}": {
+      "delete": {
+        "tags": ["API Keys"],
+        "summary": "Revoke an API key",
+        "operationId": "revokeApiKey",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "format": "uuid" }
+          }
+        ],
+        "responses": {
+          "204": { "description": "API key revoked" }
+        }
+      }
+    },
+    "/api/v1/mfa/setup": {
+      "post": {
+        "tags": ["MFA"],
+        "summary": "Initiate MFA setup",
+        "operationId": "setupMfa",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["method"],
+                "properties": {
+                  "method": {
+                    "type": "string",
+                    "enum": ["totp", "sms", "email"]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "MFA setup initiated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "secret": { "type": "string", "description": "TOTP secret (for QR code)" },
+                    "qr_code_url": { "type": "string", "format": "uri" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/mfa/verify": {
+      "post": {
+        "tags": ["MFA"],
+        "summary": "Verify MFA code",
+        "operationId": "verifyMfa",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["code"],
+                "properties": {
+                  "code": { "type": "string", "minLength": 6, "maxLength": 6 }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Verification result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "verified": { "type": "boolean" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/mfa/enable": {
+      "post": {
+        "tags": ["MFA"],
+        "summary": "Enable MFA after verification",
+        "operationId": "enableMfa",
+        "responses": {
+          "200": {
+            "description": "MFA enabled",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "enabled": { "type": "boolean" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/health": {
+      "get": {
+        "tags": ["System"],
+        "summary": "Health check endpoint",
+        "operationId": "healthCheck",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Service is healthy",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": { "type": "string", "enum": ["ok", "degraded", "down"] },
+                    "version": { "type": "string" },
+                    "uptime_seconds": { "type": "integer" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/reconciliation/settlements": {
+      "get": {
+        "tags": ["Reconciliation"],
+        "summary": "List settlement batches",
+        "operationId": "listSettlements",
+        "responses": {
+          "200": {
+            "description": "List of settlements",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "$ref": "#/components/schemas/SettlementBatch" }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/disputes": {
+      "get": {
+        "tags": ["Disputes"],
+        "summary": "List disputes",
+        "operationId": "listDisputes",
+        "responses": {
+          "200": {
+            "description": "List of disputes",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "$ref": "#/components/schemas/Dispute" }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/merchants": {
+      "get": {
+        "tags": ["Merchants"],
+        "summary": "List merchant accounts",
+        "operationId": "listMerchants",
+        "responses": {
+          "200": {
+            "description": "List of merchants",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "$ref": "#/components/schemas/Merchant" }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/webhooks": {
+      "get": {
+        "tags": ["Webhooks"],
+        "summary": "List webhook endpoints",
+        "operationId": "listWebhooks",
+        "responses": {
+          "200": {
+            "description": "List of webhooks",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "$ref": "#/components/schemas/Webhook" }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/notifications": {
+      "get": {
+        "tags": ["Notifications"],
+        "summary": "List notification templates and history",
+        "operationId": "listNotifications",
+        "responses": {
+          "200": {
+            "description": "Notification data",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "$ref": "#/components/schemas/Notification" }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "BearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "description": "JWT token from /api/v1/auth/login"
+      },
+      "ApiKeyAuth": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-API-Key",
+        "description": "API key from /api/v1/api-keys"
+      }
+    },
+    "schemas": {
+      "LoginRequest": {
+        "type": "object",
+        "required": ["email", "password"],
+        "properties": {
+          "email": { "type": "string", "format": "email" },
+          "password": { "type": "string", "minLength": 8 }
+        }
+      },
+      "LoginResponse": {
+        "type": "object",
+        "properties": {
+          "token": { "type": "string" },
+          "user": { "$ref": "#/components/schemas/User" },
+          "organization": { "$ref": "#/components/schemas/Organization" }
+        }
+      },
+      "User": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "email": { "type": "string", "format": "email" },
+          "name": { "type": "string" },
+          "role": { "type": "string", "enum": ["admin", "operator", "viewer"] }
+        }
+      },
+      "Organization": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "name": { "type": "string" },
+          "tier": { "type": "string", "enum": ["free", "starter", "growth", "enterprise"] },
+          "status": { "type": "string", "enum": ["active", "suspended", "trialing"] }
+        }
+      },
+      "CurrentUserResponse": {
+        "type": "object",
+        "properties": {
+          "user": { "$ref": "#/components/schemas/User" },
+          "organization": { "$ref": "#/components/schemas/Organization" }
+        }
+      },
+      "DashboardMetrics": {
+        "type": "object",
+        "properties": {
+          "total_transactions": { "type": "integer" },
+          "total_volume": { "type": "integer", "description": "Amount in minor currency units" },
+          "success_rate": { "type": "number", "format": "float" },
+          "avg_latency_ms": { "type": "number", "format": "float" }
+        }
+      },
+      "TransactionSummary": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "amount_minor": { "type": "integer" },
+          "currency": { "type": "string" },
+          "status": { "type": "string" },
+          "connector": { "type": "string" },
+          "created_at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "GatewayPerformance": {
+        "type": "object",
+        "properties": {
+          "gateway_name": { "type": "string" },
+          "success_rate": { "type": "number", "format": "float" },
+          "avg_latency_ms": { "type": "number", "format": "float" },
+          "total_transactions": { "type": "integer" }
+        }
+      },
+      "PaymentIntent": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "operator_id": { "type": "string", "format": "uuid" },
+          "amount_minor": { "type": "integer" },
+          "currency": { "type": "string", "minLength": 3, "maxLength": 3 },
+          "status": {
+            "type": "string",
+            "enum": ["created", "authorizing", "authorized", "captured", "failed", "refunded", "voided"]
+          },
+          "connector": { "type": "string" },
+          "description": { "type": "string" },
+          "metadata": { "type": "object", "additionalProperties": true },
+          "created_at": { "type": "string", "format": "date-time" },
+          "updated_at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "CreatePaymentIntentRequest": {
+        "type": "object",
+        "required": ["amount_minor", "currency"],
+        "properties": {
+          "amount_minor": { "type": "integer", "minimum": 1 },
+          "currency": { "type": "string", "minLength": 3, "maxLength": 3 },
+          "description": { "type": "string" },
+          "connector": { "type": "string" },
+          "metadata": { "type": "object", "additionalProperties": true },
+          "routing_policy_id": { "type": "string", "format": "uuid" }
+        }
+      },
+      "GatewayProfile": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "name": { "type": "string" },
+          "connector_type": { "type": "string" },
+          "status": { "type": "string", "enum": ["active", "inactive", "error"] },
+          "supported_currencies": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "configured_at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "ConnectorHealth": {
+        "type": "object",
+        "properties": {
+          "connector_id": { "type": "string" },
+          "status": { "type": "string", "enum": ["healthy", "degraded", "down"] },
+          "latency_ms": { "type": "number", "format": "float" },
+          "last_checked": { "type": "string", "format": "date-time" }
+        }
+      },
+      "RoutingPolicy": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "name": { "type": "string" },
+          "description": { "type": "string" },
+          "rules": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "connector_id": { "type": "string" },
+                "priority": { "type": "integer" },
+                "conditions": { "type": "object" }
+              }
+            }
+          },
+          "is_active": { "type": "boolean" },
+          "created_at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "ApiKey": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "name": { "type": "string" },
+          "key_prefix": { "type": "string", "description": "First 8 chars for identification" },
+          "permissions": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "created_at": { "type": "string", "format": "date-time" },
+          "last_used_at": { "type": "string", "format": "date-time", "nullable": true }
+        }
+      },
+      "SettlementBatch": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "operator_id": { "type": "string", "format": "uuid" },
+          "reference": { "type": "string" },
+          "status": { "type": "string", "enum": ["pending", "confirmed", "disputed", "reconciled"] },
+          "total_amount_minor": { "type": "integer" },
+          "record_count": { "type": "integer" },
+          "created_at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "Dispute": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "payment_intent_id": { "type": "string", "format": "uuid" },
+          "reason": { "type": "string" },
+          "status": { "type": "string", "enum": ["open", "under_review", "won", "lost", "closed"] },
+          "amount_minor": { "type": "integer" },
+          "deadline": { "type": "string", "format": "date-time" },
+          "created_at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "Merchant": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "name": { "type": "string" },
+          "status": { "type": "string", "enum": ["active", "pending", "suspended"] },
+          "connector_links": { "type": "integer" },
+          "created_at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "Webhook": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "url": { "type": "string", "format": "uri" },
+          "events": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "status": { "type": "string", "enum": ["active", "disabled"] },
+          "secret_hash": { "type": "string", "description": "HMAC secret (hash only)" },
+          "created_at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "Notification": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "type": { "type": "string", "enum": ["email", "sms", "webhook", "in_app"] },
+          "status": { "type": "string", "enum": ["pending", "sent", "delivered", "failed"] },
+          "template": { "type": "string" },
+          "recipient": { "type": "string" },
+          "created_at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "ErrorResponse": {
+        "type": "object",
+        "properties": {
+          "code": { "type": "string" },
+          "message": { "type": "string" },
+          "details": { "type": "object", "additionalProperties": true }
+        }
+      }
+    },
+    "responses": {
+      "Unauthorized": {
+        "description": "Authentication required",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+          }
+        }
+      },
+      "NotFound": {
+        "description": "Resource not found",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+          }
+        }
+      }
+    }
+  },
+  "tags": [
+    { "name": "Authentication", "description": "Login, session, and MFA endpoints" },
+    { "name": "Dashboard", "description": "Dashboard metrics and summaries" },
+    { "name": "Payments", "description": "Payment intent CRUD" },
+    { "name": "Connectors", "description": "Gateway connector management" },
+    { "name": "Routing", "description": "Smart routing policy management" },
+    { "name": "API Keys", "description": "API key lifecycle management" },
+    { "name": "MFA", "description": "Multi-factor authentication setup" },
+    { "name": "Reconciliation", "description": "Settlement and reconciliation" },
+    { "name": "Disputes", "description": "Chargeback and dispute management" },
+    { "name": "Merchants", "description": "Merchant account management" },
+    { "name": "Webhooks", "description": "Webhook endpoint management" },
+    { "name": "Notifications", "description": "Notification templates and history" },
+    { "name": "System", "description": "Health check and system endpoints" }
+  ]
+}

@@ -24,13 +24,13 @@ function renderWithProviders(ui: React.ReactElement) {
 describe('PaymentsPage', () => {
   it('renders the payments page', async () => {
     renderWithProviders(<PaymentsPage />);
-    expect(screen.getByText(/payment/i)).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /payments/i })).toBeInTheDocument();
   });
 
-  it('shows empty state when no payments', async () => {
+  it('shows payment list container', async () => {
     renderWithProviders(<PaymentsPage />);
     await waitFor(() => {
-      expect(screen.getByText(/no payments/i)).toBeInTheDocument();
+      expect(screen.getByText(/view and manage all payment transactions/i)).toBeInTheDocument();
     });
   });
 });

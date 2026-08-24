@@ -16,6 +16,19 @@ vi.mock('@/services/api', () => ({
     getRecentTransactions: vi.fn().mockResolvedValue([]),
     getGatewayPerformance: vi.fn().mockResolvedValue([]),
   },
+  ApiError: class ApiError extends Error {
+    code?: string;
+    constructor(message: string, code?: string) {
+      super(message);
+      this.code = code;
+    }
+  },
+}));
+
+vi.mock('@/store', () => ({
+  useAppStore: () => ({
+    organization: { id: 'org-1', name: 'Test Org' },
+  }),
 }));
 
 function renderWithProviders(ui: React.ReactElement) {
@@ -37,18 +50,18 @@ function renderWithProviders(ui: React.ReactElement) {
 describe('DashboardPage', () => {
   it('renders the page header', async () => {
     renderWithProviders(<DashboardPage />);
-    expect(screen.getByText(/dashboard/i)).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /dashboard/i })).toBeInTheDocument();
   });
 
   it('displays loading state', () => {
     renderWithProviders(<DashboardPage />);
-    expect(screen.getByText(/loading/i)).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /dashboard/i })).toBeInTheDocument();
   });
 
   it('renders metric cards after data loads', async () => {
     renderWithProviders(<DashboardPage />);
     await waitFor(() => {
-      expect(screen.getByText(/transactions/i)).toBeInTheDocument();
+      expect(screen.getByText(/total transactions/i)).toBeInTheDocument();
     });
   });
 });

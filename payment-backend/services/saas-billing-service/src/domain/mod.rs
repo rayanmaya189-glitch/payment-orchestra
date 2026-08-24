@@ -149,8 +149,8 @@ mod tests {
         let usage = TenantUsage {
             usage_id: Uuid::now_v7(),
             operator_id: Uuid::now_v7(),
-            period_start: chrono::Utc::now().date_naive(),
-            period_end: chrono::Utc::now().date_naive() + chrono::Duration::days(30),
+            period_start: chrono::Utc::now(),
+            period_end: chrono::Utc::now() + chrono::Duration::days(30),
             transaction_count: 150,
             transaction_volume_minor: 15000,
             api_calls: 500,

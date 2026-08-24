@@ -1,0 +1,344 @@
+# Payment Orchestra — Helm values (defaults for dev/staging/prod overrides)
+
+global:
+  imageRegistry: ghcr.io/payment-orchestra
+  imageTag: latest
+  environment: dev
+  # Override per environment:
+  #   --set global.environment=staging
+  #   --set global.imageTag=v1.2.3
+
+# ─── Infrastructure Services ────────────────────────────────────────────────
+
+infrastructure:
+  postgres:
+    host: postgresql
+    port: 5432
+    database: payment_orchestra
+    # Secrets via ExternalSecrets or sealed-secrets in prod
+    secretName: payment-orchestra-db-credentials
+
+  redis:
+    host: redis-master
+    port: 6379
+    secretName: payment-orchestra-redis-credentials
+
+  nats:
+    url: nats://nats:4222
+    cluster: payment-nats
+
+  minio:
+    endpoint: minio:9000
+    bucket: payment-documents
+    secretName: payment-orchestra-minio-credentials
+
+  ollama:
+    endpoint: http://ollama:11434
+    model: qwen3
+
+# ─── Service Configurations ─────────────────────────────────────────────────
+
+services:
+  api-gateway:
+    replicas: 3
+    port: 9020
+    resources:
+      requests:
+        cpu: 250m
+        memory: 512Mi
+      limits:
+        cpu: 1000m
+        memory: 1Gi
+
+  orchestration-service:
+    replicas: 2
+    port: 9005
+    resources:
+      requests:
+        cpu: 200m
+        memory: 256Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
+
+  iam-service:
+    replicas: 2
+    port: 9002
+    resources:
+      requests:
+        cpu: 200m
+        memory: 256Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
+
+  connector-gateway:
+    replicas: 2
+    port: 9003
+    resources:
+      requests:
+        cpu: 250m
+        memory: 512Mi
+      limits:
+        cpu: 750m
+        memory: 768Mi
+
+  risk-service:
+    replicas: 2
+    port: 9004
+    resources:
+      requests:
+        cpu: 200m
+        memory: 256Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
+
+  reconciliation-service:
+    replicas: 1
+    port: 9009
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
+
+  dispute-service:
+    replicas: 1
+    port: 9010
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
+
+  notification-service:
+    replicas: 1
+    port: 9014
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
+
+  analytics-service:
+    replicas: 1
+    port: 9015
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
+
+  webhook-service:
+    replicas: 1
+    port: 9016
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
+
+  invoice-service:
+    replicas: 1
+    port: 9006
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
+
+  saas-billing-service:
+    replicas: 1
+    port: 9007
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
+
+  subscription-service:
+    replicas: 1
+    port: 9008
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
+
+  document-service:
+    replicas: 1
+    port: 9011
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
+
+  payment-link-service:
+    replicas: 1
+    port: 9012
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
+
+  merchant-onboarding-service:
+    replicas: 1
+    port: 9013
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
+
+  outbox-relay-service:
+    replicas: 1
+    port: 9017
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
+
+  compliance-service:
+    replicas: 1
+    port: 9018
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
+
+  ai-fraud-service:
+    replicas: 1
+    port: 9019
+    resources:
+      requests:
+        cpu: 200m
+        memory: 512Mi
+      limits:
+        cpu: 1000m
+        memory: 1Gi
+
+  merchant-acquirer-link-service:
+    replicas: 1
+    port: 9021
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
+
+  ai-gateway:
+    replicas: 1
+    port: 9022
+    resources:
+      requests:
+        cpu: 200m
+        memory: 512Mi
+      limits:
+        cpu: 1000m
+        memory: 1Gi
+
+  ai-assistant-service:
+    replicas: 1
+    port: 9023
+    resources:
+      requests:
+        cpu: 200m
+        memory: 512Mi
+      limits:
+        cpu: 1000m
+        memory: 1Gi
+
+# ─── Frontend ───────────────────────────────────────────────────────────────
+
+frontend:
+  replicas: 2
+  port: 80
+  service:
+    type: ClusterIP
+
+# ─── Ingress ────────────────────────────────────────────────────────────────
+
+ingress:
+  enabled: true
+  className: nginx
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/rate-limit: "100"
+  hosts:
+    - host: api.payment-orchestra.com
+      paths:
+        - path: /api
+          pathType: Prefix
+          serviceName: api-gateway
+          servicePort: 9020
+    - host: dashboard.payment-orchestra.com
+      paths:
+        - path: /
+          pathType: Prefix
+          serviceName: frontend
+          servicePort: 80
+  tls:
+    - secretName: payment-orchestra-tls
+      hosts:
+        - api.payment-orchestra.com
+        - dashboard.payment-orchestra.com
+
+# ─── Monitoring ─────────────────────────────────────────────────────────────
+
+monitoring:
+  enabled: true
+  serviceMonitor:
+    enabled: true
+    interval: 15s
+  prometheusRules:
+    enabled: true
+
+# ─── Pod Disruption Budgets ─────────────────────────────────────────────────
+
+pdb:
+  enabled: true
+  minAvailable: 1
+
+# ─── Security ───────────────────────────────────────────────────────────────
+
+security:
+  runAsNonRoot: true
+  runAsUser: 1000
+  readOnlyRootFilesystem: true
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop: ["ALL"]

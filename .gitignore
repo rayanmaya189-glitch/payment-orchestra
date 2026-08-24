@@ -43,5 +43,8 @@ __pycache__/
 *.log
 logs/
 
+
+.gradle/
+
 # Dependencies (workspace keeps its own Cargo.lock for apps)
 node_modules/

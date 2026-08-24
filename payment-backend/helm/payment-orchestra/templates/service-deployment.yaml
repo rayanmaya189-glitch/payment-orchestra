@@ -1,0 +1,103 @@
+{{/*
+Payment Orchestra — Backend Service Deployment Template
+Generates one Deployment per service defined in values.services
+*/}}
+{{- range $serviceName, $svcConfig := .Values.services }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $serviceName }}
+  labels:
+    {{- include "payment-orchestra.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: {{ $serviceName }}
+spec:
+  replicas: {{ $svcConfig.replicas }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ $serviceName }}
+      app.kubernetes.io/instance: {{ $.Release.Name }}
+  template:
+    metadata:
+      labels:
+        {{- include "payment-orchestra.labels" $ | nindent 8 }}
+        app.kubernetes.io/component: {{ $serviceName }}
+    spec:
+      serviceAccountName: {{ $serviceName }}
+      securityContext:
+        {{- include "payment-orchestra.securityContext" $ | nindent 8 }}
+      containers:
+        - name: {{ $serviceName }}
+          image: "{{ $.Values.global.imageRegistry }}/{{ $serviceName }}:{{ $.Values.global.imageTag }}"
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: grpc
+              containerPort: {{ $svcConfig.port }}
+              protocol: TCP
+          env:
+            {{- include "payment-orchestra.env" $ | nindent 12 }}
+            - name: SERVICE_NAME
+              value: {{ $serviceName }}
+            - name: GRPC_PORT
+              value: {{ $svcConfig.port | quote }}
+          resources:
+            requests:
+              cpu: {{ $svcConfig.resources.requests.cpu }}
+              memory: {{ $svcConfig.resources.requests.memory }}
+            limits:
+              cpu: {{ $svcConfig.resources.limits.cpu }}
+              memory: {{ $svcConfig.resources.limits.memory }}
+          readinessProbe:
+            tcpSocket:
+              port: grpc
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: grpc
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $serviceName }}
+  labels:
+    {{- include "payment-orchestra.labels" $ | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - port: {{ $svcConfig.port }}
+      targetPort: grpc
+      protocol: TCP
+      name: grpc
+  selector:
+    app.kubernetes.io/name: {{ $serviceName }}
+    app.kubernetes.io/instance: {{ $.Release.Name }}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ $serviceName }}
+  labels:
+    {{- include "payment-orchestra.labels" $ | nindent 4 }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ $serviceName }}
+  labels:
+    {{- include "payment-orchestra.labels" $ | nindent 4 }}
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ $serviceName }}
+      app.kubernetes.io/instance: {{ $.Release.Name }}
+{{- end }}

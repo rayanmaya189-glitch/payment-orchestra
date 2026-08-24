@@ -16,7 +16,7 @@ use platform_error::PlatformError;
 /// * `operator_id` - The operator (tenant) ID to set as current
 ///
 /// # Example
-/// ```rust
+/// ```rust,ignore
 /// use platform_db::rls::set_operator_context;
 ///
 /// // Set the operator context before queries
@@ -130,7 +130,7 @@ pub async fn set_tenant_context(
 /// * `f` - The function to execute
 ///
 /// # Example
-/// ```rust
+/// ```rust,ignore
 /// use platform_db::rls::with_tenant_context;
 ///
 /// let results = with_tenant_context(

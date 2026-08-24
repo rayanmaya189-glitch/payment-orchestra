@@ -239,7 +239,7 @@ where
         let now = Utc::now();
         let year = now.year();
         let month = now.month();
-        let period_start = Utc::now().with_day(1).and_then(|d| d.with_hour(0)).and_then(|d| d.with_minute(0)).and_then(|d| d.with_second(0)).unwrap_or(now);
+        let period_start = Utc::now().with_day(1).and_then(|d| d.with_hour(0)).and_then(|d| d.with_minute(0)).and_then(|d| d.with_second(0)).and_then(|d| d.with_nanosecond(0)).unwrap_or(now);
         
         let mut usage = if let Some(existing) = self.usage_repo.find_by_operator_and_period(cmd.operator_id, period_start).await? {
             existing
@@ -260,7 +260,7 @@ where
         let now = Utc::now();
         let year = now.year();
         let month = now.month();
-        let period_start = Utc::now().with_day(1).and_then(|d| d.with_hour(0)).and_then(|d| d.with_minute(0)).and_then(|d| d.with_second(0)).unwrap_or(now);
+        let period_start = Utc::now().with_day(1).and_then(|d| d.with_hour(0)).and_then(|d| d.with_minute(0)).and_then(|d| d.with_second(0)).and_then(|d| d.with_nanosecond(0)).unwrap_or(now);
         
         let mut usage = if let Some(existing) = self.usage_repo.find_by_operator_and_period(cmd.operator_id, period_start).await? {
             existing
@@ -281,7 +281,7 @@ where
         let now = Utc::now();
         let year = now.year();
         let month = now.month();
-        let period_start = Utc::now().with_day(1).and_then(|d| d.with_hour(0)).and_then(|d| d.with_minute(0)).and_then(|d| d.with_second(0)).unwrap_or(now);
+        let period_start = Utc::now().with_day(1).and_then(|d| d.with_hour(0)).and_then(|d| d.with_minute(0)).and_then(|d| d.with_second(0)).and_then(|d| d.with_nanosecond(0)).unwrap_or(now);
         
         let mut usage = if let Some(existing) = self.usage_repo.find_by_operator_and_period(cmd.operator_id, period_start).await? {
             existing
@@ -302,7 +302,7 @@ where
         let now = Utc::now();
         let year = now.year();
         let month = now.month();
-        let period_start = Utc::now().with_day(1).and_then(|d| d.with_hour(0)).and_then(|d| d.with_minute(0)).and_then(|d| d.with_second(0)).unwrap_or(now);
+        let period_start = Utc::now().with_day(1).and_then(|d| d.with_hour(0)).and_then(|d| d.with_minute(0)).and_then(|d| d.with_second(0)).and_then(|d| d.with_nanosecond(0)).unwrap_or(now);
         
         let mut usage = if let Some(existing) = self.usage_repo.find_by_operator_and_period(cmd.operator_id, period_start).await? {
             existing

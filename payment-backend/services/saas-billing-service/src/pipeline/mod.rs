@@ -6,6 +6,7 @@
 use std::sync::Arc;
 
 use crate::commands::{CommandHandler, SaasBillingCommandHandler};
+use crate::commands::types::CreateTenantSubscriptionCommand;
 use crate::queries::{QueryHandler, SaasBillingQueryHandler};
 use crate::repository::InMemorySaasBillingRepository;
 
