@@ -38,6 +38,7 @@ pub struct EventSourcedOrchestrationRepository {
     tokens: Arc<RwLock<HashMap<Uuid, PaymentMethodToken>>>,
     idempotency_cache: Arc<RwLock<HashMap<String, serde_json::Value>>>,
     active_links: Arc<RwLock<HashMap<Uuid, Vec<Uuid>>>>,
+    link_connector_map: Arc<RwLock<HashMap<Uuid, String>>>,
     // Projection indexes for efficient queries
     intents_by_operator: Arc<RwLock<HashMap<Uuid, Vec<Uuid>>>>,
     intents_by_status: Arc<RwLock<HashMap<String, Vec<Uuid>>>>,
@@ -53,6 +54,7 @@ impl EventSourcedOrchestrationRepository {
             tokens: Arc::new(RwLock::new(HashMap::new())),
             idempotency_cache: Arc::new(RwLock::new(HashMap::new())),
             active_links: Arc::new(RwLock::new(HashMap::new())),
+            link_connector_map: Arc::new(RwLock::new(HashMap::new())),
             intents_by_operator: Arc::new(RwLock::new(HashMap::new())),
             intents_by_status: Arc::new(RwLock::new(HashMap::new())),
             intents_cache: Arc::new(RwLock::new(HashMap::new())),
@@ -313,6 +315,13 @@ impl AcquirerLinkProvider for EventSourcedOrchestrationRepository {
     ) -> Result<Vec<Uuid>, OrchestrationError> {
         let links = self.active_links.read().await;
         Ok(links.get(&operator_id).cloned().unwrap_or_default())
+    }
+
+    async fn get_acquirer_link_connector(&self, link_id: Uuid) -> Result<String, OrchestrationError> {
+        let map = self.link_connector_map.read().await;
+        map.get(&link_id)
+            .cloned()
+            .ok_or_else(|| OrchestrationError::NotFound(link_id))
     }
 }
 

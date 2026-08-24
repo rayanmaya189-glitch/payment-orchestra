@@ -1,6 +1,7 @@
 //! Command handlers for merchant-connector-onboarding
 
 use async_trait::async_trait;
+use tracing::info;
 
 use crate::domain::*;
 use crate::repository::*;
@@ -61,17 +62,16 @@ impl<R: OnboardingRepository + Send + Sync> CommandHandler for OnboardingCommand
         let mut request = self.repo.load(cmd.link_id).await?.ok_or(OnboardingError::NotFound(cmd.link_id))?;
 
         request.start_test()?;
-
-        let mock_result = ConnectionTestResult {
-            success: true,
-            latency_ms: 245,
-            error: None,
-            merchant_name: Some("Test Merchant".into()),
-            permissions: vec!["authorize".into(), "capture".into(), "refund".into(), "void".into()],
-        };
-
-        request.record_test_success(mock_result)?;
         self.repo.save(&request).await?;
+
+        // The actual connection test is performed asynchronously by the
+        // connector-gateway service. Call `complete_test` with the real
+        // ConnectionTestResult once the test completes.
+        info!(
+            link_id = %cmd.link_id,
+            "Connection test initiated — awaiting async result from connector-gateway"
+        );
+
         Ok(request)
     }
 

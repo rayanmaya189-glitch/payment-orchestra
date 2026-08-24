@@ -97,9 +97,23 @@ async fn test_test_connection() {
         link_id: req.link_id,
     }).await.unwrap();
 
-    assert_eq!(tested.status, OnboardingStatus::Active);
-    assert_eq!(tested.health_status, HealthStatus::Healthy);
-    assert!(tested.last_test_result.unwrap().success);
+    assert_eq!(tested.status, OnboardingStatus::Testing);
+
+    // Simulate async test completion via complete_test
+    let completed = pipeline.api.complete_test(CompleteTestCommand {
+        link_id: req.link_id,
+        result: ConnectionTestResult {
+            success: true,
+            latency_ms: 245,
+            error: None,
+            merchant_name: Some("Test Merchant".into()),
+            permissions: vec!["authorize".into(), "capture".into()],
+        },
+    }).await.unwrap();
+
+    assert_eq!(completed.status, OnboardingStatus::Active);
+    assert_eq!(completed.health_status, HealthStatus::Healthy);
+    assert!(completed.last_test_result.unwrap().success);
 }
 
 #[tokio::test]
@@ -131,12 +145,12 @@ async fn test_deactivate_and_reactivate() {
     let pipeline = setup();
     let req = create_link(&pipeline).await;
 
-    // Deactivate draft → should fail (invalid transition)
+    // Deactivate draft -> should fail (invalid transition)
     let deact = pipeline.api.deactivate_link(DeactivateLinkCommand {
         link_id: req.link_id,
         reason: None,
     }).await;
-    assert!(deact.is_err(), "Draft → Deactivated should fail");
+    assert!(deact.is_err(), "Draft -> Deactivated should fail");
 
     // Submit creds, test to activate
     pipeline.api.submit_credentials(SubmitCredentialsCommand {
@@ -144,6 +158,16 @@ async fn test_deactivate_and_reactivate() {
         credentials: valid_creds(),
     }).await.unwrap();
     pipeline.api.test_connection(TestConnectionCommand { link_id: req.link_id }).await.unwrap();
+    pipeline.api.complete_test(CompleteTestCommand {
+        link_id: req.link_id,
+        result: ConnectionTestResult {
+            success: true,
+            latency_ms: 200,
+            error: None,
+            merchant_name: Some("Test Merchant".into()),
+            permissions: vec!["authorize".into(), "capture".into()],
+        },
+    }).await.unwrap();
 
     // Now deactivate
     let deactivated = pipeline.api.deactivate_link(DeactivateLinkCommand {
@@ -163,6 +187,16 @@ async fn test_revoke_link() {
         credentials: valid_creds(),
     }).await.unwrap();
     pipeline.api.test_connection(TestConnectionCommand { link_id: req.link_id }).await.unwrap();
+    pipeline.api.complete_test(CompleteTestCommand {
+        link_id: req.link_id,
+        result: ConnectionTestResult {
+            success: true,
+            latency_ms: 200,
+            error: None,
+            merchant_name: Some("Test Merchant".into()),
+            permissions: vec!["authorize".into(), "capture".into()],
+        },
+    }).await.unwrap();
 
     let revoked = pipeline.api.revoke_link(RevokeLinkCommand {
         link_id: req.link_id,

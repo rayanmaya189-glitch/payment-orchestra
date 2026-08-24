@@ -48,15 +48,15 @@ pub(crate) async fn deliver_notification(
             deliver_webhook(notification_repo, webhook_repo, http_client, notification).await
         }
         NotificationChannel::Email | NotificationChannel::Sms => {
-            // Email and SMS delivery is a placeholder.
-            // In production, integrate with SendGrid, AWS SES, Twilio, etc.
-            info!(
+            // Email/SMS delivery requires a provider integration.
+            // Supported providers: SendGrid, AWS SES (email), Twilio (SMS).
+            // Set delivery to Failed so the notification is retried or escalated.
+            warn!(
                 notification_id = %notification_id,
                 channel = %notification.channel,
-                "Non-webhook delivery not yet implemented, marking as sent for now"
+                "Channel delivery not configured — notification marked as failed"
             );
-            // Auto-mark as sent for non-webhook channels (placeholder)
-            mark_delivered(notification_repo, notification_id).await
+            mark_failed(notification_repo, notification_id, format!("Channel {} delivery not configured", notification.channel)).await
         }
     }
 }

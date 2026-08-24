@@ -51,6 +51,21 @@ impl AcquirerLinkProvider for PostgresOrchestrationRepository {
 
         Ok(results.into_iter().map(|m| m.link_id).collect())
     }
+
+    async fn get_acquirer_link_connector(&self, link_id: Uuid) -> Result<String, OrchestrationError> {
+        use merchant_acquirer_link::{
+            Column as MalColumn,
+            Entity as MalEntity,
+        };
+
+        let model = MalEntity::find_by_id(link_id)
+            .one(&self.db)
+            .await
+            .map_err(|e| OrchestrationError::DatabaseError(e.to_string()))?
+            .ok_or_else(|| OrchestrationError::NotFound(link_id))?;
+
+        Ok(model.connector_id)
+    }
 }
 
 #[cfg(test)]

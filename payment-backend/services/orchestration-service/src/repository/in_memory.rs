@@ -18,6 +18,7 @@ pub struct InMemoryOrchestrationRepository {
     pub(super) idempotency_cache: Arc<RwLock<HashMap<String, serde_json::Value>>>,
     pub(super) active_policies: Arc<RwLock<HashMap<Uuid, Uuid>>>,
     pub(super) active_links: Arc<RwLock<HashMap<Uuid, Vec<Uuid>>>>,
+    pub(super) link_connector_map: Arc<RwLock<HashMap<Uuid, String>>>,
 }
 
 impl Default for InMemoryOrchestrationRepository {
@@ -35,6 +36,7 @@ impl InMemoryOrchestrationRepository {
             idempotency_cache: Arc::new(RwLock::new(HashMap::new())),
             active_policies: Arc::new(RwLock::new(HashMap::new())),
             active_links: Arc::new(RwLock::new(HashMap::new())),
+            link_connector_map: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
@@ -42,5 +44,11 @@ impl InMemoryOrchestrationRepository {
     pub async fn set_active_links(&self, operator_id: Uuid, link_ids: Vec<Uuid>) {
         let mut links = self.active_links.write().await;
         links.insert(operator_id, link_ids);
+    }
+
+    /// Seed connector mapping for a link id.
+    pub async fn set_link_connector(&self, link_id: Uuid, connector_id: &str) {
+        let mut map = self.link_connector_map.write().await;
+        map.insert(link_id, connector_id.to_string());
     }
 }

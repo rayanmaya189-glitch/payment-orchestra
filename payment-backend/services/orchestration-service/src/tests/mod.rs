@@ -25,7 +25,12 @@ pub(crate) mod helpers {
     pub async fn setup_with_links(link_ids: Vec<Uuid>) -> (OrchestrationCommandHandler<InMemoryOrchestrationRepository>, InMemoryOrchestrationRepository, Uuid) {
         let repo = InMemoryOrchestrationRepository::new();
         let operator_id = Uuid::now_v7();
-        repo.set_active_links(operator_id, link_ids).await;
+        repo.set_active_links(operator_id, link_ids.clone()).await;
+        // Map each link to a real connector_id for authorization flow
+        for (i, link_id) in link_ids.iter().enumerate() {
+            let connector = format!("connector_{}", i);
+            repo.set_link_connector(*link_id, &connector).await;
+        }
         let handler = OrchestrationCommandHandler::new(repo.clone());
         (handler, repo, operator_id)
     }
@@ -72,6 +77,7 @@ pub(crate) mod helpers {
     pub async fn setup_authorized_intent(handler: &dyn CommandHandler, repo: &InMemoryOrchestrationRepository, operator_id: Uuid) -> Uuid {
         let link_id = Uuid::now_v7();
         repo.set_active_links(operator_id, vec![link_id]).await;
+        repo.set_link_connector(link_id, "stripe").await;
 
         let pi = handler.create_payment_intent(make_create_cmd(operator_id, "cap-key", 10000)).await.unwrap();
 

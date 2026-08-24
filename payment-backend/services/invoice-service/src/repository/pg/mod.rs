@@ -142,20 +142,22 @@ impl InvoiceRepository for PostgresInvoiceRepository {
         &self,
         payment_intent_id: Uuid,
     ) -> Result<Option<Invoice>, InvoiceError> {
-        // TODO: Use PostgreSQL JSONB @> containment operator via raw SQL for production.
-        // Current approach loads all rows and filters in memory (O(n) per query).
-        let all = InvoiceEntity::find()
-            .all(&self.db)
+        // Use PostgreSQL JSONB @> containment operator for efficient lookup.
+        let payment_intent_json = serde_json::json!([payment_intent_id.to_string()]);
+        let result = InvoiceEntity::find()
+            .filter(
+                sea_orm::sea_query::Expr::cust(
+                    &format!("payment_intent_ids @> '{}'::jsonb", payment_intent_json)
+                )
+            )
+            .one(&self.db)
             .await
             .map_err(|e| InvoiceError::DatabaseError(format!("Database error: {e}")))?;
 
-        for model in all {
-            let invoice = invoice_model_to_domain(model)?;
-            if invoice.payment_intent_ids.contains(&payment_intent_id) {
-                return Ok(Some(invoice));
-            }
+        match result {
+            Some(model) => Ok(Some(invoice_model_to_domain(model)?)),
+            None => Ok(None),
         }
-        Ok(None)
     }
 
     async fn find_overdue(&self, _operator_id: Uuid) -> Result<Vec<Invoice>, InvoiceError> {

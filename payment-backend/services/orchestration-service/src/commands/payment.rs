@@ -104,6 +104,9 @@ impl<R: OrchestrationRepository + Send + Sync> OrchestrationCommandHandler<R> {
 
         match policy.select_route(card_scheme, &intent.currency, intent.requested_amount.amount_minor_units, &attempted_hops, &available_links) {
             Ok(acquirer_link_id) => {
+                // Look up the actual connector_id from the selected acquirer link
+                let connector_id = self.repo.get_acquirer_link_connector(acquirer_link_id).await?;
+
                 let auth_event = PaymentAuthorized {
                     payment_intent_id: cmd.payment_intent_id,
                     acquirer_link_id,
@@ -123,7 +126,7 @@ impl<R: OrchestrationRepository + Send + Sync> OrchestrationCommandHandler<R> {
                     attempt_id,
                     attempt_number,
                     acquirer_link_id,
-                    connector_id: "mock_connector".into(),
+                    connector_id: connector_id.clone(),
                     declined: false,
                     decline_reason: None,
                     acquirer_reference: Some(auth_event.acquirer_reference.clone()),
@@ -147,7 +150,7 @@ impl<R: OrchestrationRepository + Send + Sync> OrchestrationCommandHandler<R> {
                     acquirer_link_id,
                     gateway_profile_id: None,
                     gateway_profile_snapshot: None,
-                    connector_id: "mock_connector".into(),
+                    connector_id,
                     status: AttemptStatus::Approved,
                     decline_reason: None,
                     acquirer_reference: Some(format!("auth_ref_{}", Uuid::now_v7())),

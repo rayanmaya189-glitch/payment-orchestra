@@ -13,4 +13,11 @@ impl AcquirerLinkProvider for InMemoryOrchestrationRepository {
         let links = self.active_links.read().await;
         Ok(links.get(&operator_id).cloned().unwrap_or_default())
     }
+
+    async fn get_acquirer_link_connector(&self, link_id: Uuid) -> Result<String, OrchestrationError> {
+        let map = self.link_connector_map.read().await;
+        map.get(&link_id)
+            .cloned()
+            .ok_or_else(|| OrchestrationError::NotFound(link_id))
+    }
 }

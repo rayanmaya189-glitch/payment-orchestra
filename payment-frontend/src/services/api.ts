@@ -653,6 +653,22 @@ class ApiClient {
     return data.items || [];
   }
 
+  // ─── Gateway Credentials ──────────────────────────────────────────────────
+
+  async submitGatewayCredentials(
+    connectorId: string,
+    credentials: Record<string, string>,
+    environment: string = 'sandbox'
+  ): Promise<GatewayProfile> {
+    const { data } = await this.client.post('/v1/gateways', {
+      connector_id: connectorId,
+      credentials,
+      environment,
+      display_name: connectorId,
+    });
+    return data;
+  }
+
   // ─── Health ───────────────────────────────────────────────────────────────
 
   async healthCheck(): Promise<{

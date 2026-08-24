@@ -36,10 +36,18 @@ pub trait IdempotencyCache: Send + Sync {
     async fn store_idempotency(&self, key: &str, result: &serde_json::Value) -> Result<(), OrchestrationError>;
 }
 
+/// Active acquirer link with its connector identifier.
+#[derive(Debug, Clone)]
+pub struct AcquirerLinkInfo {
+    pub link_id: Uuid,
+    pub connector_id: String,
+}
+
 /// Provides active acquirer links for routing decisions.
 #[async_trait]
 pub trait AcquirerLinkProvider: Send + Sync {
     async fn list_active_acquirer_links(&self, operator_id: Uuid) -> Result<Vec<Uuid>, OrchestrationError>;
+    async fn get_acquirer_link_connector(&self, link_id: Uuid) -> Result<String, OrchestrationError>;
 }
 
 /// Combined supertrait for convenience.

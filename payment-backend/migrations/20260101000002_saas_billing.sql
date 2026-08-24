@@ -223,7 +223,7 @@ CREATE TABLE IF NOT EXISTS saga_executions (
 );
 
 CREATE INDEX idx_se_type ON saga_executions(saga_type);
-CREATE INDEX idx_se_status ON saga_executions(status);
+CREATE INDEX idx_saga_exec_status ON saga_executions(status);
 
 -- ─── KYB Cases ──────────────────────────────────────────────────────────────
 

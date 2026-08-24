@@ -12,7 +12,7 @@
 #   - Docker
 #   - sqlx-cli or diesel_cli (optional, for additional checks)
 
-set -euo pipefail
+set -eo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
@@ -97,14 +97,14 @@ if [ -d "$MIGRATIONS_DIR" ]; then
         MIGRATION_NAME=$(basename "$migration")
 
         echo -n "  Applying $MIGRATION_NAME... "
-        if docker exec -i "$CONTAINER_NAME" psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" < "$migration" &>/dev/null; then
+        if cat "$migration" | docker exec -i "$CONTAINER_NAME" psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" > /dev/null 2>&1; then
             echo -e "${GREEN}OK${NC}"
             MIGRATION_SUCCESS=$((MIGRATION_SUCCESS + 1))
         else
             echo -e "${RED}FAILED${NC}"
             MIGRATION_FAILURE=$((MIGRATION_FAILURE + 1))
             # Show the error
-            docker exec -i "$CONTAINER_NAME" psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" < "$migration" 2>&1 | tail -5
+            cat "$migration" | docker exec -i "$CONTAINER_NAME" psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" 2>&1 | tail -5
         fi
     done
 else
@@ -128,7 +128,7 @@ if [ -d "$MIGRATIONS_DIR" ]; then
         [ -f "$migration" ] || continue
         MIGRATION_NAME=$(basename "$migration")
         # Only check IF NOT EXISTS / IF EXISTS patterns
-        if ! docker exec -i "$CONTAINER_NAME" psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" < "$migration" 2>/dev/null; then
+        if ! cat "$migration" | docker exec -i "$CONTAINER_NAME" psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" > /dev/null 2>&1; then
             warn "Migration $MIGRATION_NAME is not idempotent"
         fi
     done
@@ -156,3 +156,5 @@ if [ "$MIGRATION_FAILURE" -gt 0 ]; then
 fi
 
 log "All migrations validated successfully"
+
+docker rm -f "$CONTAINER_NAME" &>/dev/null || true

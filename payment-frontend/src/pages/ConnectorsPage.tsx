@@ -1,9 +1,10 @@
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { Plus, Settings, TestTube, CheckCircle, XCircle, AlertCircle, RefreshCw, Loader2 } from 'lucide-react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { Plus, Settings, TestTube, CheckCircle, XCircle, AlertCircle, RefreshCw, Loader2, Key, Eye, EyeOff } from 'lucide-react';
 import { Card } from '@/components/ui/Card';
 import { api, ApiError } from '@/services/api';
 import { clsx } from 'clsx';
+import toast from 'react-hot-toast';
 
 const statusConfig = {
   active: { icon: CheckCircle, color: 'text-success-600', bg: 'bg-success-50', label: 'Active' },
@@ -15,6 +16,11 @@ const statusConfig = {
 export function ConnectorsPage() {
   const [showAddModal, setShowAddModal] = useState(false);
   const [testingId, setTestingId] = useState<string | null>(null);
+  const [selectedConnector, setSelectedConnector] = useState<{ id: string; name: string } | null>(null);
+  const [credentials, setCredentials] = useState<Record<string, string>>({});
+  const [showCredentialField, setShowCredentialField] = useState<Record<string, boolean>>({});
+  const [environment, setEnvironment] = useState<'sandbox' | 'live'>('sandbox');
+  const queryClient = useQueryClient();
 
   // Fetch gateway profiles
   const {
@@ -43,18 +49,33 @@ export function ConnectorsPage() {
     try {
       const result = await api.testGatewayConnection(id);
       if (result.success) {
-        // Show success toast
-        console.log('Connection test successful:', result.message);
+        toast.success(result.message);
       } else {
-        // Show error toast
-        console.error('Connection test failed:', result.message);
+        toast.error(result.message);
       }
     } catch (error) {
-      console.error('Test connection error:', error);
+      toast.error('Test connection failed');
     } finally {
       setTestingId(null);
     }
   };
+
+  const submitCredentialsMutation = useMutation({
+    mutationFn: () => {
+      if (!selectedConnector) throw new Error('No connector selected');
+      return api.submitGatewayCredentials(selectedConnector.id, credentials, environment);
+    },
+    onSuccess: () => {
+      toast.success('Connector added successfully!');
+      setShowAddModal(false);
+      setSelectedConnector(null);
+      setCredentials({});
+      queryClient.invalidateQueries({ queryKey: ['gateway-profiles'] });
+    },
+    onError: (error: Error) => {
+      toast.error(error.message || 'Failed to add connector');
+    },
+  });
 
   return (
     <div className="space-y-6">
@@ -288,8 +309,8 @@ export function ConnectorsPage() {
                       <button
                         key={connector.id}
                         onClick={() => {
-                          // TODO: Open credential form for selected connector
-                          console.log('Selected connector:', connector.id);
+                          setSelectedConnector({ id: connector.id, name: connector.name });
+                          setCredentials({});
                         }}
                         className="p-4 border border-gray-200 rounded-lg hover:border-primary-400 hover:bg-primary-50 transition-colors text-left"
                       >
@@ -311,6 +332,137 @@ export function ConnectorsPage() {
                     ))}
                   </div>
                 ) : null}
+
+                {/* Credential Form (shown when connector selected) */}
+                {selectedConnector && (
+                  <div className="mt-6 border-t pt-6">
+                    <div className="flex items-center gap-3 mb-4">
+                      <button
+                        onClick={() => setSelectedConnector(null)}
+                        className="text-gray-400 hover:text-gray-600"
+                      >
+                        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                        </svg>
+                      </button>
+                      <div>
+                        <h3 className="font-semibold text-gray-900">Configure {selectedConnector.name}</h3>
+                        <p className="text-sm text-gray-500">Enter your API credentials</p>
+                      </div>
+                    </div>
+
+                    {/* Environment selector */}
+                    <div className="flex gap-2 mb-4">
+                      <button
+                        onClick={() => setEnvironment('sandbox')}
+                        className={clsx(
+                          'px-3 py-1.5 text-sm rounded-lg font-medium transition-colors',
+                          environment === 'sandbox'
+                            ? 'bg-warning-100 text-warning-700'
+                            : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                        )}
+                      >
+                        Sandbox
+                      </button>
+                      <button
+                        onClick={() => setEnvironment('live')}
+                        className={clsx(
+                          'px-3 py-1.5 text-sm rounded-lg font-medium transition-colors',
+                          environment === 'live'
+                            ? 'bg-danger-100 text-danger-700'
+                            : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                        )}
+                      >
+                        Live
+                      </button>
+                    </div>
+
+                    <div className="space-y-3">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">API Key</label>
+                        <div className="relative">
+                          <input
+                            type={showCredentialField['api_key'] ? 'text' : 'password'}
+                            value={credentials['api_key'] || ''}
+                            onChange={(e) => setCredentials({ ...credentials, api_key: e.target.value })}
+                            placeholder="sk_test_..."
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500 pr-10"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setShowCredentialField({ ...showCredentialField, api_key: !showCredentialField['api_key'] })}
+                            className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                          >
+                            {showCredentialField['api_key'] ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                          </button>
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Secret Key</label>
+                        <div className="relative">
+                          <input
+                            type={showCredentialField['secret_key'] ? 'text' : 'password'}
+                            value={credentials['secret_key'] || ''}
+                            onChange={(e) => setCredentials({ ...credentials, secret_key: e.target.value })}
+                            placeholder="sk_..."
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500 pr-10"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setShowCredentialField({ ...showCredentialField, secret_key: !showCredentialField['secret_key'] })}
+                            className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                          >
+                            {showCredentialField['secret_key'] ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                          </button>
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Merchant ID</label>
+                        <input
+                          type="text"
+                          value={credentials['merchant_id'] || ''}
+                          onChange={(e) => setCredentials({ ...credentials, merchant_id: e.target.value })}
+                          placeholder="MER-12345"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="flex gap-3 mt-6">
+                      <button
+                        onClick={() => { setSelectedConnector(null); setCredentials({}); }}
+                        className="flex-1 px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        onClick={() => submitCredentialsMutation.mutate()}
+                        disabled={!credentials['api_key'] || !credentials['secret_key'] || submitCredentialsMutation.isPending}
+                        className="flex-1 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
+                      >
+                        {submitCredentialsMutation.isPending ? (
+                          <>
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                            Connecting...
+                          </>
+                        ) : (
+                          <>
+                            <Key className="w-4 h-4" />
+                            Connect
+                          </>
+                        )}
+                      </button>
+                    </div>
+
+                    {environment === 'live' && (
+                      <p className="mt-3 text-xs text-danger-600 bg-danger-50 p-2 rounded-lg">
+                        ⚠️ You are connecting to a LIVE environment. Ensure your credentials are correct.
+                      </p>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
           </Card>

@@ -86,9 +86,13 @@ mod tests {
 
     #[test]
     fn test_for_service_with_override() {
-        std::env::set_var("RATE_LIMIT_API_GATEWAY_MAX", "2000");
+        unsafe {
+            std::env::set_var("RATE_LIMIT_API_GATEWAY_MAX", "2000");
+        }
         let config = RateLimitConfig::for_service("api-gateway");
         assert_eq!(config.service_max, 2000);
-        std::env::remove_var("RATE_LIMIT_API_GATEWAY_MAX");
+        unsafe {
+            std::env::remove_var("RATE_LIMIT_API_GATEWAY_MAX");
+        }
     }
 }
