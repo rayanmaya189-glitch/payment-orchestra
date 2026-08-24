@@ -50,8 +50,38 @@ export function PaymentsPage() {
   };
 
   const handleExport = async () => {
-    // TODO: Implement CSV export
-    console.log('Exporting payments...');
+    // Fetch all payments for export (up to 1000)
+    const exportData = await api.listPaymentIntents({
+      limit: 1000,
+      offset: 0,
+      ...(statusFilter !== 'All' && { status: statusFilter.toLowerCase() }),
+      ...(searchQuery && { search: searchQuery }),
+    }) as any;
+    const items = exportData?.items || [];
+
+    if (items.length === 0) {
+      return;
+    }
+
+    // Build CSV
+    const headers = ['ID', 'Amount', 'Currency', 'Status', 'Connector', 'Created At'];
+    const rows = items.map((p: any) => [
+      p.id,
+      (p.amount_minor / 100).toFixed(2),
+      p.currency,
+      p.status,
+      p.connector || '',
+      p.created_at,
+    ]);
+
+    const csv = [headers.join(','), ...rows.map((r: string[]) => r.join(','))].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `payments-${new Date().toISOString().split('T')[0]}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
   };
 
   return (

@@ -146,7 +146,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tokio::select! {
         result = tonic::transport::Server::builder()
             .layer(MetricsLayer::new("api-gateway"))
-            .layer(GrcRateLimitLayer::in_memory("api-gateway"))
+            .layer({
+                let rl_config = platform_config::rate_limit::RateLimitConfig::for_service("api-gateway");
+                tracing::info!("Rate limits: service_max={}, client_max={}, window={}s", rl_config.service_max, rl_config.client_max, rl_config.window_secs);
+                GrcRateLimitLayer::in_memory("api-gateway")
+                    .with_service_limit(rl_config.service_max)
+                    .with_client_limit(rl_config.client_max)
+                    .with_window_secs(rl_config.window_secs)
+            })
             .add_service(HealthServer::new(health_service))
             .serve_with_shutdown(grpc_addr, async {
                 tokio::signal::ctrl_c().await.ok();

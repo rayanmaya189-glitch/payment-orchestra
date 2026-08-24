@@ -1,0 +1,201 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-datasources
+  namespace: monitoring
+  labels:
+    app: grafana
+data:
+  prometheus.yml: |
+    apiVersion: 1
+    datasources:
+      - name: Prometheus
+        type: prometheus
+        access: proxy
+        url: http://prometheus:9090
+        isDefault: true
+        editable: true
+        jsonData:
+          timeInterval: '15s'
+          httpMethod: POST
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboard-provider
+  namespace: monitoring
+  labels:
+    app: grafana
+data:
+  dashboard.yml: |
+    apiVersion: 1
+    providers:
+      - name: 'Payment Orchestra'
+        orgId: 1
+        folder: 'Payment Orchestra'
+        type: file
+        disableDeletion: false
+        editable: true
+        updateIntervalSeconds: 30
+        allowUiUpdates: true
+        options:
+          path: /var/lib/grafana/dashboards
+          foldersFromFilesStructure: false
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-payment-orchestra-dashboard
+  namespace: monitoring
+  labels:
+    app: grafana
+    grafana_dashboard: "1"
+data:
+  payment-orchestra-overview.json: |
+    {
+      "uid": "payment-orchestra-overview",
+      "title": "Payment Orchestra — Overview",
+      "tags": ["payment", "orchestration", "slo"],
+      "timezone": "utc",
+      "editable": true,
+      "refresh": "30s",
+      "time": { "from": "now-6h", "to": "now" },
+      "templating": {
+        "list": [
+          {
+            "name": "service",
+            "type": "query",
+            "query": "label_values(grpc_server_handled_total, service)",
+            "datasource": "Prometheus",
+            "refresh": 2,
+            "multi": true,
+            "includeAll": true,
+            "current": { "text": "All", "value": "$__all" }
+          }
+        ]
+      },
+      "panels": [
+        {
+          "title": "Availability (99.9% SLO)",
+          "type": "stat",
+          "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
+          "targets": [
+            {
+              "expr": "payment:availability:ratio:5m{service=~\"$service\"}",
+              "legendFormat": "{{service}}"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percentunit",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "value": 0.999, "color": "green" },
+                  { "value": 0.99, "color": "yellow" },
+                  { "value": 0.98, "color": "red" }
+                ]
+              },
+              "min": 0.95, "max": 1
+            }
+          }
+        },
+        {
+          "title": "p99 Latency",
+          "type": "stat",
+          "gridPos": { "h": 4, "w": 6, "x": 6, "y": 0 },
+          "targets": [
+            {
+              "expr": "payment:latency:p99:5m{service=~\"$service\"}",
+              "legendFormat": "{{service}}"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "s",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "value": 0.5, "color": "green" },
+                  { "value": 1, "color": "yellow" },
+                  { "value": 2, "color": "red" }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "title": "Request Rate",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
+          "targets": [
+            {
+              "expr": "sum(rate(grpc_server_handled_total{service=~\"$service\"}[5m])) by (service)",
+              "legendFormat": "{{service}}"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "reqps",
+              "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 10 }
+            }
+          }
+        },
+        {
+          "title": "Error Rate by Status Code",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
+          "targets": [
+            {
+              "expr": "sum(rate(grpc_server_handled_total{grpc_code!=\"OK\", service=~\"$service\"}[5m])) by (grpc_code, service)",
+              "legendFormat": "{{grpc_code}} — {{service}}"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "reqps",
+              "custom": {
+                "drawStyle": "bars", "lineWidth": 1, "fillOpacity": 80,
+                "stacking": { "mode": "normal" }
+              }
+            }
+          }
+        },
+        {
+          "title": "Transaction Success Rate",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 },
+          "targets": [
+            {
+              "expr": "payment:success_rate:ratio:5m{service=~\"$service\"}",
+              "legendFormat": "{{service}}"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percentunit", "min": 0.8, "max": 1,
+              "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 10 }
+            }
+          }
+        },
+        {
+          "title": "Gateway Success Rate",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 12 },
+          "targets": [
+            {
+              "expr": "payment:gateway:success_rate:5m",
+              "legendFormat": "{{gateway}}"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percentunit", "min": 0.8, "max": 1,
+              "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 10 }
+            }
+          }
+        }
+      ],
+      "schemaVersion": 39
+    }

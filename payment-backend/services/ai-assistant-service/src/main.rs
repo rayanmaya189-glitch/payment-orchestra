@@ -52,7 +52,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Arc::new(NoopEventBus)
     };
 
-    let rag_engine = Box::new(ai_assistant_service::commands::SimulatedRagEngine);
+    let rag_engine: Box<dyn ai_assistant_service::commands::handler::RagEngine> = if let Ok(endpoint) = std::env::var("OLLAMA_ENDPOINT") {
+        let model = std::env::var("OLLAMA_MODEL").unwrap_or_else(|_| "qwen3".to_string());
+        tracing::info!("Using Ollama RAG engine: endpoint={}, model={}", endpoint, model);
+        Box::new(ai_assistant_service::commands::OllamaRagEngine::new(endpoint, model))
+    } else {
+        tracing::info!("OLLAMA_ENDPOINT not set, using simulated RAG engine");
+        Box::new(ai_assistant_service::commands::SimulatedRagEngine)
+    };
     let rate_limiter = Box::new(ai_assistant_service::commands::NoopRateLimiter);
     let command_handler = AiCommandHandler::new(repo.clone(), rag_engine, rate_limiter);
     let query_handler = AiQueryHandler::new(repo.clone());
