@@ -1,0 +1,120 @@
+// dispute.proto — Dispute Management Service (BC-10)
+// AI-Native Payment Orchestration Platform
+// Chargeback lifecycle, representment evidence, deadline tracking
+
+syntax = "proto3";
+package dispute.v1;
+
+import "common.proto";
+
+// ─── Service ────────────────────────────────────────────────────────────────
+
+service DisputeService {
+  rpc RecordChargeback(RecordChargebackRequest) returns (RecordChargebackResponse);
+  rpc SubmitRepresentment(SubmitRepresentmentRequest) returns (SubmitRepresentmentResponse);
+  rpc ResolveChargeback(ResolveChargebackRequest) returns (ResolveChargebackResponse);
+  rpc GetChargebackCase(GetChargebackCaseRequest) returns (ChargebackCaseView);
+  rpc ListChargebacks(ListChargebacksRequest) returns (ListChargebacksResponse);
+}
+
+// ─── Messages ───────────────────────────────────────────────────────────────
+
+message RecordChargebackRequest {
+  string payment_intent_id = 1;
+  string operator_id = 2;
+  string acquirer_link_id = 3;
+  common.v1.Money amount = 4;
+  string reason_code = 5;
+  string reason_description = 6;
+  string acquirer_reference = 7;
+}
+
+message RecordChargebackResponse {
+  string chargeback_id = 1;
+  string status = 2;               // 'open'
+  common.v1.Timestamp deadline = 3;
+}
+
+message SubmitRepresentmentRequest {
+  string chargeback_id = 1;
+  repeated string evidence_document_ids = 2;
+  string narrative = 3;
+}
+
+message SubmitRepresentmentResponse {
+  string status = 1;               // 'under_review'
+  common.v1.Timestamp submitted_at = 2;
+}
+
+message ResolveChargebackRequest {
+  string chargeback_id = 1;
+  string resolution = 2;           // 'won' | 'lost' | 'accepted'
+  string notes = 3;
+}
+
+message ResolveChargebackResponse {
+  string status = 1;               // 'resolved'
+}
+
+message GetChargebackCaseRequest {
+  string chargeback_id = 1;
+}
+
+message ChargebackCaseView {
+  string chargeback_id = 1;
+  string payment_intent_id = 2;
+  string operator_id = 3;
+  string status = 4;
+  common.v1.Money amount = 5;
+  string reason_code = 6;
+  string reason_description = 7;
+  string acquirer_link_id = 8;
+  common.v1.Timestamp received_at = 9;
+  common.v1.Timestamp deadline = 10;
+  common.v1.Timestamp representment_submitted_at = 11;
+  common.v1.Timestamp resolved_at = 12;
+  string resolution = 13;
+  repeated string evidence_document_ids = 14;
+}
+
+message ListChargebacksRequest {
+  string operator_id = 1;
+  string status_filter = 2;        // optional
+  common.v1.PaginationRequest pagination = 3;
+}
+
+message ListChargebacksResponse {
+  repeated ChargebackCaseView chargebacks = 1;
+  common.v1.PaginationResponse pagination = 2;
+}
+
+// ─── Domain Events ──────────────────────────────────────────────────────────
+
+message ChargebackReceivedEvent {
+  string chargeback_id = 1;
+  string payment_intent_id = 2;
+  string operator_id = 3;
+  common.v1.Money amount = 4;
+  string reason_code = 5;
+  int64 occurred_at_unix_ms = 6;
+}
+
+message ChargebackRepresentmentSubmittedEvent {
+  string chargeback_id = 1;
+  int32 evidence_count = 2;
+  int64 occurred_at_unix_ms = 3;
+}
+
+message ChargebackResolvedEvent {
+  string chargeback_id = 1;
+  string resolution = 2;           // 'won' | 'lost' | 'accepted'
+  int64 occurred_at_unix_ms = 3;
+}
+
+message ChargebackDeadlineApproachingEvent {
+  string chargeback_id = 1;
+  string payment_intent_id = 2;
+  common.v1.Timestamp deadline = 3;
+  int32 days_remaining = 4;
+  int64 occurred_at_unix_ms = 5;
+}

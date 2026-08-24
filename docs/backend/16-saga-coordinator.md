@@ -1,0 +1,118 @@
+# 16 — Saga Coordinator (BC-17)
+
+> ⚡ **Pure Router**: The platform is a routing and orchestration layer only. Funds flow directly between the customer, the payment gateway, and the merchant bank account. The platform never holds, touches, or controls funds.
+
+n> **Architecture Context**: This module runs within the modular monolith alongside all other modules. All inter-module communication uses in-process gRPC (synchronous) or in-process NATS channels (asynchronous). The module boundaries defined here can be extracted into separate microservices in a future architecture evolution if scaling requires it.
+Cross-cutting infrastructure. Durable state machine for multi-step, cross-aggregate workflows.
+
+---
+
+## 1. Domain Model
+
+### AGG-SagaInstance (Root)
+
+**State Machine**:
+```
+created → running → completed | compensating → compensated | failed → requires_manual_intervention
+```
+
+**State Entity (SeaORM)**:
+
+```rust
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
+#[sea_orm(table_name = "saga_instances")]
+pub struct Model {
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub saga_id: Uuid,
+    pub saga_type: String,
+    pub aggregate_id: Uuid,
+    pub status: String,
+    pub current_step: String,
+    pub steps_completed: String,      // JSON array
+    pub steps_compensated: String,    // JSON array
+    pub compensation_attempts: i32,
+    pub max_compensation_retries: i32,
+    pub created_at: DateTimeWithTimeZone,
+    pub updated_at: DateTimeWithTimeZone,
+    pub deadline_at: Option<DateTimeWithTimeZone>,
+}
+```
+
+---
+
+## 2. Sagas
+
+| Saga | Trigger | Steps | Compensation |
+|---|---|---|---|
+| Payment Lifecycle | CreatePaymentIntent | Authorize → Capture → Settle → Reconcile | Void on failure |
+| Subscription Renewal | Scheduler | Create renewal intent → Authorize → Handle dunning | Cancel on exhausted retries |
+| Reconciliation Resolution | ResolveException | Match → Confirm → Update status | Undo match on failure |
+| Invoice Payment | InvoiceSent + payment | Create intent → Authorize → Capture → Update invoice | Void if cancelled |
+
+---
+
+## 3. Compensation Rules
+
+- **SAGA-006**: Reverse-order compensation (stack-based)
+- **SAGA-007**: Retry up to 3 times with exponential backoff
+- **SAGA-008**: Step timeout detection via background sweep
+- **SAGA-009**: Compensation idempotency (check aggregate state before acting)
+
+---
+
+## 4. Repository Interface
+
+```rust
+#[async_trait]
+pub trait SagaInstanceRepository: Send + Sync {
+    async fn load(&self, id: SagaId) -> Result<Option<SagaInstance>, PlatformError>;
+    async fn save(&self, saga: &SagaInstance) -> Result<(), PlatformError>;
+    async fn find_stuck(&self, timeout: Duration) -> Result<Vec<SagaInstance>, PlatformError>;
+    async fn find_by_aggregate(&self, aggregate_id: Uuid) -> Result<Vec<SagaInstance>, PlatformError>;
+}
+```
+
+---
+
+## 5. Error Catalog
+
+| Code | HTTP | gRPC | Description |
+|---|---|---|---|
+| `SAGA_NOT_FOUND` | 404 | NOT_FOUND | Saga instance does not exist |
+| `SAGA_ALREADY_COMPLETED` | 409 | FAILED_PRECONDITION | Saga already in terminal state |
+| `SAGA_STEP_FAILED` | 500 | INTERNAL | Saga step execution failed |
+| `SAGA_COMPENSATION_FAILED` | 500 | INTERNAL | Compensation action failed after retries |
+| `SAGA_TIMEOUT` | 504 | DEADLINE_EXCEEDED | Saga step exceeded timeout |
+
+---
+
+## 6. TDD Tests
+
+```rust
+#[tokio::test]
+async fn test_payment_lifecycle_saga_success() {
+    // CreatePaymentIntent → Authorize → Capture → Complete
+    let saga = saga_coordinator.start(PaymentLifecycleSaga { payment_intent_id }).await.unwrap();
+    assert_eq!(saga.status, "completed");
+}
+
+#[tokio::test]
+async fn test_payment_lifecycle_saga_compensates_on_capture_failure() {
+    // Authorize succeeds, Capture fails → saga compensates (voids)
+    let saga = saga_coordinator.start(PaymentLifecycleSaga { payment_intent_id }).await.unwrap();
+    assert_eq!(saga.status, "compensated");
+    // Verify PaymentIntent is in Voided state
+}
+
+#[tokio::test]
+async fn test_compensation_idempotent() {
+    // Void already voided → no error, just success
+}
+
+#[tokio::test]
+async fn test_saga_timeout_triggers_compensation() {
+    // Step exceeds timeout → saga transitions to compensating
+}
+```
+
+

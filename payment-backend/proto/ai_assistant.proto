@@ -1,0 +1,83 @@
+// ai_assistant.proto — AI Payment Assistant Service (BC-12)
+// AI-Native Payment Orchestration Platform
+// RAG pipeline for natural-language Q&A over merchant data
+
+syntax = "proto3";
+package ai_assistant.v1;
+
+import "common.proto";
+
+// ─── Service ────────────────────────────────────────────────────────────────
+
+service AiAssistantService {
+  rpc AskAssistant(AskAssistantRequest) returns (AskAssistantResponse);
+  rpc GetSessionHistory(GetSessionHistoryRequest) returns (GetSessionHistoryResponse);
+  rpc ClearSession(ClearSessionRequest) returns (ClearSessionResponse);
+}
+
+// ─── Messages ───────────────────────────────────────────────────────────────
+
+message AskAssistantRequest {
+  string operator_id = 1;
+  string session_id = 2;           // optional, creates new if not provided
+  string query = 3;
+  string context_json = 4;         // optional context from current dashboard page
+}
+
+message AskAssistantResponse {
+  string session_id = 1;
+  string answer = 2;
+  repeated Citation citations = 3;
+  bool requires_human_action = 4;
+  string suggested_action = 5;     // optional action name
+  string suggested_action_params = 6; // JSON params for suggested action
+}
+
+message Citation {
+  string source = 1;
+  string snippet = 2;
+  double relevance_score = 3;
+}
+
+message GetSessionHistoryRequest {
+  string operator_id = 1;
+  string session_id = 2;
+}
+
+message GetSessionHistoryResponse {
+  repeated ConversationMessage messages = 1;
+}
+
+message ConversationMessage {
+  string role = 1;                 // 'user' | 'assistant'
+  string content = 2;
+  int64 timestamp_unix_ms = 3;
+  repeated Citation citations = 4;
+}
+
+message ClearSessionRequest {
+  string session_id = 1;
+  string operator_id = 2;
+}
+
+message ClearSessionResponse {
+  bool cleared = 1;
+}
+
+// ─── Domain Events ──────────────────────────────────────────────────────────
+
+message AiQueryProcessedEvent {
+  string session_id = 1;
+  string operator_id = 2;
+  string query = 3;
+  bool required_human_action = 4;
+  int64 occurred_at_unix_ms = 5;
+}
+
+message AiActionExecutedEvent {
+  string session_id = 1;
+  string operator_id = 2;
+  string action_name = 3;
+  bool success = 4;
+  int64 occurred_at_unix_ms = 5;
+}

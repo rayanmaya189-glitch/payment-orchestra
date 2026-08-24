@@ -1,0 +1,36 @@
+[package]
+name = "compliance-service"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+tokio.workspace = true
+tonic.workspace = true
+sea-orm.workspace = true
+redis.workspace = true
+tracing.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+uuid.workspace = true
+chrono.workspace = true
+thiserror.workspace = true
+futures.workspace = true
+reqwest.workspace = true
+platform-proto.workspace = true
+platform-logging.workspace = true
+dotenvy.workspace = true
+platform-error.workspace = true
+async-trait.workspace = true
+platform-config.workspace = true
+platform-messaging.workspace = true
+platform-db.workspace = true
+platform-health.workspace = true
+platform-metrics.workspace = true
+platform-middleware.workspace = true
+prost.workspace = true
+platform-registry.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
+testcontainers.workspace = true

@@ -1,0 +1,114 @@
+// operator.proto — Protobuf service definition for BC-01 Operator Management
+// AI-Native Payment Orchestration Platform
+// REST paths + protobuf bodies: POST/PATCH/DELETE with protobuf-encoded bodies
+
+syntax = "proto3";
+package operator.v1;
+
+import "common.proto";
+
+// ─── Service ────────────────────────────────────────────────────────────────
+
+service OperatorService {
+  // Register a new operator (merchant)
+  rpc RegisterOperator(RegisterOperatorRequest) returns (RegisterOperatorResponse);
+  // Verify operator email address
+  rpc VerifyEmail(VerifyEmailRequest) returns (VerifyEmailResponse);
+  // Update operator status (internal, compliance-service only)
+  rpc UpdateOperatorStatus(UpdateOperatorStatusRequest) returns (UpdateOperatorStatusResponse);
+  // Get operator by ID
+  rpc GetOperator(GetOperatorRequest) returns (GetOperatorResponse);
+  // List operators with pagination
+  rpc ListOperators(ListOperatorsRequest) returns (ListOperatorsResponse);
+}
+
+// ─── Messages ───────────────────────────────────────────────────────────────
+
+message RegisterOperatorRequest {
+  string legal_name = 1;
+  string trade_license_no = 2;
+  string country = 3;           // ISO 3166-1 alpha-2, default "AE"
+  string email = 4;
+  string password = 5;          // used only at registration, never stored in operator aggregate
+}
+
+message RegisterOperatorResponse {
+  string operator_id = 1;       // UUIDv7
+  string subdomain = 2;
+  string status = 3;            // "pending"
+  common.v1.Timestamp created_at = 4;
+}
+
+message VerifyEmailRequest {
+  string operator_id = 1;
+  string verification_token = 2;
+}
+
+message VerifyEmailResponse {
+  string status = 1;            // "active_unverified"
+}
+
+message UpdateOperatorStatusRequest {
+  string operator_id = 1;
+  string new_status = 2;        // "active_verified" | "suspended" | "expired_unverified"
+  string reason = 3;
+  string changed_by = 4;        // principal_id of the compliance officer
+}
+
+message UpdateOperatorStatusResponse {
+  string status = 1;
+}
+
+message GetOperatorRequest {
+  string operator_id = 1;
+}
+
+message GetOperatorResponse {
+  string operator_id = 1;
+  string legal_name = 2;
+  string trade_license_no = 3;
+  string country = 4;
+  string status = 5;
+  string subdomain = 6;
+  common.v1.Timestamp created_at = 7;
+  common.v1.Timestamp provisioned_at = 8;
+}
+
+message ListOperatorsRequest {
+  string status_filter = 1;     // optional: filter by status
+  common.v1.PaginationRequest pagination = 2;
+}
+
+message ListOperatorsResponse {
+  repeated GetOperatorResponse operators = 1;
+  common.v1.PaginationResponse pagination = 2;
+}
+
+// ─── Domain Events ──────────────────────────────────────────────────────────
+
+message OperatorRegisteredEvent {
+  string operator_id = 1;
+  string legal_name = 2;
+  string email = 3;
+  string subdomain = 4;
+  int64 occurred_at_unix_ms = 5;
+}
+
+message OperatorVerifiedEvent {
+  string operator_id = 1;
+  string previous_status = 2;
+  string new_status = 3;
+  int64 occurred_at_unix_ms = 4;
+}
+
+message OperatorSuspendedEvent {
+  string operator_id = 1;
+  string reason = 2;
+  int64 occurred_at_unix_ms = 3;
+}
+
+message OperatorReactivatedEvent {
+  string operator_id = 1;
+  string reason = 2;
+  int64 occurred_at_unix_ms = 3;
+}

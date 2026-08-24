@@ -1,0 +1,41 @@
+[package]
+name = "orchestration-service"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+platform-registry.workspace = true
+async-trait.workspace = true
+tokio.workspace = true
+tonic.workspace = true
+sea-orm.workspace = true
+redis.workspace = true
+tracing.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+uuid.workspace = true
+chrono.workspace = true
+thiserror.workspace = true
+futures.workspace = true
+platform-proto.workspace = true
+platform-logging.workspace = true
+dotenvy.workspace = true
+platform-error.workspace = true
+platform-config.workspace = true
+platform-messaging.workspace = true
+platform-db.workspace = true
+platform-event-store.workspace = true
+platform-outbox.workspace = true
+platform-health.workspace = true
+platform-metrics.workspace = true
+platform-middleware.workspace = true
+platform-clients.workspace = true
+
+[features]
+integration_test = []
+
+[dev-dependencies]
+proptest.workspace = true
+testcontainers.workspace = true
+migrations = { path = "../../migrations" }

@@ -1,0 +1,67 @@
+version: "3.9"
+services:
+  postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_DB: payment_orchestra
+      POSTGRES_USER: platform
+      POSTGRES_PASSWORD: dev_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+      - ./db/init-multi-tenant.sql:/docker-entrypoint-initdb.d/init-multi-tenant.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U platform -d payment_orchestra"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  minio:
+    image: minio/minio:latest
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: platform
+      MINIO_ROOT_PASSWORD: dev_password
+    command: server /data --console-address ":9001"
+
+  nats:
+    image: nats:2.10-alpine
+    ports:
+      - "4222:4222"
+      - "8222:8222"
+    command: "-js -sd /data -c /etc/nats/nats.conf"
+    volumes:
+      - nats_data:/data
+      - ./nats.conf:/etc/nats/nats.conf:ro
+
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+volumes:
+  pg_data:
+  ollama_data:
+  nats_data:

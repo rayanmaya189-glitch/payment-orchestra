@@ -1,0 +1,199 @@
+// iam.proto — Protobuf service definition for BC-02 Identity & Access Management
+// AI-Native Payment Orchestration Platform
+
+syntax = "proto3";
+package iam.v1;
+
+import "common.proto";
+
+// ─── Service ────────────────────────────────────────────────────────────────
+
+service IamService {
+  // Authenticate with email/password
+  rpc Authenticate(AuthenticateRequest) returns (AuthenticateResponse);
+  // Refresh access token
+  rpc IssueToken(IssueTokenRequest) returns (IssueTokenResponse);
+  // Validate permission (ABAC)
+  rpc ValidatePermission(ValidatePermissionRequest) returns (ValidatePermissionResponse);
+  // Create API key
+  rpc CreateApiKey(CreateApiKeyRequest) returns (CreateApiKeyResponse);
+  // Revoke API key
+  rpc RevokeApiKey(RevokeApiKeyRequest) returns (RevokeApiKeyResponse);
+  // List API keys for principal
+  rpc ListApiKeys(ListApiKeysRequest) returns (ListApiKeysResponse);
+  // Maker/Checker: submit a pending change for approval
+  rpc SubmitChange(SubmitChangeRequest) returns (SubmitChangeResponse);
+  // Maker/Checker: approve or reject a pending change
+  rpc ReviewChange(ReviewChangeRequest) returns (ReviewChangeResponse);
+  // Get principal by ID
+  rpc GetPrincipal(GetPrincipalRequest) returns (GetPrincipalResponse);
+}
+
+// ─── Authentication ─────────────────────────────────────────────────────────
+
+message AuthenticateRequest {
+  string email = 1;
+  string password = 2;
+  string ip_address = 3;
+  string user_agent = 4;
+}
+
+message AuthenticateResponse {
+  string principal_id = 1;
+  string access_token = 2;
+  string refresh_token = 3;
+  int64 expires_at_unix_ms = 4;
+  bool mfa_required = 5;
+  string mfa_method = 6;        // "webauthn" | "totp" | "" (if not required)
+}
+
+message IssueTokenRequest {
+  string refresh_token = 1;
+}
+
+message IssueTokenResponse {
+  string access_token = 1;
+  string refresh_token = 2;
+  int64 expires_at_unix_ms = 3;
+}
+
+// ─── ABAC ───────────────────────────────────────────────────────────────────
+
+message ValidatePermissionRequest {
+  string principal_id = 1;
+  string resource = 2;
+  string action = 3;
+  int64 amount_minor_units = 4;   // for amount-based policies
+  string currency_code = 5;
+}
+
+message ValidatePermissionResponse {
+  bool allowed = 1;
+  bool requires_maker_checker = 2;
+  string reason = 3;
+}
+
+// ─── API Keys ───────────────────────────────────────────────────────────────
+
+message CreateApiKeyRequest {
+  string principal_id = 1;
+  string name = 2;
+  repeated string scopes = 3;
+  string expires_in_days = 4;     // default: "90"
+}
+
+message CreateApiKeyResponse {
+  string api_key_id = 1;
+  string api_key_secret = 2;      // only returned on creation
+  string name = 3;
+  repeated string scopes = 4;
+  string status = 5;              // "active"
+  int64 expires_at_unix_ms = 6;
+}
+
+message RevokeApiKeyRequest {
+  string api_key_id = 1;
+  string principal_id = 2;
+}
+
+message RevokeApiKeyResponse {
+  bool revoked = 1;
+}
+
+message ListApiKeysRequest {
+  string principal_id = 1;
+}
+
+message ListApiKeysResponse {
+  repeated ApiKeyInfo api_keys = 1;
+}
+
+message ApiKeyInfo {
+  string api_key_id = 1;
+  string name = 2;
+  repeated string scopes = 3;
+  string status = 4;              // "active" | "revoked" | "expired"
+  int64 created_at_unix_ms = 5;
+  int64 expires_at_unix_ms = 6;
+  int64 last_used_at_unix_ms = 7;
+}
+
+// ─── Maker/Checker ──────────────────────────────────────────────────────────
+
+message SubmitChangeRequest {
+  string change_type = 1;
+  string maker_id = 2;
+  bytes payload = 3;
+  string maker_note = 4;
+}
+
+message SubmitChangeResponse {
+  string change_id = 1;
+  string status = 2;              // "pending"
+  int64 expires_at_unix_ms = 3;
+}
+
+message ReviewChangeRequest {
+  string change_id = 1;
+  string checker_id = 2;
+  bool approved = 3;
+  string checker_note = 4;
+}
+
+message ReviewChangeResponse {
+  string status = 1;              // "approved" | "rejected"
+}
+
+// ─── Principal Queries ──────────────────────────────────────────────────────
+
+message GetPrincipalRequest {
+  string principal_id = 1;
+}
+
+message GetPrincipalResponse {
+  string principal_id = 1;
+  string principal_type = 2;      // "human" | "api_key" | "service"
+  string email = 3;
+  string status = 4;              // "active" | "suspended" | "deleted"
+  bool mfa_enrolled = 5;
+  string mfa_method = 6;
+  common.v1.Timestamp created_at = 7;
+  common.v1.Timestamp last_login_at = 8;
+}
+
+// ─── Domain Events ──────────────────────────────────────────────────────────
+
+message PrincipalCreatedEvent {
+  string principal_id = 1;
+  string email = 2;
+  string principal_type = 3;
+  int64 occurred_at_unix_ms = 4;
+}
+
+message PrincipalAuthenticatedEvent {
+  string principal_id = 1;
+  string ip_address = 2;
+  string user_agent = 3;
+  int64 occurred_at_unix_ms = 4;
+}
+
+message PermissionDeniedEvent {
+  string principal_id = 1;
+  string resource = 2;
+  string action = 3;
+  string reason = 4;
+  int64 occurred_at_unix_ms = 5;
+}
+
+message ApiKeyCreatedEvent {
+  string api_key_id = 1;
+  string principal_id = 2;
+  repeated string scopes = 3;
+  int64 occurred_at_unix_ms = 4;
+}
+
+message ApiKeyRevokedEvent {
+  string api_key_id = 1;
+  string principal_id = 2;
+  int64 occurred_at_unix_ms = 3;
+}

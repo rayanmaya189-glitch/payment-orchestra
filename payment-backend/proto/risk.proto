@@ -1,0 +1,75 @@
+// risk.proto — Fraud & Risk Scoring Service (BC-11)
+// AI-Native Payment Orchestration Platform
+// Rule-based risk scoring, 3DS exemption, negative database
+
+syntax = "proto3";
+package risk.v1;
+
+import "common.proto";
+
+// ─── Service ────────────────────────────────────────────────────────────────
+
+service RiskService {
+  rpc AssessRisk(AssessRiskRequest) returns (AssessRiskResponse);
+  rpc GetRiskProfile(GetRiskProfileRequest) returns (RiskProfileView);
+}
+
+// ─── Messages ───────────────────────────────────────────────────────────────
+
+message AssessRiskRequest {
+  string payment_intent_id = 1;
+  string operator_id = 2;
+  common.v1.Money amount = 3;
+  string card_bin = 4;             // first 6 digits of card
+  string card_last_four = 5;
+  string payment_method_id = 6;
+  string ip_address = 7;
+  string customer_id = 8;
+  string metadata_json = 9;
+}
+
+message AssessRiskResponse {
+  common.v1.RiskAssessment assessment = 1;
+  bool requires_3ds = 2;
+  bool blocked = 3;
+  string recommendation = 4;       // 'approve' | 'review' | 'block'
+}
+
+message GetRiskProfileRequest {
+  string operator_id = 1;
+}
+
+message RiskProfileView {
+  string operator_id = 1;
+  double overall_risk_score = 2;
+  int64 total_transactions_scored = 3;
+  int64 high_risk_count = 4;
+  int64 blocked_count = 5;
+  repeated ActiveRule active_rules = 6;
+}
+
+message ActiveRule {
+  string rule_id = 1;
+  string name = 2;
+  string severity = 3;             // 'low' | 'medium' | 'high'
+  bool enabled = 4;
+}
+
+// ─── Domain Events ──────────────────────────────────────────────────────────
+
+message RiskAssessmentCompletedEvent {
+  string payment_intent_id = 1;
+  string operator_id = 2;
+  double risk_score = 3;
+  string risk_level = 4;
+  bool blocked = 5;
+  int64 occurred_at_unix_ms = 6;
+}
+
+message HighRiskTransactionEvent {
+  string payment_intent_id = 1;
+  string operator_id = 2;
+  double risk_score = 3;
+  repeated string triggered_rules = 4;
+  int64 occurred_at_unix_ms = 5;
+}

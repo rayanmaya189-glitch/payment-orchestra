@@ -1,0 +1,132 @@
+// analytics.proto — Analytics & Reporting Service (BC-15)
+// AI-Native Payment Orchestration Platform
+// ClickHouse-powered analytics (PostgreSQL in Phase 1)
+
+syntax = "proto3";
+package analytics.v1;
+
+import "common.proto";
+
+// ─── Service ────────────────────────────────────────────────────────────────
+
+service AnalyticsService {
+  rpc GetAuthorizationRates(GetAuthRatesRequest) returns (GetAuthRatesResponse);
+  rpc GetDeclineReasons(GetDeclineReasonsRequest) returns (GetDeclineReasonsResponse);
+  rpc GetSettlementStatus(GetSettlementStatusRequest) returns (GetSettlementStatusResponse);
+  rpc GetFeeAnalysis(GetFeeAnalysisRequest) returns (GetFeeAnalysisResponse);
+  rpc GetChargebackTrends(GetChargebackTrendsRequest) returns (GetChargebackTrendsResponse);
+  rpc GetVolumeOverTime(GetVolumeOverTimeRequest) returns (GetVolumeOverTimeResponse);
+}
+
+// ─── Messages ───────────────────────────────────────────────────────────────
+
+message GetAuthRatesRequest {
+  string operator_id = 1;
+  string acquirer_link_id = 2;     // optional filter
+  int64 start_unix_ms = 3;
+  int64 end_unix_ms = 4;
+}
+
+message GetAuthRatesResponse {
+  repeated AuthRateByAcquirer rates = 1;
+  double overall_auth_rate = 2;
+}
+
+message AuthRateByAcquirer {
+  string acquirer_name = 1;
+  int64 total_attempts = 2;
+  int64 approved = 3;
+  int64 declined = 4;
+  double auth_rate = 5;
+  double avg_latency_ms = 6;
+}
+
+message GetDeclineReasonsRequest {
+  string operator_id = 1;
+  string acquirer_link_id = 2;     // optional
+  int64 start_unix_ms = 3;
+  int64 end_unix_ms = 4;
+}
+
+message GetDeclineReasonsResponse {
+  repeated DeclineReasonDistribution reasons = 1;
+}
+
+message DeclineReasonDistribution {
+  string reason_code = 1;
+  int64 count = 2;
+  double percentage = 3;
+}
+
+message GetSettlementStatusRequest {
+  string operator_id = 1;
+  int64 start_unix_ms = 2;
+  int64 end_unix_ms = 3;
+}
+
+message GetSettlementStatusResponse {
+  int64 total_settled = 4;
+  int64 total_pending = 5;
+  int64 total_exceptions = 6;
+  double settlement_rate = 7;
+}
+
+message GetFeeAnalysisRequest {
+  string operator_id = 1;
+  string acquirer_link_id = 2;     // optional
+  int64 start_unix_ms = 3;
+  int64 end_unix_ms = 4;
+}
+
+message GetFeeAnalysisResponse {
+  repeated FeeByAcquirer fees = 1;
+  common.v1.Money total_fees = 2;
+  double effective_rate_bps = 3;
+}
+
+message FeeByAcquirer {
+  string acquirer_name = 1;
+  common.v1.Money total_fees = 2;
+  int64 transaction_count = 3;
+  double effective_rate_bps = 4;
+}
+
+message GetChargebackTrendsRequest {
+  string operator_id = 1;
+  int64 start_unix_ms = 2;
+  int64 end_unix_ms = 3;
+}
+
+message GetChargebackTrendsResponse {
+  int64 total_chargebacks = 1;
+  int64 won = 2;
+  int64 lost = 3;
+  double chargeback_rate = 4;
+}
+
+message GetVolumeOverTimeRequest {
+  string operator_id = 1;
+  string granularity = 2;          // 'hour' | 'day' | 'week' | 'month'
+  int64 start_unix_ms = 3;
+  int64 end_unix_ms = 4;
+}
+
+message GetVolumeOverTimeResponse {
+  repeated VolumePoint points = 1;
+}
+
+message VolumePoint {
+  int64 timestamp_unix_ms = 1;
+  common.v1.Money volume = 2;
+  int64 transaction_count = 3;
+}
+
+// ─── Domain Events ──────────────────────────────────────────────────────────
+
+message AnalyticsSnapshotGeneratedEvent {
+  string operator_id = 1;
+  int64 snapshot_timestamp_unix_ms = 2;
+  double auth_rate = 3;
+  double volume_today = 4;
+  int64 occurred_at_unix_ms = 5;
+}

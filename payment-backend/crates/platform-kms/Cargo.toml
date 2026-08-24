@@ -1,0 +1,15 @@
+[package]
+name = "platform-kms"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+tokio.workspace = true
+tracing.workspace = true
+serde.workspace = true
+uuid.workspace = true
+aes-gcm.workspace = true
+thiserror.workspace = true
+platform-error.workspace = true
+rand = "0.8"

@@ -1,3 +1,47 @@
-*.py
+# Rust Build
+target/
+.github/
+# IDE & Editor
+.idea/
+.vscode/
+*.iml
+*.swp
+*.swo
+*.swn
+*~
 
+# OS files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Python (unlikely but present)
+__pycache__/
+*.py[cod]
+*.tsv
+
+# Mimocode
 .mimocode/
+
+# Generated files
+*.o
+*.so
+*.dylib
+*.exe
+*.dll
+
+# Logs
+*.log
+logs/
+
+# Dependencies (workspace keeps its own Cargo.lock for apps)
+node_modules/

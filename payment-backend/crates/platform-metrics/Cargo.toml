@@ -1,0 +1,13 @@
+[package]
+name = "platform-metrics"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+http = "1"
+metrics.workspace = true
+tokio.workspace = true
+tonic.workspace = true
+tower = "0.5"
+tracing.workspace = true

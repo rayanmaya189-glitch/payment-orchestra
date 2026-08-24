@@ -1,0 +1,100 @@
+//! Invoice Service — Invoice lifecycle management.
+//! SVC-06: Invoice create, send, cancel, payment tracking, overdue management.
+
+use std::net::SocketAddr;
+use std::sync::Arc;
+use tracing::info;
+
+use invoice_service::api::grpc::InvoiceGrpcService;
+use invoice_service::commands::{CommandHandler, InvoiceCommandHandler};
+use invoice_service::queries::{InvoiceQueryHandler, QueryHandler};
+use invoice_service::repository::{InMemoryInvoiceRepository, PostgresInvoiceRepository};
+use platform_proto::invoice::invoice_service_server::InvoiceServiceServer;
+use platform_metrics::grpc_interceptor::MetricsLayer;
+use platform_middleware::rate_limit::GrcRateLimitLayer;
+use platform_db::connection::create_service_pool;
+use platform_messaging::event_bus::{EventBus, NoopEventBus};
+use platform_messaging::nats_event_bus::NatsJetStreamEventBus;
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    dotenvy::dotenv().ok();
+    platform_logging::telemetry::init();
+    platform_metrics::init_uptime_tracker();
+
+    let _event_bus: Arc<dyn EventBus> = if let Ok(url) = std::env::var("NATS_URL") {
+        let nats_username = std::env::var("INVOICE_NATS_USERNAME").ok();
+        let nats_password = std::env::var("INVOICE_NATS_PASSWORD").ok();
+        match NatsJetStreamEventBus::connect_with_auth(
+            &url,
+            nats_username.as_deref(),
+            nats_password.as_deref(),
+        ).await {
+            Ok(bus) => {
+                tracing::info!("Connected to NATS at {} as invoice_svc", url);
+                Arc::new(bus)
+            }
+            Err(e) => {
+                tracing::warn!("Failed to connect to NATS ({}), using NoopEventBus", e);
+                Arc::new(NoopEventBus)
+            }
+        }
+    } else {
+        Arc::new(NoopEventBus)
+    };
+
+    let mut runner = platform_registry::bootstrap::ServerRunner::new("invoice-service", 9006, 9106).await?;
+
+    let (command_handler, query_handler): (Box<dyn CommandHandler>, Box<dyn QueryHandler>) =
+        if let Ok(db) = create_service_pool("INVOICE").await {
+            tracing::info!("Connected to PostgreSQL for invoice-service");
+            let repo = PostgresInvoiceRepository::new(db);
+            (
+                Box::new(InvoiceCommandHandler::new(repo.clone())),
+                Box::new(InvoiceQueryHandler::new(repo)),
+            )
+        } else {
+            tracing::warn!("PostgreSQL unavailable for invoice-service, using InMemory");
+            let repo = InMemoryInvoiceRepository::new();
+            (
+                Box::new(InvoiceCommandHandler::new(repo.clone())),
+                Box::new(InvoiceQueryHandler::new(repo)),
+            )
+        };
+
+    let addr: SocketAddr = runner.grpc_addr;
+    let invoice_service = InvoiceGrpcService::new(command_handler, query_handler);
+
+    info!("Invoice service gRPC server listening on {addr}");
+
+    // Spawn periodic uptime recording (30s cadence aligns with Prometheus scrape)
+    tokio::spawn(async {
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(30));
+        loop {
+            interval.tick().await;
+            platform_metrics::record_uptime();
+        }
+    });
+
+    tokio::select! {
+        result = tonic::transport::Server::builder()
+            .layer(MetricsLayer::new("invoice-service"))
+            .layer(GrcRateLimitLayer::in_memory("invoice-service"))
+            .add_service(InvoiceServiceServer::new(invoice_service))
+            .serve_with_shutdown(addr, async {
+                tokio::signal::ctrl_c().await.ok();
+            }) => {
+                if let Err(e) = result {
+                    tracing::error!("gRPC server error: {}", e);
+                }
+            }
+        _ = tokio::signal::ctrl_c() => {
+            info!("Shutdown signal received");
+        }
+    }
+
+    runner.deregister().await;
+    platform_logging::telemetry::shutdown();
+    info!("Invoice service stopped");
+    Ok(())
+}

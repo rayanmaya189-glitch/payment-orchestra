@@ -1,5 +1,5 @@
 # Software Requirements Specification
-## Multi-Tenant AI-Native Payment Orchestration Platform (UAE-First, Multi-Country Ready)
+## AI-Native Payment Orchestration Platform (UAE-First, Multi-Country Ready)
 
 **Document Series:** 12-Part Enterprise SRS
 **Part 6 of 12:** AI Payment Assistant & RAG Architecture
@@ -22,14 +22,55 @@
 ## 1. Design Principles (Non-Negotiable, Restated from Part 1/2/3 for This Part's Context)
 
 - **AI-P-001 (Grounding over fluency)**: Every substantive claim in an Assistant answer must be traceable to a specific retrieved record (transaction, event, document, or previously-approved report). If retrieval does not surface sufficient grounding, the Assistant says so explicitly rather than answering from the model's parametric knowledge (BIZ-023, EX-050a).
-- **AI-P-002 (Tenant isolation is structural, not query-time filtering)**: Retrieval indices are physically partitioned per tenant (separate OpenSearch index per tenant, or a tenant-keyed shard routing scheme — Part 9 finalizes which), so that a retrieval bug cannot surface another tenant's data even transiently (BR-050-1).
+- **AI-P-002 (Data isolation is structural): Retrieval indices are physically partitioned for each deployment (separate OpenSearch index per deployment, or a operator-keyed shard routing scheme — Part 9 finalizes which), so that a retrieval bug cannot surface another operator's data even transiently (BR-050-1).
 - **AI-P-003 (No autonomous money movement)**: The Assistant has no command-side access to any bounded context (Part 3 §1.3). Every action it might "suggest" (e.g., resolving a reconciliation exception) must be executed by a human through the normal command API (BR-041-1).
-- **AI-P-004 (Self-hosted by default)**: Model inference runs on platform-operator-controlled infrastructure via Ollama; no tenant data is sent to third-party model APIs unless a tenant explicitly opts in to a future "bring your own model provider" configuration (not in MVP scope) — this satisfies BIZ-021 and the UAE data-residency assumption (ASSUMP-004, Part 1).
+- **AI-P-004 (Self-hosted by default)**: Model inference runs on platform-operator-controlled infrastructure via Ollama; no tenant data is sent to third-party model APIs unless a tenant explicitly opts in to a future "bring your own model provider" configuration (not in scope) — this satisfies BIZ-021 and the UAE data-residency assumption (ASSUMP-004, Part 1).
 - **AI-P-005 (Not a regulated advice product)**: The Assistant answers operational/informational questions about the tenant's own data; it must not be positioned as, or allowed to produce, regulated financial/legal/tax advice (Part 1 §7.3 scope boundary note).
 
 ---
 
-## 2. Model Roles & Routing
+## 2. Model Version Management
+
+### 2.1 Model Version Pinning
+
+- **MODEL-PIN-001**: Every deployed model is pinned to a specific version with a cryptographic hash for integrity verification:
+  - Qwen3 32B: pinned to specific model revision (e.g., `qwen3-32b-instruct-v1.0`)
+  - Qwen3-VL 8B: pinned to specific model revision (e.g., `qwen3-vl-8b-instruct-v1.0`)
+  - BGE-M3: pinned to specific model revision (e.g., `bge-m3-v1.0`)
+  - Cross-encoder reranker: pinned to specific model revision
+
+- **MODEL-PIN-002**: Model files are verified against a SHA-256 hash stored in a `model_versions` table (SeaORM entity):
+
+```rust
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
+#[sea_orm(table_name = "model_versions")]
+pub struct ModelVersionModel {
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub model_id: String,           // e.g., "qwen3-32b"
+    pub version: String,            // e.g., "v1.0"
+    pub file_path: String,
+    pub sha256_hash: String,
+    pub deployed_at: DateTimeWithTimeZone,
+    pub deployed_by: String,
+    pub status: String,             // 'active' | 'deprecated' | 'rolled_back'
+}
+```
+
+- **MODEL-PIN-003**: On Ollama startup, the `ai-assistant-service` verifies the loaded model's hash against the `model_versions` table. If the hash doesn't match, the service refuses to start and raises a critical alert (model integrity violation).
+
+### 2.2 Model Rollback
+
+- **MODEL-ROLLBACK-001**: Model updates are performed by:
+  1. Deploying the new model version alongside the current version
+  2. Running the evaluation suite (Part 6 §6) against the new version
+  3. If evaluation passes, switching traffic to the new version
+  4. If evaluation fails or quality degrades, rolling back to the previous version
+
+- **MODEL-ROLLBACK-002**: Rollback is performed by updating the `model_versions` table to mark the current version as `rolled_back` and the previous version as `active`, then restarting the Ollama inference pool. Rollback takes effect within the restart window (typically < 30 seconds for model loading).
+
+- **MODEL-ROLLBACK-003**: All model version changes (deployments, rollbacks) are logged in `change_history` (Part 3 §9.2 MKCK-004) with before/after version information.
+
+## 3. Model Roles & Routing
 
 | Model | Role | Invoked For | Typical Input |
 |---|---|---|---|
@@ -56,7 +97,7 @@ Documents (BC-13 DocumentRecord + OCR text) ─┼──► Chunking & Normaliza
 Reconciliation exception records ───────────┘                                        │
 Prior Assistant Q&A (approved/high-confidence only) ─────────────────────────────────┤
                                                                                        ▼
-                                                                     Tenant-partitioned OpenSearch index
+                                                                     Operator-partitioned OpenSearch index
                                                                      (dense vectors + BM25 sparse fields)
 ```
 
@@ -75,8 +116,8 @@ Prior Assistant Q&A (approved/high-confidence only) ─────────�
 
 ### 3.3 Conversation Session Management
 
-- **SESS-001**: `ConversationSession` state (bounded history window, tenant-scoped) allows follow-up questions ("what about last week?") without requiring the user to restate context, while the bounded window prevents unbounded prompt growth from degrading latency/cost over a long session.
-- **SESS-002**: Sessions are tenant- and user-scoped; no session ever mixes context across tenants or across users within a tenant (even though users within one tenant share the same underlying data, session history itself — what *this* user asked — is not shared with other users by default).
+- **SESS-001**: `ConversationSession` state (bounded history window, operator-scoped) allows follow-up questions ("what about last week?") without requiring the user to restate context, while the bounded window prevents unbounded prompt growth from degrading latency/cost over a long session.
+- **SESS-002**: Sessions are operator- and user-scoped; no session ever mixes context across users (even though users within one deployment share the same underlying data, session history itself — what *this* user asked — is not shared with other users by default).
 
 ---
 
@@ -106,7 +147,7 @@ Prior Assistant Q&A (approved/high-confidence only) ─────────�
 ### 5.1 Input Guardrails (AI Gateway, extends Part 4 §3.2 AIGW-003)
 
 - **GRD-IN-001**: Basic prompt-injection pattern screening on any *externally-sourced* content that will enter a prompt (e.g., text extracted from a merchant-uploaded document, or free-text fields from an external acquirer's decline-reason description) — since these are less trusted than the platform's own structured domain events, they are treated as untrusted input requiring screening before being interpolated into a system-level prompt context.
-- **GRD-IN-002**: Per-tenant/per-user rate limiting and quota enforcement (commercial + abuse-prevention).
+- **GRD-IN-002**: Per-user rate limiting and quota enforcement (commercial + abuse-prevention).
 
 ### 5.2 Output Guardrails
 
@@ -141,7 +182,7 @@ Each question in the final list is paired with a **ground-truth answer** (valida
 | **Factual accuracy** | Does the answer's substantive content match ground truth? | Human-graded rubric + automated numeric-value extraction/comparison where the answer contains figures |
 | **Citation validity** | Does every cited source actually support the claim it's attached to? | Automated check (GRD-OUT-001) + periodic human audit sample |
 | **Grounding honesty** | Does the Assistant correctly decline to answer when it lacks sufficient grounding, rather than guessing? | Adversarial test set of intentionally unanswerable questions (EX-050a) |
-| **Tenant isolation** | Does the Assistant ever surface another tenant's data? | Automated cross-tenant leakage test suite (Part 8 security testing, run against a multi-tenant test fixture with deliberately similar data across tenants to stress-test isolation) |
+| **Security** | Does the Assistant ever surface unauthorized data? | Automated security test suite against authorization boundaries (Part 8 security testing) |
 | **Latency** | Time to first token / time to complete answer | Load-test harness (Part 11) |
 
 ### 6.3 Regression Gate
@@ -150,11 +191,11 @@ Each question in the final list is paired with a **ground-truth answer** (valida
 
 ---
 
-## 7. Proactive Anomaly Detection (H3, GOAL-010)
+## 7. Proactive Anomaly Detection (Phase 3, GOAL-010)
 
-- **PROACT-001**: Building on the same summary-document ingestion path (§3.1 ING-001), an H3 capability continuously compares current-period summary statistics (e.g., trailing-1-hour authorization rate per acquirer/scheme) against a learned/historical baseline and generates a candidate alert narrative when a statistically meaningful deviation is detected.
+- **PROACT-001**: Building on the same summary-document ingestion path (§3.1 ING-001), an Phase 3 capability continuously compares current-period summary statistics (e.g., trailing-1-hour authorization rate per acquirer/scheme) against a learned/historical baseline and generates a candidate alert narrative when a statistically meaningful deviation is detected.
 - **PROACT-002**: Candidate alerts are still subject to the same grounding/citation guardrails (§5.2) before being surfaced to a user via `notification-service` — an anomaly alert is itself an Assistant-generated artifact and must cite the specific underlying data driving the alert, not just assert "something looks off."
-- This is explicitly **out of MVP scope** (Part 1 §7.1 SCOPE-016) and recorded here only so Part 9's summary-document schema is designed with this future consumer in mind (avoiding a schema that would need to be redesigned to support it later).
+- This is explicitly **out of scope** (Part 1 §7.1 SCOPE-016) and recorded here only so Part 9's summary-document schema is designed with this future consumer in mind (avoiding a schema that would need to be redesigned to support it later).
 
 ---
 
@@ -170,7 +211,7 @@ Each question in the final list is paired with a **ground-truth answer** (valida
 
 ### 9.1 Production Model Quality Monitoring
 
-- **AIMON-001**: A lightweight feedback loop is integrated into the Assistant UI: every answer includes a thumbs-up/thumbs-down feedback button. Feedback is stored per `(query, answer, session_id, tenant_id)` with timestamp, and aggregated daily into a quality-score dashboard accessible to the AI/ML team (STK-009).
+- **AIMON-001**: A lightweight feedback loop is integrated into the Assistant UI: every answer includes a thumbs-up/thumbs-down feedback button. Feedback is stored per `(query, answer, session_id)` with timestamp, and aggregated daily into a quality-score dashboard accessible to the AI/ML team (STK-009).
 - **AIMON-002**: A daily automated drift-detection job compares the current model's answer quality against the ground-truth "top 50" regression suite (§6.1). If factual accuracy drops below the EVAL-001 threshold, an alert is raised before any production degradation impacts merchants.
 - **AIMON-003**: Retrieval quality metrics (average relevance score of top-K results, citation hit rate) are logged per query and aggregated into hourly rollups in ClickHouse, enabling trend analysis of retrieval pipeline health.
 
@@ -185,32 +226,31 @@ Each question in the final list is paired with a **ground-truth answer** (valida
 
 ```sql
 CREATE TABLE conversation_history (
-    tenant_id       UUID NOT NULL,
-    session_id      UUID NOT NULL,
+    session_id      UUID NOT NULL,      -- UUIDv7
     message_seq     INT NOT NULL,
     role            TEXT NOT NULL,       -- 'user' | 'assistant'
     content         TEXT NOT NULL,
     citations       JSONB NULL,
     feedback        TEXT NULL,           -- 'positive' | 'negative' | NULL
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
-    PRIMARY KEY (tenant_id, session_id, message_seq)
+    PRIMARY KEY (session_id, message_seq)
 );
 ```
 
 - **AISESS-002**: The bounded prompt window (SESS-001) is a *prompt-construction* concern only — the full history is always stored, but only the most recent N messages are included in the LLM prompt.
 
-### 9.4 Tool Use / Function Calling (H2 Enhancement)
+### 9.4 Tool Use / Function Calling (Phase 2 Enhancement)
 
 - **AITOOL-001**: The Assistant is extended with tool-use capability so it can invoke read-only API endpoints of other services to answer questions requiring fresh data:
-  - `GetReconciliationExceptions(tenant_id, date_range)`
-  - `GetPaymentIntentStatus(tenant_id, payment_intent_id)`
-  - `GetAuthorizationRateStats(tenant_id, acquirer, scheme, period)`
+  - `GetReconciliationExceptions(date_range)`
+  - `GetPaymentIntentStatus(payment_intent_id)`
+  - `GetAuthorizationRateStats(acquirer, scheme, period)`
 
 - **AITOOL-002**: Tool calls are bounded to read-only endpoints — the Assistant has no write-path tool access, preserving AI-P-003 (no autonomous money movement).
 - **AITOOL-003**: Tool call results are included in the RAG context and cited like any other retrieved source.
-- **AITOOL-004**: Tool calls are gated by the same RBAC/ABAC rules as direct API calls.
+- **AITOOL-004**: Tool calls are gated by the same ABAC rules as direct API calls.
 
-### 9.5 Multi-Step Reasoning Chains (H2 Enhancement)
+### 9.5 Multi-Step Reasoning Chains (Phase 2 Enhancement)
 
 - **AICHAIN-001**: For complex questions requiring multiple retrieval rounds, the Assistant supports a multi-step reasoning chain: initial retrieval → self-evaluation → refined retrieval → final answer assembly.
 - **AICHAIN-002**: The maximum number of reasoning steps is bounded (default: 3) to prevent unbounded latency growth. Each step's latency is tracked for NFR-AI-001 budget compliance.
@@ -221,7 +261,7 @@ CREATE TABLE conversation_history (
   1. **Pattern blocklist**: Known injection patterns are blocked before entering the prompt context.
   2. **Content sandboxing**: Externally-sourced text is wrapped in `<external_content>` XML tags with instructions to treat as data, not instructions.
   3. **Output monitoring**: Post-generation classifier checks for leaked system prompt content.
-  4. **Escalation**: Repeated injection attempts (≥3 per session or ≥5 per tenant per hour) are logged and the tenant's AI usage may be temporarily suspended.
+  4. **Escalation**: Repeated injection attempts (≥3 per session or ≥5 per deployment per hour) are logged and the tenant's AI usage may be temporarily suspended.
 
 ---
 
@@ -233,28 +273,83 @@ CREATE TABLE conversation_history (
 | BIZ-021 (self-hosted, data residency) | §1 AI-P-004, Ollama-hosted stack throughout |
 | BIZ-022 (document/vision processing) | §4 |
 | BIZ-023 (citable answers) | §3.2 step 5, §5.2 GRD-OUT-001 |
-| BR-041-1 / BR-050-1 (human-in-the-loop, tenant isolation) | §1 AI-P-002/AI-P-003, §5.2 GRD-OUT-003 |
+| BR-041-1 / BR-050-1 (human-in-the-loop) | §1 AI-P-002/AI-P-003, §5.2 GRD-OUT-003 |
 | GOAL-004 (top-50 baseline) | §6.1 |
-| GOAL-010 / SCOPE-016 (proactive anomaly, H3) | §7 |
+| GOAL-010 / SCOPE-016 (proactive anomaly, Phase 3) | §7 |
 | Part 1 §7.3 scope boundary (not financial advice) | §1 AI-P-005, §5.2 GRD-OUT-002 |
 | Production model quality monitoring | §9.1 AIMON-001 through AIMON-003 |
 | Prompt A/B testing | §9.2 AIPROMPT-001, AIPROMPT-002 |
 | Conversation history persistence/export | §9.3 AISESS-001, AISESS-002 |
-| Tool use / function calling (H2) | §9.4 AITOOL-001 through AITOOL-004 |
-| Multi-step reasoning chains (H2) | §9.5 AICHAIN-001, AICHAIN-002 |
+| Tool use / function calling (Phase 2) | §9.4 AITOOL-001 through AITOOL-004 |
+| Multi-step reasoning chains (Phase 2) | §9.5 AICHAIN-001, AICHAIN-002 |
 | Enhanced prompt injection mitigation | §9.6 GRD-IN-003 (layers 1–4) |
 
 ---
 
-## 11. Open Items Carried Forward
+## 11. Gap Analysis Additions — AI Safety & Quality
+
+### 11.1 AI Bias Detection & Fairness Monitoring
+
+**AI-BIAS-003**: The evaluation harness (§6) is extended with a bias test set covering:
+- Merchant size segments (small, medium, enterprise)
+- Geographic segments (UAE, GCC, international)
+- Transaction amount ranges (micro, standard, large-ticket)
+- Card scheme segments (Visa, Mastercard, Amex, mada)
+
+**AI-BIAS-004**: Fairness metric: compute answer accuracy per segment. If accuracy for any segment drops below 80% of the overall average, an alert is raised. This catches retrieval-pattern bias (e.g., over-indexing on high-volume merchants' patterns).
+
+**AI-BIAS-005**: Quarterly bias audit: a random sample of 100 AI Assistant answers is reviewed by humans for fairness and consistency across merchant segments. Results are documented and available for compliance review.
+
+### 11.2 Enhanced Hallucination Detection
+
+**AI-HALL-002**: Secondary validation layer beyond citation existence (GRD-OUT-001):
+- **Numerical claim extraction**: Parse the answer for numerical claims (amounts, percentages, counts) and cross-check against source documents. If a claimed number doesn't appear in any cited source, flag as "unverified numerical claim."
+- **Source relevance scoring**: Use the cross-encoder reranker score as a "confidence" signal. Answers relying on low-relevance sources (reranker score < 0.5) trigger a disclaimer: "This answer may not be fully grounded in your data."
+- **Contradiction detection**: If two cited sources contain contradictory information, the Assistant must explicitly note the contradiction rather than silently picking one.
+
+**AI-HALL-003**: Periodic human audit of a random sample of answers (10% weekly sample, not just thumbs-up/down feedback). Audit checks: citation correctness (does the cited source actually support the claim?), numerical accuracy, and completeness.
+
+### 11.3 Real-Time Production Quality Monitoring
+
+**AIMON-004**: Hourly sampling of answer quality: automated checks on a rotating subset of the top-50 regression questions. If factual accuracy drops below the EVAL-001 threshold within any 1-hour window, an alert is raised (faster than the daily drift detection in AIMON-002).
+
+**AIMON-005**: Real-time latency monitoring: p99 time-to-first-token and time-to-complete-answer tracked per model pool (Qwen3 32B, Qwen3-VL 8B). Alert if p99 exceeds 2x baseline.
+
+**AIMON-006**: AI circuit breaker: if quality drops below threshold or latency exceeds 3x baseline within any 1-hour window, the AI Gateway degrades the Assistant to raw-data mode (AIGW-005 extended):
+- **Q&A**: Returns unsummarized structured data with a "AI Assistant temporarily unavailable" notice
+- **KYB OCR**: Routes to human review queue (ACT-06) with the uploaded document visible
+- **Settlement OCR**: Queues for manual processing, alerts ACT-07
+
+### 11.4 RAG Retrieval Quality Drift Detection
+
+**AIMON-007**: Retrieval-specific quality metrics logged per query:
+- `top_k_relevance_scores`: average similarity of top-K results from the cross-encoder reranker
+- `citation_hit_rate`: percentage of cited sources that appear in the top-K retrieval results
+- `no_results_rate`: percentage of queries returning zero retrieval results
+
+**AIMON-008**: Hourly rollups compared against 7-day rolling average baseline. Alert if `citation_hit_rate` drops below 80% of baseline or `no_results_rate` exceeds 2x baseline.
+
+**AIMON-009**: On drift detection, trigger JOB-005 (re-embedding) to refresh the index. If drift persists after re-embedding, escalate to AI/ML team for investigation.
+
+### 11.5 Fraud Model Feedback Loop (Phase 1 Data Collection)
+
+**FRAUD-FB-001**: A `FraudModelFeedback` event is emitted when: (a) a chargeback is received (linking back to the original `RiskAssessment`), or (b) a flagged transaction is confirmed legitimate by the merchant.
+
+**FRAUD-FB-002**: A `fraud_feedback` ClickHouse table stores: `transaction_id`, `original_risk_score`, `original_risk_factors`, `outcome` (chargeback/legitimate/disputed), `outcome_date`, `feedback_lag_days`.
+
+**FRAUD-FB-003**: A weekly analytics job computes model precision/recall/F1 from the feedback data. For Phase 1 rule-based models, these metrics are surfaced in the fraud analytics dashboard. For Phase 3 ML models, this table serves as the training data source.
+
+---
+
+## 12. Open Items Carried Forward
 
 - **OQ-013**: Finalize the exact top-50 question list (§6.1) with Product/Finance-Ops persona input.
 - **OQ-014**: Confirm GPU hardware specification/quantity (ties to Part 1 DEP-003 and Part 4 §8) before Part 11 finalizes NFR-AI-001 numeric latency targets.
 - **OQ-015**: Decide the bounded conversation-history window size (§3.3 SESS-001).
 - **OQ-039**: Finalize the feedback-loop UX design (§9.1 AIMON-001) — simple thumbs-up/down vs. structured feedback categories — affects quality dashboard granularity.
-- **OQ-040**: Confirm tool-use API surface for H2 (§9.4 AITOOL-001) — which read-only endpoints to expose, and whether tool results should be cached.
+- **OQ-040**: Confirm tool-use API surface for Phase 2 (§9.4 AITOOL-001) — which read-only endpoints to expose, and whether tool results should be cached.
 - **OQ-041**: Finalize multi-step reasoning step limit (§9.5 AICHAIN-002, default 3) based on latency benchmarks.
-- **OQ-042**: Evaluate the trade-off between per-tenant OpenSearch indices (Part 9 OS-001) and a shared index with strong tenant-scoped query filtering — per-tenant provides stronger isolation but creates operational overhead at scale.
+- **OQ-042**: Evaluate the trade-off between per-deployment OpenSearch indices (Part 9 OS-001) and a shared index with strong user-scoped query filtering — per-deployment provides stronger isolation but creates operational overhead at scale.
 
 ---
 

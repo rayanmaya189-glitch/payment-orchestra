@@ -1,0 +1,40 @@
+# Rust build artifacts
+target/
+
+# Version control
+.git/
+.gitignore
+.gitattributes
+
+# CI/CD
+.github/
+
+# Documentation
+*.md
+*.pdf
+*.png
+*.svg
+
+# Environment files
+.env
+.env.example
+.env.*
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Protobuf sources (compiled in Dockerfile)
+**/*.proto
+
+# Exclude all services since the Dockerfile builds from source
+# Only the workspace Cargo.toml, Cargo.lock, crates/, services/, and migrations/ are needed

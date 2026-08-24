@@ -1,5 +1,5 @@
 # Software Requirements Specification
-## Multi-Tenant AI-Native Payment Orchestration Platform (UAE-First, Multi-Country Ready)
+## AI-Native Payment Orchestration Platform (UAE-First, Multi-Country Ready)
 
 **Document Series:** 12-Part Enterprise SRS
 **Part 5 of 12:** Payment Orchestration Engine — Deep Dive
@@ -15,7 +15,7 @@
 | Part | 5 of 12 — Payment Orchestration Engine |
 | Depends On | Part 3 (BC-05 domain model, AGG-01/AGG-02), Part 4 (SVC-05 service boundary) |
 | Feeds Into | Part 7 (Connector Framework, the ACL this engine calls), Part 9 (event store schema), Part 10 (gRPC contracts), Part 11 (performance/latency NFRs, TDD standards) |
-| Scope of This Part | Full internal design of `orchestration-service`: command handling, state machine, routing algorithm, failover mechanics, idempotency guarantees, concurrency control, and the marketplace-split addendum. |
+| Scope of This Part | Full internal design of `orchestration-service`: command handling, state machine, routing algorithm, failover mechanics, idempotency guarantees, concurrency control, and business logic gap fixes. |
 
 ---
 
@@ -23,14 +23,14 @@
 
 Every mutation to `PaymentIntent` (AGG-01, Part 3) or `RoutingPolicy` (AGG-02) is expressed as one of the following commands. Each command is validated against current aggregate state (loaded by folding its event stream) before producing zero or more events.
 
-| Command | Preconditions | Produces (on success) | Produces (on rejection) |
-|---|---|---|---|
-| `CreatePaymentIntent` | Valid `Money`, valid tenant, idempotency key not previously used for a *different* payload | `PaymentIntentCreated` (EVT-01) | Command rejected synchronously (no event) — duplicate idempotency key with identical payload returns the original result instead of erroring (idempotent replay, not an error) |
-| `AuthorizePaymentIntent` | `PaymentIntent` in `Created` or `Failed` (mid-retry) state; active `RoutingPolicy` exists | `PaymentAuthorizationAttempted` (EVT-02), then `PaymentAuthorized` (EVT-03) or `PaymentFailed` (EVT-06) | N/A — always produces at least an attempt event; "rejection" here means a failed attempt, not a no-op |
-| `CapturePaymentIntent` | `PaymentIntent` in `Authorized` state; requested amount ≤ remaining authorized amount (INV-01) | `PaymentCaptured` (EVT-04) or `PaymentPartiallyCaptured` (EVT-05) | Command rejected synchronously if amount exceeds authorized remainder |
-| `VoidPaymentIntent` | `PaymentIntent` in `Authorized` state, not yet captured | `PaymentVoided` (EVT-08) | Rejected if already captured |
-| `RefundPaymentIntent` | `PaymentIntent` in `Captured`/`PartiallyCaptured` state; amount ≤ remaining refundable balance (BR-022-1) | `PaymentRefunded` (EVT-09) or `PaymentPartiallyRefunded` (EVT-10) | Rejected synchronously if amount exceeds refundable balance |
-| `ActivateRoutingPolicy` | New policy passes validation (Part 3 INV-05: no circular refs, all referenced acquirer links `Active`) | `RoutingPolicyActivated` (EVT-11), previous policy's `RoutingPolicyDeactivated` (EVT-12) | Rejected synchronously with validation error |
+| Command | Preconditions | Produces (on success) | Produces (on rejection) | Maker/Checker |
+|---|---|---|---|---|
+| `CreatePaymentIntent` | Valid `Money`, valid operator, idempotency key not previously used for a *different* payload | `PaymentIntentCreated` (EVT-01) | Command rejected synchronously (no event) — duplicate idempotency key with identical payload returns the original result instead of erroring (idempotent replay, not an error) | No (automated) |
+| `AuthorizePaymentIntent` | `PaymentIntent` in `Created` or `Failed` (mid-retry) state; active `RoutingPolicy` exists | `PaymentAuthorizationAttempted` (EVT-02), then `PaymentAuthorized` (EVT-03) or `PaymentFailed` (EVT-06) | N/A — always produces at least an attempt event; "rejection" here means a failed attempt, not a no-op | No (automated) |
+| `CapturePaymentIntent` | `PaymentIntent` in `Authorized` state; requested amount ≤ remaining authorized amount (INV-01) | `PaymentCaptured` (EVT-04) or `PaymentPartiallyCaptured` (EVT-05) | Command rejected synchronously if amount exceeds authorized remainder | No (automated) |
+| `VoidPaymentIntent` | `PaymentIntent` in `Authorized` state, not yet captured | `PaymentVoided` (EVT-08) | Rejected if already captured | No (automated) |
+| `RefundPaymentIntent` | `PaymentIntent` in `Captured`/`PartiallyCaptured` state; amount ≤ remaining refundable balance (BR-022-1) | `PaymentRefunded` (EVT-09) or `PaymentPartiallyRefunded` (EVT-10) | Rejected synchronously if amount exceeds refundable balance | **Yes** — above configurable threshold (Part 3 MKCK-001) |
+| `ActivateRoutingPolicy` | New policy passes validation (Part 3 INV-05: no circular refs, all referenced acquirer links `Active`) | `RoutingPolicyActivated` (EVT-11), previous policy's `RoutingPolicyDeactivated` (EVT-12) | Rejected synchronously with validation error | **Yes** — always (Part 3 MKCK-001) |
 
 **Design rule (CMD-001)**: Commands that can be meaningfully retried by a caller without side effects (e.g., `CreatePaymentIntent`) are idempotent by construction using a caller-supplied `IdempotencyKey`. Commands that represent "try to move money" (`AuthorizePaymentIntent`) are *not* silently idempotent in the same way — they always attempt the next routing hop — but the underlying acquirer call within them is protected by a separate acquirer-level idempotency key (§4) to prevent duplicate authorizations at the external system.
 
@@ -103,9 +103,9 @@ At `AuthorizePaymentIntent` time, the engine gathers:
 1. The tenant's currently `Active` `RoutingPolicy` version (Part 3 INV-05 — always the version active *at this moment*, and that exact version ID is recorded on the `PaymentAuthorizationAttempted` event for later audit).
 2. The set of `Active` `MerchantAcquirerLink`s.
 3. Transaction attributes relevant to routing conditions: card scheme (Visa/Mastercard/Amex/mada, as reported at tokenization/entry time), currency, amount, and (if `risk-service`, SVC-11, is enabled for the tenant per OQ-009) a risk score.
-4. (H3 only, GOAL-009) Historical authorization-rate statistics per acquirer/card-scheme/currency combination, sourced from `analytics-service` read models, for success-rate-weighted dynamic routing.
+4. (Phase 3 only, GOAL-009) Historical authorization-rate statistics per acquirer/card-scheme/currency combination, sourced from `analytics-service` read models, for success-rate-weighted dynamic routing.
 
-### 3.2 Algorithm (MVP — Static/Rule-Based)
+### 3.2 Algorithm (Phase 1 — Static/Rule-Based)
 
 ```
 function select_route(intent, policy, links, attempted_hops):
@@ -122,14 +122,14 @@ function select_route(intent, policy, links, attempted_hops):
     return candidates.first()
 ```
 
-### 3.3 Algorithm (H3 — Success-Rate-Weighted Dynamic Routing, GOAL-009)
+### 3.3 Algorithm (Phase 3 — Success-Rate-Weighted Dynamic Routing, GOAL-009)
 
-Extends 3.2 by re-weighting `candidates` using a rolling window (e.g., trailing 1 hour, tenant-configurable) of authorization-rate statistics per acquirer/scheme/currency, subject to a **minimum-sample-size floor** (to avoid a single recent decline skewing routing for a low-volume combination) and a **maximum deviation cap** from the tenant's explicitly configured static priority (to prevent the dynamic layer from silently overriding a tenant's deliberate business preference, e.g., a negotiated-cost priority — dynamic routing optimizes *within* tenant-set boundaries, not around them). Full statistical design (window size defaults, cap defaults, confidence thresholds) is deferred to an H3 design spike, explicitly flagged as **not required for MVP acceptance** (Part 11).
+Extends 3.2 by re-weighting `candidates` using a rolling window (e.g., trailing 1 hour, operator-configurable) of authorization-rate statistics per acquirer/scheme/currency, subject to a **minimum-sample-size floor** (to avoid a single recent decline skewing routing for a low-volume combination) and a **maximum deviation cap** from the tenant's explicitly configured static priority (to prevent the dynamic layer from silently overriding a tenant's deliberate business preference, e.g., a negotiated-cost priority — dynamic routing optimizes *within* tenant-set boundaries, not around them). Full statistical design (window size defaults, cap defaults, confidence thresholds) is deferred to an Phase 3 design spike, explicitly flagged as **not required for initial launch acceptance** (Part 11).
 
 ### 3.4 Failover Retry Mechanics
 
 - **RTY-001**: On a retryable decline, the engine immediately attempts the next candidate — there is no artificial delay between hops within a single checkout attempt (retries are about trying a *different* acquirer, not waiting out a transient issue on the same one).
-- **RTY-002**: The maximum number of hops is tenant-configurable (UC-011) but the engine enforces a hard platform-wide ceiling (default 3, configurable per deployment, not per tenant, as a cost/latency circuit breaker) regardless of tenant configuration, to bound worst-case checkout latency.
+- **RTY-002**: The maximum number of hops is operator-configurable (UC-011) but the engine enforces a hard platform-wide ceiling (default 3, configurable per deployment, not per deployment, as a cost/latency circuit breaker) regardless of tenant configuration, to bound worst-case checkout latency.
 - **RTY-003**: Each hop's `PaymentAuthorizationAttempted` event records the acquirer attempted, the raw acquirer response (via BC-04's normalized `DeclineReason`), and elapsed latency for that hop — this is the ground truth `ai-assistant-service` and `analytics-service` use to answer "why did this decline" questions (UC-050) and to compute GOAL-002's revenue-recovery metric.
 
 ---
@@ -138,7 +138,7 @@ Extends 3.2 by re-weighting `candidates` using a rolling window (e.g., trailing 
 
 ### 4.1 Two Distinct Idempotency Layers
 
-1. **Caller-facing idempotency** (`CreatePaymentIntent`): keyed on tenant-scoped `IdempotencyKey` supplied by the merchant's integration. A retried request with the same key and same payload returns the original `PaymentIntent`'s current state rather than creating a duplicate or erroring. A retried request with the same key but a *different* payload is rejected with a conflict error (protects against integration bugs silently creating divergent state under one key).
+1. **Caller-facing idempotency** (`CreatePaymentIntent`): keyed on operator-scoped `IdempotencyKey` supplied by the merchant's integration. A retried request with the same key and same payload returns the original `PaymentIntent`'s current state rather than creating a duplicate or erroring. A retried request with the same key but a *different* payload is rejected with a conflict error (protects against integration bugs silently creating divergent state under one key).
 2. **Acquirer-facing idempotency** (within `AuthorizePaymentIntent`'s call to `connector-gateway`): a separate, internally generated idempotency token per routing attempt, passed through BC-04's ACL to the specific acquirer's own idempotency mechanism (where supported — Part 7 documents per-connector support level), specifically to guard against EX-020b's network-partition double-authorization risk. Where an acquirer does not support idempotency keys natively, the connector adapter must perform a pre-flight status-check call before retrying the same acquirer (never applicable here anyway, since RTY-001 never retries the same acquirer twice for one intent — but the same status-check discipline applies if a client-side timeout occurs and the *caller* retries `AuthorizePaymentIntent` itself).
 
 ### 4.2 Concurrency Control
@@ -168,16 +168,7 @@ Extends 3.2 by re-weighting `candidates` using a rolling window (e.g., trailing 
 
 ---
 
-## 6. Marketplace-Split Addendum (BC-16 Integration, H2)
-
-When a `PaymentIntent` is flagged (at `CreatePaymentIntent` time, via a `split_configuration_id` reference) as a marketplace transaction:
-
-- **MKT-SPLIT-001**: Step 5 above (`connector-gateway` authorize call) additionally carries the active `SplitConfiguration` (from `marketplace-service`, SVC-16), which `connector-gateway`'s ACL translates into whatever the licensed split-disbursement partner's own API expects (this may mean the "acquirer" in this flow is actually the licensed partner's payment API, not a traditional card acquirer directly — Part 7 documents this per-partner).
-- **MKT-SPLIT-002**: Per Part 3 INV-09 and Part 2 EX-080a, if the licensed partner rejects the split configuration at authorization time, the engine does **not** fall back to processing the payment as a non-split, platform-held transaction — it either (a) fails the transaction outright, or (b) processes it as fully non-split *only if* the tenant has explicitly pre-configured that fallback behavior for their marketplace integration, making the fallback an explicit tenant choice rather than an implicit platform default (protects the no-custody boundary, Part 1 §6, from being silently violated under a "just make it work" implementation shortcut).
-
----
-
-## 7. Scheduled Consistency Jobs (Owned by `orchestration-service`)
+## 6. Scheduled Consistency Jobs (Owned by `orchestration-service`)
 
 - **JOB-007**: Authorization-expiry sweep — periodically scans `Authorized` `PaymentIntent`s whose acquirer authorization validity window (acquirer-specific, from BC-04 connector metadata) has passed without capture, and transitions them to `AuthorizationExpired` (Part 3 state machine, §2.1 above).
 - **JOB-008**: Stuck-`Authorizing` reconciliation — detects `PaymentIntent`s that have remained in `Authorizing` beyond an anomalous duration (indicating a lost/never-received acquirer response) and triggers a status-check call to the relevant acquirer (where supported) rather than leaving the intent in permanent limbo; this is the systematic version of the ad hoc EX-020b safeguard.
@@ -198,7 +189,7 @@ When a `PaymentIntent` is flagged (at `CreatePaymentIntent` time, via a `split_c
 
 When an acquirer returns a partial authorization (approved for less than the requested amount):
 
-- **PARTIAL-AUTH-001**: The `AuthorizePaymentIntent` command handler checks whether the acquirer response indicates a partial authorization (approved amount < requested amount). If so, the engine has three options, tenant-configurable via `RoutingPolicy`:
+- **PARTIAL-AUTH-001**: The `AuthorizePaymentIntent` command handler checks whether the acquirer response indicates a partial authorization (approved amount < requested amount). If so, the engine has three options, operator-configurable via `RoutingPolicy`:
   1. **Accept partial**: Transition to `Authorized` with the reduced amount. The `PaymentIntent` records both `requested_amount` and `authorized_amount` for audit.
   2. **Retry next acquirer**: Treat the partial as a retryable decline and attempt the next routing candidate for the full requested amount.
   3. **Reject**: Transition to `Failed` with a new normalized decline reason `PartialAuthorizationRejected`.
@@ -232,10 +223,7 @@ When an acquirer returns a partial authorization (approved for less than the req
 - **SUB-PAUSE-002**: Mid-cycle plan changes trigger proration: unused portion of current billing period is credited toward the new plan's first period.
 - **SUB-PAUSE-003**: Trial period logic is fully configurable: duration, trial amount, automatic conversion, and notification timing.
 
-### 9.7 Marketplace-Split Failure Mode Refinement
-
-- **MKT-SPLIT-003**: When the licensed partner rejects a split configuration, the engine logs a `SplitPaymentRejected` event with the normalized rejection reason for analytics.
-- **MKT-SPLIT-004**: The tenant-configured fallback behavior for split rejection is cached in Redis by `marketplace-service` to avoid synchronous lookup on every payment attempt.
+### 9.7 Scheduled Consistency Jobs (Renumbered from §6)
 
 ---
 
@@ -249,24 +237,165 @@ When an acquirer returns a partial authorization (approved for less than the req
 | BR-020-2 (latency budget) | §3.4 RTY-002, §8 NFR-ORC-001 |
 | EX-020b (double-auth on network partition) | §4.1 acquirer-facing idempotency, §7 JOB-008 |
 | BR-022-1 / INV-03 (refund same acquirer) | §1 `RefundPaymentIntent` guard |
-| EX-080a / INV-09 (no custody fallback on split failure) | §6 MKT-SPLIT-002 |
-| GOAL-009 (H3 smart routing) | §3.3 |
+| GOAL-009 (Phase 3 smart routing) | §3.3 |
 | Partial authorization handling | §9.1 PARTIAL-AUTH-001, PARTIAL-AUTH-002 |
 | Currency precision (multi-decimal) | §9.2 CURRENCY-001 through CURRENCY-003 |
 | Refund to disabled acquirer (edge case) | §9.3 REFUND-EDGE-001, REFUND-EDGE-002 |
 | Zero-amount authorization | §9.4 ZERO-AUTH-001, ZERO-AUTH-002 |
 | Max transaction amount validation | §9.5 MAX-AMT-001, MAX-AMT-002 |
 | Subscription pause/resume/proration | §9.6 SUB-PAUSE-001 through SUB-PAUSE-003 |
-| Marketplace split failure refinement | §9.7 MKT-SPLIT-003, MKT-SPLIT-004 |
 
 ---
 
-## 11. Open Items Carried Forward
+## 11. Gap Analysis Additions — Settlement & Fee Enhancements
+
+### 11.1 Fee Breakdown in Settlement Records
+
+**FEE-001**: The `SettlementRecord` (Part 3 BC-09) is extended with an optional `FeeBreakdown` value object:
+
+```rust
+pub struct FeeBreakdown {
+    pub interchange_fee_minor_units: i64,
+    pub scheme_fee_minor_units: i64,
+    pub acquirer_markup_minor_units: i64,
+    pub processing_fee_minor_units: i64,
+    pub total_fee_minor_units: i64,
+    pub fee_currency: String,
+}
+```
+
+**FEE-002**: Fee breakdown is populated from settlement data when available (not all acquirers report fee breakdowns). Where unavailable, `total_fee_minor_units` is derived from the difference between captured amount and settled amount.
+
+**FEE-003**: Fee data feeds into:
+- Merchant fee analytics dashboard (UC-070) — "how much did we pay in acquirer fees last month, broken down by acquirer?"
+- Phase 3 cost-based routing (GOAL-009) — routing algorithm can weight by total cost (authorization rate × fee)
+- Scheme compliance monitoring (Part 7 §9.2) — fee anomalies may indicate acquirer billing errors
+
+### 11.2 Settlement Reconciliation Enhancements
+
+**SETTLE-001**: Settlement record ingestion includes:
+- SHA-256 hash of the raw settlement file (for audit trail)
+- File format detection and normalization logging
+- Per-line-item fee extraction (where available)
+
+**SETTLE-002**: Unmatched settlement records are classified:
+- `no_reference_match`: No PaymentIntent found for the acquirer reference
+- `amount_mismatch`: PaymentIntent found but amount differs by more than configured tolerance
+- `duplicate_reference`: Multiple PaymentIntents found for the same acquirer reference
+- `orphan_record`: Settlement record references a transaction not processed through the platform
+
+**SETTLE-003**: Each classification has a default resolution workflow:
+- `no_reference_match`: Queue for manual review (ACT-02)
+- `amount_mismatch`: Queue for manual review with AI suggestion (UC-041)
+- `duplicate_reference`: Flag for compliance review (ACT-06)
+- `orphan_record`: Record but do not flag for review (expected for transactions processed outside platform)
+
+---
+
+## 12. Gap Analysis Additions — Round 2
+
+### 12.1 Deployment-Time Payment-Intent State Corruption Prevention
+
+**PAY-DEPLOY-001**: Define a "deployment quiesce protocol" for `orchestration-service`: before a canary or full deployment, the new version reads a `deployment_epoch` from a shared config. Any `PaymentIntent` created under a prior epoch must complete its lifecycle (or timeout) before the new epoch's routing logic applies. Implement as a `deployment_epoch` field on `PaymentIntent` with a pre-deployment grace period (default: 5 minutes, matching the authorization timeout for most acquirers).
+
+**PAY-DEPLOY-002**: The deployment epoch is incremented as part of the deployment pipeline. The old version continues processing existing PaymentIntents until the grace period expires, at which point any still-in-flight intents are force-timed-out via JOB-008.
+
+### 12.2 Payment Intent Replay Handling
+
+**PAY-IDEMP-001**: Document explicit replay-handling behavior for every mutating command: if the `PaymentIntent` is already in a state that makes the requested operation invalid (e.g., `CapturePaymentIntent` on an already-`Captured` intent), return a deterministic error code (per Part 3 §11.1 invalid-transition table) with the current state in the response.
+
+**PAY-IDEMP-002**: Idempotency cache TTL must be at least 2× the longest possible lifecycle of a PaymentIntent (from `Created` to terminal state). Default: 7 days. This ensures that even slow-retrying merchants get idempotent behavior.
+
+### 12.3 Stuck PaymentIntent Monitoring Extension
+
+**JOB-012**: A sweep job detects `PaymentIntent`s stuck in `Capturing` or `Refunding` beyond a configurable threshold (default: 5 minutes). For `Capturing`: trigger a status-check call to the acquirer (where `supports_realtime_status_check = true`). For `Refunding`: retry or escalate to manual intervention. The threshold must be shorter than the acquirer's timeout to avoid the acquirer having already completed the operation while the platform thinks it's still in progress.
+
+### 12.4 Refund Race Condition Prevention
+
+**REFUND-CONC-001**: Refund commands acquire an advisory lock on the `PaymentIntent` aggregate before executing the balance check. This prevents the TOCTOU race where two concurrent refund requests both pass the balance check individually but together exceed the refundable amount. Implemented via `SELECT FOR UPDATE` on the aggregate root within the command handler's transaction.
+
+### 12.5 Event Store Integrity Verification
+
+**EVT-INTEGRITY-001**: Extend the hash chaining mechanism (Part 8 AUD-004) to the event store: each event in `event_store` includes a `previous_event_hash` field (SHA-256 of the previous event in the same aggregate's stream). A background verification job walks each aggregate's event stream daily and alerts on hash breaks.
+
+**EVT-INTEGRITY-002**: Weekly integrity verification checks: (a) no sequence gaps per aggregate, (b) no duplicate sequences, (c) every aggregate's first event is a root-creation event, (d) no payload exceeds 1MB. Findings are alerted to operations.
+
+### 12.6 Event Signature Verification
+
+**EVT-SIG-001**: Every domain event published to NATS JetStream is signed using HMAC-SHA256 with a per-service signing key (stored in KMS). The signature is included in the `EventEnvelope` as a new field `signature: bytes`. Consumers verify the signature before processing any event.
+
+**EVT-SIG-002**: Signing keys are rotated every 90 days. The signature covers: `event_id + aggregate_id + event_type + payload_hash + occurred_at`, preventing both event forgery and event tampering.
+
+**EVT-SIG-003**: NATS JetStream accounts are configured with per-service publish permissions — `orchestration-service` can only publish to `events.bc05.>`, not to other contexts' subjects.
+
+### 12.7 Event Replay Attack Prevention
+
+**EVT-REPLAY-001**: Every consumer validates: (1) the event's `aggregate_id` matches the aggregate being processed, (2) the event's `event_sequence` is the next expected sequence for that aggregate (rejecting replay of old events), (3) the event's `occurred_at` is within an acceptable clock skew window (default: 5 minutes).
+
+**EVT-REPLAY-002**: The outbox relay includes a monotonic sequence number per aggregate in the event, and consumers track the last processed sequence per aggregate — an event with a sequence number ≤ the last processed sequence is rejected as a replay.
+
+### 12.8 Gap: Source Context for Payment Origin Tracking (Orchestrator-Specific)
+
+**SOURCE-001**: Every `PaymentIntent` records a `SourceContext` value object indicating who initiated the payment:
+- `MerchantApi` — direct API call from merchant server
+- `Invoice` — invoice-service initiated
+- `Subscription` — subscription renewal initiated
+- `PaymentLink` — hosted checkout page
+- `AiAssistant` — AI-suggested action (human-confirmed per BR-041-1)
+- `System` — internal system action (retry, scheduled job)
+
+**SOURCE-002**: Source context enables analytics segmentation: "Which channel drives the most successful authorizations?" and "What's the failover rate for subscription payments vs. one-time?"
+
+**SOURCE-003**: Source context is recorded on `PaymentIntentCreated` event and immutable thereafter.
+
+### 12.9 Gap: Pre-Authorization Risk Check Integration
+
+**RISK-INT-001**: When `risk-service` is enabled for the tenant (OQ-009), `AuthorizePaymentIntent` calls `AssessRisk` synchronously before the routing algorithm runs. The risk score is stored on `PaymentIntent` and influences routing:
+- score < 0.3 (low): normal routing
+- score 0.3-0.7 (medium): normal routing, log risk factor
+- score 0.7-0.9 (high): route to acquirer with best fraud screening (per `GatewayProfile`)
+- score > 0.9 (critical): reject with `HIGH_RISK_DECLINED` (configurable per operator)
+
+**RISK-INT-002**: Risk-based routing rules can be added to `RoutingPolicy` to override normal priority when risk_score exceeds a threshold.
+
+**RISK-INT-003**: Risk assessment latency must be bounded (default: 200ms p99) to avoid degrading checkout path performance. If risk-service is slow, degrade to no-risk-check mode with a metric.
+
+### 12.10 Gap: Settlement Timing (T+N) Configuration
+
+**SETTLE-T-001**: Each `GatewayProfile` includes a `settlement_cycle` field (SameDay, NextDay, TwoDays, ThreeDays, Weekly, Custom) indicating the acquirer's settlement timing.
+
+**SETTLE-T-002**: On `PaymentAuthorized`, the orchestration service calculates `expected_settlement_date = authorized_date + settlement_cycle` and stores it on `PaymentIntent`.
+
+**SETTLE-T-003**: `reconciliation-service` creates a `SettlementExpectation` record and monitors for overdue settlements (JOB-SETTLE-AGE-001).
+
+### 12.11 Gap: Payment Method Token Lifecycle
+
+**TOKEN-001**: `PaymentMethodToken` aggregate manages acquirer-issued tokens for recurring payments. The platform never stores raw card data.
+
+**TOKEN-002**: Tokens are scoped to a specific `MerchantAcquirerLink` — a token from Acquirer A cannot be used with Acquirer B.
+
+**TOKEN-003**: Token lifecycle: `Active → Expired | Revoked`. Tokens in terminal state cannot create new `PaymentIntent`s.
+
+**TOKEN-004**: Account-updater integration: acquirer notifies of card refresh, platform updates token reference.
+
+### 12.12 Gap: 3DS Passthrough (Orchestrator — Not Gateway)
+
+**3DS-001**: As an orchestrator/router, the platform does NOT implement 3DS challenge flow. The acquirer/PSP handles 3DS entirely.
+
+**3DS-002**: When the acquirer returns `Requires3DS` status with `three_ds_data`, the platform passes this through to the merchant SDK. The merchant SDK redirects the cardholder to the acquirer's 3DS page.
+
+**3DS-003**: After 3DS completion, the acquirer returns the final authorization result. The platform does not participate in the 3DS callback — this is between the cardholder, merchant SDK, and acquirer.
+
+**3DS-004**: The `three_ds_data` field on `AuthorizeResponse` is an opaque passthrough — the platform never parses or validates 3DS-specific fields.
+
+---
+
+## 13. Open Items Carried Forward
 
 - **OQ-011**: Finalize default and configurable-range values for RTY-002's hard hop ceiling — placeholder "3" used above pending a latency-budget modeling exercise in Part 11.
-- **OQ-012**: Confirm which MVP acquirer partners support native idempotency tokens (§4.1) vs. require status-check-before-retry — depends on OQ-003 (Part 1) acquirer shortlist; must be resolved before Part 7 finalizes per-connector capability flags.
+- **OQ-012**: Confirm which Phase 1 acquirer partners support native idempotency tokens (§4.1) vs. require status-check-before-retry — depends on OQ-003 (Part 1) acquirer shortlist; must be resolved before Part 7 finalizes per-connector capability flags.
 - **OQ-036**: Finalize the default `PartialAuthorizationPolicy` (§9.1) — "retry next acquirer" is recommended as the default but must be validated against pilot merchant preferences.
-- **OQ-037**: Confirm the maximum number of supported currencies and their minor-unit precisions for MVP (§9.2) — BHD/KWD (3 decimal) support adds validation complexity; consider limiting MVP to 2-decimal currencies.
+- **OQ-037**: Confirm the maximum number of supported currencies and their minor-unit precisions for initial launch (§9.2) — BHD/KWD (3 decimal) support adds validation complexity; consider limiting Phase 1 to 2-decimal currencies.
 - **OQ-038**: Finalize subscription proration calculation method (§9.6 SUB-PAUSE-002) — full-day granularity vs. hour-based vs. calendar-month pro-rata — requires Product sign-off.
 
 ---

@@ -1,0 +1,198 @@
+# =============================================================================
+# Payment Orchestra — Ingress with TLS Termination
+# =============================================================================
+# Requires: nginx-ingress controller + cert-manager
+# Install: kubectl apply -f k8s/ingress.yaml
+# =============================================================================
+
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: payment-orchestra-api
+  namespace: payment-orchestra
+  labels:
+    app.kubernetes.io/name: payment-orchestra
+    app.kubernetes.io/part-of: payment-orchestration-platform
+  annotations:
+    # cert-manager TLS
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    # nginx-ingress config
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/proxy-body-size: "10m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "60"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "60"
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "10"
+    # Rate limiting (per IP, per second)
+    nginx.ingress.kubernetes.io/limit-rps: "100"
+    nginx.ingress.kubernetes.io/limit-burst-multiplier: "5"
+    # CORS
+    nginx.ingress.kubernetes.io/enable-cors: "true"
+    nginx.ingress.kubernetes.io/cors-allow-origin: "https://dashboard.payment-orchestra.com"
+    nginx.ingress.kubernetes.io/cors-allow-methods: "GET, POST, PUT, PATCH, DELETE, OPTIONS"
+    nginx.ingress.kubernetes.io/cors-allow-headers: "Authorization, Content-Type, X-Request-ID, X-Correlation-ID, X-Operator-ID, Idempotency-Key"
+    # Security headers
+    nginx.ingress.kubernetes.io/configuration-snippet: |
+      more_set_headers "X-Frame-Options: SAMEORIGIN";
+      more_set_headers "X-Content-Type-Options: nosniff";
+      more_set_headers "X-XSS-Protection: 1; mode=block";
+      more_set_headers "Referrer-Policy: strict-origin-when-cross-origin";
+spec:
+  ingressClassName: nginx
+  tls:
+  - hosts:
+    - api.payment-orchestra.com
+    secretName: payment-orchestra-api-tls
+  rules:
+  - host: api.payment-orchestra.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: api-gateway
+            port:
+              number: 9020
+---
+# Frontend Dashboard Ingress
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: payment-orchestra-dashboard
+  namespace: payment-orchestra
+  labels:
+    app.kubernetes.io/name: payment-orchestra-dashboard
+    app.kubernetes.io/part-of: payment-orchestration-platform
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/proxy-body-size: "5m"
+spec:
+  ingressClassName: nginx
+  tls:
+  - hosts:
+    - dashboard.payment-orchestra.com
+    secretName: payment-orchestra-dashboard-tls
+  rules:
+  - host: dashboard.payment-orchestra.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: payment-orchestra-dashboard
+            port:
+              number: 8080
+---
+# Dashboard Service (serves the React frontend)
+apiVersion: v1
+kind: Service
+metadata:
+  name: payment-orchestra-dashboard
+  namespace: payment-orchestra
+  labels:
+    app: payment-orchestra-dashboard
+spec:
+  selector:
+    app: payment-orchestra-dashboard
+  ports:
+  - name: http
+    port: 8080
+    targetPort: 8080
+    protocol: TCP
+  type: ClusterIP
+---
+# Dashboard Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: payment-orchestra-dashboard
+  namespace: payment-orchestra
+  labels:
+    app: payment-orchestra-dashboard
+    app.kubernetes.io/name: payment-orchestra-dashboard
+    app.kubernetes.io/part-of: payment-orchestration-platform
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: payment-orchestra-dashboard
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        app: payment-orchestra-dashboard
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+      - name: dashboard
+        image: ghcr.io/payment-orchestra/dashboard:latest
+        imagePullPolicy: Always
+        ports:
+        - name: http
+          containerPort: 8080
+          protocol: TCP
+        resources:
+          requests:
+            memory: "64Mi"
+            cpu: "50m"
+          limits:
+            memory: "128Mi"
+            cpu: "100m"
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          timeoutSeconds: 3
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /healthz
+            port: 8080
+          initialDelaySeconds: 3
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: payment-orchestra-dashboard
+  namespace: payment-orchestra
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: payment-orchestra-dashboard
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: payment-orchestra-dashboard
+  namespace: payment-orchestra
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: payment-orchestra-dashboard

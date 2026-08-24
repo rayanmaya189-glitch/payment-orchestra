@@ -1,0 +1,100 @@
+// document.proto — Document Management Service (BC-13)
+// AI-Native Payment Orchestration Platform
+// Document upload, OCR pipeline, secure retrieval
+
+syntax = "proto3";
+package document.v1;
+
+import "common.proto";
+
+// ─── Service ────────────────────────────────────────────────────────────────
+
+service DocumentService {
+  rpc UploadDocument(UploadDocumentRequest) returns (UploadDocumentResponse);
+  rpc GetDocumentUrl(GetDocumentUrlRequest) returns (GetDocumentUrlResponse);
+  rpc ListDocuments(ListDocumentsRequest) returns (ListDocumentsResponse);
+  rpc DeleteDocument(DeleteDocumentRequest) returns (DeleteDocumentResponse);
+}
+
+// ─── Messages ───────────────────────────────────────────────────────────────
+
+message UploadDocumentRequest {
+  string operator_id = 1;
+  string file_name = 2;
+  string content_type = 3;
+  bytes file_content = 4;
+  string category = 5;             // 'kyb' | 'invoice' | 'dispute_evidence' | 'contract'
+  string description = 6;
+}
+
+message UploadDocumentResponse {
+  string document_id = 1;
+  string status = 2;               // 'uploaded' | 'processing_ocr'
+  common.v1.Timestamp uploaded_at = 3;
+  int64 file_size_bytes = 4;
+}
+
+message GetDocumentUrlRequest {
+  string document_id = 1;
+  string operator_id = 2;
+}
+
+message GetDocumentUrlResponse {
+  string url = 1;                  // pre-signed URL for download
+  int64 expires_at_unix_ms = 2;
+}
+
+message ListDocumentsRequest {
+  string operator_id = 1;
+  string category = 2;             // optional filter
+  common.v1.PaginationRequest pagination = 3;
+}
+
+message ListDocumentsResponse {
+  repeated DocumentView documents = 1;
+  common.v1.PaginationResponse pagination = 2;
+}
+
+message DocumentView {
+  string document_id = 1;
+  string file_name = 2;
+  string content_type = 3;
+  string category = 4;
+  string status = 5;
+  int64 file_size_bytes = 6;
+  common.v1.Timestamp uploaded_at = 7;
+  string ocr_status = 8;           // 'pending' | 'completed' | 'failed'
+  string ocr_extracted_text = 9;
+}
+
+message DeleteDocumentRequest {
+  string document_id = 1;
+  string operator_id = 2;
+}
+
+message DeleteDocumentResponse {
+  bool deleted = 1;
+}
+
+// ─── Domain Events ──────────────────────────────────────────────────────────
+
+message DocumentUploadedEvent {
+  string document_id = 1;
+  string operator_id = 2;
+  string category = 3;
+  string file_name = 4;
+  int64 occurred_at_unix_ms = 5;
+}
+
+message DocumentOcrCompletedEvent {
+  string document_id = 1;
+  bool success = 2;
+  string extracted_text_summary = 3;
+  int64 occurred_at_unix_ms = 4;
+}
+
+message DocumentDeletedEvent {
+  string document_id = 1;
+  string operator_id = 2;
+  int64 occurred_at_unix_ms = 3;
+}

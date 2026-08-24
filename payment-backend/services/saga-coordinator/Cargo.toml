@@ -1,0 +1,36 @@
+[package]
+name = "saga-coordinator"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+tokio.workspace = true
+tonic.workspace = true
+sea-orm.workspace = true
+tracing.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+uuid.workspace = true
+chrono.workspace = true
+thiserror.workspace = true
+futures.workspace = true
+async-trait.workspace = true
+platform-metrics.workspace = true
+platform-middleware.workspace = true
+platform-proto.workspace = true
+platform-logging.workspace = true
+dotenvy.workspace = true
+platform-error.workspace = true
+platform-messaging.workspace = true
+platform-db.workspace = true
+platform-registry.workspace = true
+platform-health.workspace = true
+
+[features]
+integration_test = []
+
+[dev-dependencies]
+proptest.workspace = true
+testcontainers.workspace = true
+migrations = { path = "../../migrations" }

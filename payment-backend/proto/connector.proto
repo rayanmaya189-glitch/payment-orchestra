@@ -1,0 +1,187 @@
+// connector.proto — Protobuf service definition for BC-04 Gateway Connector Framework
+// AI-Native Payment Orchestration Platform
+
+syntax = "proto3";
+package connector.v1;
+
+import "common.proto";
+
+// ─── Service ────────────────────────────────────────────────────────────────
+
+service MerchantAcquirerLinkService {
+  // Create a new merchant-acquirer link with encrypted credentials
+  rpc CreateLink(CreateLinkRequest) returns (CreateLinkResponse);
+  // Test connection for a link
+  rpc TestConnection(TestConnectionRequest) returns (TestConnectionResponse);
+  // Rotate credentials for a link
+  rpc RotateCredentials(RotateCredentialsRequest) returns (RotateCredentialsResponse);
+  // Disable a link
+  rpc DisableLink(DisableLinkRequest) returns (DisableLinkResponse);
+  // Enable a link
+  rpc EnableLink(EnableLinkRequest) returns (EnableLinkResponse);
+  // Update link metadata
+  rpc UpdateLinkMetadata(UpdateLinkMetadataRequest) returns (UpdateLinkMetadataResponse);
+  // Get link by ID
+  rpc GetLink(GetLinkRequest) returns (GetLinkResponse);
+  // List links for an operator
+  rpc ListLinks(ListLinksRequest) returns (ListLinksResponse);
+}
+
+// ─── Messages ───────────────────────────────────────────────────────────────
+
+message CreateLinkRequest {
+  string operator_id = 1;
+  string connector_id = 2;       // 'network_international' | 'checkout_com' | 'telr'
+  string display_name = 3;
+  string environment = 4;        // 'sandbox' | 'production'
+  map<string, string> credentials = 5;  // raw credential fields
+}
+
+message CreateLinkResponse {
+  string link_id = 1;
+  string connector_id = 2;
+  string display_name = 3;
+  string environment = 4;
+  string status = 5;             // "testing"
+  string health_status = 6;      // "unknown"
+  common.v1.Timestamp created_at = 7;
+  string test_connection_url = 8;
+}
+
+message TestConnectionRequest {
+  string link_id = 1;
+}
+
+message TestConnectionResponse {
+  string link_id = 1;
+  string status = 2;             // "active" | "testing"
+  string health_status = 3;      // "healthy" | "unreachable"
+  bool success = 4;
+  int32 latency_ms = 5;
+  string error_message = 6;
+}
+
+message RotateCredentialsRequest {
+  string link_id = 1;
+  map<string, string> new_credentials = 2;
+  bool rotate_immediately = 3;
+}
+
+message RotateCredentialsResponse {
+  string link_id = 1;
+  string status = 2;
+  bool old_credentials_retained = 3;
+}
+
+message DisableLinkRequest {
+  string link_id = 1;
+  string reason = 2;             // "maintenance" | "credentials_issue" | "merchant_request"
+}
+
+message DisableLinkResponse {
+  string status = 1;             // "disabled"
+}
+
+message EnableLinkRequest {
+  string link_id = 1;
+}
+
+message EnableLinkResponse {
+  string status = 1;             // "active" | "testing"
+}
+
+message UpdateLinkMetadataRequest {
+  string link_id = 1;
+  string display_name = 2;
+  string metadata_json = 3;
+}
+
+message UpdateLinkMetadataResponse {
+  string link_id = 1;
+  string display_name = 2;
+}
+
+message GetLinkRequest {
+  string link_id = 1;
+}
+
+message GetLinkResponse {
+  string link_id = 1;
+  string operator_id = 2;
+  string connector_id = 3;
+  string display_name = 4;
+  string environment = 5;
+  string status = 6;             // "active" | "disabled" | "testing" | "credentials_expired"
+  string health_status = 7;      // "healthy" | "degraded" | "unreachable" | "unknown"
+  common.v1.Timestamp created_at = 8;
+  common.v1.Timestamp last_tested_at = 9;
+  common.v1.Timestamp last_healthy_at = 10;
+  common.v1.Timestamp credentials_expires_at = 11;
+}
+
+message ListLinksRequest {
+  string operator_id = 1;
+  string status_filter = 2;      // optional
+}
+
+message ListLinksResponse {
+  repeated GetLinkResponse links = 1;
+}
+
+// ─── Domain Events ──────────────────────────────────────────────────────────
+
+message MerchantAcquirerLinkCreatedEvent {
+  string link_id = 1;
+  string operator_id = 2;
+  string connector_id = 3;
+  string environment = 4;
+  int64 occurred_at_unix_ms = 5;
+}
+
+message MerchantAcquirerLinkEnabledEvent {
+  string link_id = 1;
+  string operator_id = 2;
+  int64 occurred_at_unix_ms = 3;
+}
+
+message MerchantAcquirerLinkDisabledEvent {
+  string link_id = 1;
+  string operator_id = 2;
+  string reason = 3;
+  int64 occurred_at_unix_ms = 4;
+}
+
+message MerchantAcquirerCredentialsRotatedEvent {
+  string link_id = 1;
+  string operator_id = 2;
+  int64 rotated_at_unix_ms = 3;
+}
+
+message ConnectorConnectionTestedEvent {
+  string link_id = 1;
+  string operator_id = 2;
+  bool success = 3;
+  uint32 latency_ms = 4;
+  int64 occurred_at_unix_ms = 5;
+}
+
+message ConnectorCredentialsExpiringEvent {
+  string link_id = 1;
+  string operator_id = 2;
+  uint32 days_until_expiry = 3;
+  int64 occurred_at_unix_ms = 4;
+}
+
+message ConnectorCredentialsExpiredEvent {
+  string link_id = 1;
+  string operator_id = 2;
+  int64 occurred_at_unix_ms = 3;
+}
+
+message ConnectorHealthChangedEvent {
+  string link_id = 1;
+  string operator_id = 2;
+  string old_health = 3;
+  string new_health = 4;
+  int64 occurred_at_unix_ms = 5;
+}

@@ -1,0 +1,106 @@
+// scheduler.proto — Management gRPC service for the background job scheduler.
+// AI-Native Payment Orchestration Platform
+//
+// Provides operational RPCs for inspecting and managing scheduled jobs,
+// viewing execution history, and on-demand job triggering.
+// The background scheduler loop itself runs independently — this service
+// exposes control-plane operations.
+
+syntax = "proto3";
+package scheduler.v1;
+
+// ─── Service ────────────────────────────────────────────────────────────────
+
+service SchedulerService {
+  // Get a single scheduled job by ID.
+  rpc GetJob(GetJobRequest) returns (JobView);
+
+  // List all registered jobs (across all services).
+  rpc ListJobs(ListJobsRequest) returns (ListJobsResponse);
+
+  // List all currently active jobs (status = Active).
+  rpc ListActiveJobs(ListActiveJobsRequest) returns (ListActiveJobsResponse);
+
+  // List execution history for a given job.
+  rpc ListExecutions(ListExecutionsRequest) returns (ListExecutionsResponse);
+
+  // Pause a job — stops it from being scheduled.
+  rpc PauseJob(PauseJobRequest) returns (JobView);
+
+  // Resume a previously paused job.
+  rpc ResumeJob(ResumeJobRequest) returns (JobView);
+
+  // Trigger immediate execution of a job (bypasses schedule).
+  rpc TriggerJob(TriggerJobRequest) returns (JobView);
+}
+
+// ─── Messages ───────────────────────────────────────────────────────────────
+
+message GetJobRequest {
+  string job_id = 1;  // UUID
+}
+
+message ListJobsRequest {
+  // Optional: filter by service name.
+  string service_name = 1;
+}
+
+message ListJobsResponse {
+  repeated JobView jobs = 1;
+}
+
+message ListActiveJobsRequest {
+  // empty
+}
+
+message ListActiveJobsResponse {
+  repeated JobView jobs = 1;
+}
+
+message ListExecutionsRequest {
+  string job_id = 1;  // UUID
+}
+
+message ListExecutionsResponse {
+  repeated ExecutionView executions = 1;
+}
+
+message PauseJobRequest {
+  string job_id = 1;  // UUID
+}
+
+message ResumeJobRequest {
+  string job_id = 1;  // UUID
+}
+
+message TriggerJobRequest {
+  string job_id = 1;  // UUID
+}
+
+// ─── Views ──────────────────────────────────────────────────────────────────
+
+message JobView {
+  string job_id = 1;
+  string job_key = 2;
+  string service_name = 3;
+  string description = 4;
+  string schedule_type = 5;       // "every" | "cron" | "once_at"
+  string schedule_interval = 6;   // e.g., "300s" or cron expression
+  string job_type = 7;            // enum string: "subscription_renewal", etc.
+  string status = 8;              // "active" | "paused" | "disabled"
+  string last_run_at = 9;         // RFC 3339 timestamp
+  bool last_run_success = 10;
+  string last_error = 11;
+}
+
+message ExecutionView {
+  string execution_id = 1;
+  string job_id = 2;
+  string job_key = 3;
+  string status = 4;              // "running" | "completed" | "failed" | "timed_out"
+  string started_at = 5;          // RFC 3339
+  optional string completed_at = 6;
+  optional uint64 duration_ms = 7;
+  optional bool success = 8;
+  optional string error_message = 9;
+}

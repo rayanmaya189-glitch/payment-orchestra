@@ -1,5 +1,5 @@
 # Software Requirements Specification
-## Multi-Tenant AI-Native Payment Orchestration Platform (UAE-First, Multi-Country Ready)
+## AI-Native Payment Orchestration Platform (UAE-First, Multi-Country Ready)
 
 **Document Series:** 12-Part Enterprise SRS
 **Part 7 of 12:** Gateway Connector Framework
@@ -64,7 +64,6 @@ pub struct ConnectorCapabilities {
     pub supports_native_idempotency_key: bool,     // else engine uses status-check-before-retry (Part 5 §4.1)
     pub supports_webhook_settlement: bool,          // vs. polling-only or file-drop-only
     pub supports_realtime_status_check: bool,
-    pub supports_marketplace_split: bool,           // relevant to BC-16 (Part 3/5 §6)
     pub supported_card_schemes: Vec<CardScheme>,
     pub supported_currencies: Vec<CurrencyCode>,
     pub settlement_format: SettlementFormat,        // Webhook | PollingApi | SftpFile | ScannedDocument
@@ -176,9 +175,9 @@ pub struct ConnectorRetryConfig {
 
 ---
 
-## 6. Initial MVP Connector Shortlist (Placeholder Pending OQ-003)
+## 6. Initial Phase 1 Connector Shortlist (Placeholder Pending OQ-003)
 
-Per Part 1 OQ-003, the final MVP acquirer/PSP shortlist requires business confirmation. This SRS's connector framework is designed to be provider-agnostic, but for concreteness, the following UAE-relevant categories of provider are anticipated and should be validated against real API documentation once confirmed:
+Per Part 1 OQ-003, the final Phase 1 acquirer/PSP shortlist requires business confirmation. This SRS's connector framework is designed to be provider-agnostic, but for concreteness, the following UAE-relevant categories of provider are anticipated and should be validated against real API documentation once confirmed:
 
 - A regional acquiring bank/processor (e.g., Network International or Magnati-class provider) — likely `Webhook` + `SftpFile` settlement mix.
 - A regional PSP aggregator (e.g., Telr or PayTabs-class provider) — likely `PollingApi` or `Webhook` settlement.
@@ -203,10 +202,87 @@ Per Part 1 OQ-003, the final MVP acquirer/PSP shortlist requires business confir
 
 ---
 
-## 9. Open Items Carried Forward
+## 9. Gap Analysis Additions — Connector Security & Compliance
 
-- **OQ-016 (= OQ-003 from Part 1, restated here for engineering visibility)**: Final MVP acquirer/PSP shortlist must be confirmed before connector implementation begins in earnest — §6's list is a planning placeholder only.
-- **OQ-017**: Confirm whether webhook endpoints (§4.1) should be per-connector-per-tenant unique URLs (simplifies signature/source attribution) or a shared per-connector URL disambiguated by payload content — a Part 9/Part 10 API design decision affecting the webhook contract.
+### 9.1 SFTP Settlement File Security
+
+**SFTP-SEC-005**: SFTP credentials (SSH private keys or passwords) stored via envelope encryption (same mechanism as API keys per Part 8 SEC-001).
+
+**SFTP-SEC-006**: SSH host key pinning for SFTP connections. The platform stores the expected host key fingerprint for each acquirer's SFTP server and verifies on connection. MITM attacks are detected and rejected.
+
+**SFTP-SEC-007**: Settlement file integrity verification: SHA-256 hash computed on file receipt and stored in the `SettlementBatch` metadata. If the acquirer provides a checksum, it is verified before ingestion.
+
+**SFTP-SEC-008**: Network policy restricting outbound SFTP connections to known acquirer IP ranges only (maintained in a ConfigMap, updated per connector).
+
+**SFTP-SEC-009**: SFTP connection audit logging: every connection attempt (success/failure), file download, and disconnection is logged with source/destination IPs.
+
+### 9.2 Card Scheme Compliance Monitoring
+
+**SCHEME-001**: A `SchemeComplianceMonitor` background job tracks compliance against published card scheme thresholds:
+
+| Scheme | Metric | Warning Threshold | Critical Threshold | Window |
+|---|---|---|---|---|
+| Visa | Chargeback ratio | 0.9% | 1.0% | 30-day rolling |
+| Mastercard | Chargeback ratio | 1.35% | 1.5% | 30-day rolling |
+| Visa | Fraud ratio | 0.9% | 1.0% | 30-day rolling |
+| Mastercard | Fraud ratio | 1.35% | 1.5% | 30-day rolling |
+| mada | Per SAMA guidelines | Configurable | Configurable | 30-day rolling |
+
+**SCHEME-002**: The monitor computes rolling 30-day and 90-day metrics per acquirer/card scheme from ClickHouse analytics. Warning alerts at 80% of threshold; critical alerts at 95%.
+
+**SCHEME-003**: Alerts include recommended remediation actions (e.g., "reduce transaction volume through Acquirer B" or "increase fraud screening sensitivity") and are surfaced via notification-service and the AI Assistant.
+
+**SCHEME-004**: Scheme compliance metrics are exposed in the merchant dashboard (UC-070) as a first-class view.
+
+### 9.3 Outbound Webhook Data Minimization
+
+**WEBHOOK-MIN-001**: Webhook payloads are reviewed for sensitive data before delivery. Acquirer references (which could be used for replay attacks against the acquirer) are included but with the understanding that the merchant already has a legitimate business relationship with the platform.
+
+**WEBHOOK-MIN-002**: Webhook payload content is classified per data classification (Part 8 ENC-009). Payment lifecycle webhooks are classified as Confidential. Document/OCR webhooks are classified as Restricted (may contain KYB evidence data).
+
+**WEBHOOK-MIN-003**: Webhook delivery to merchant endpoints outside the UAE region requires explicit merchant opt-in and data transfer disclosure (ties to Part 16.12 Data Residency).
+
+### 9.4 Gap: 3DS Passthrough (Orchestrator — Not Gateway)
+
+**3DS-PASSTHROUGH-001**: As an orchestrator/router, the platform does NOT implement 3DS challenge flow. The acquirer/PSP handles 3DS entirely.
+
+**3DS-PASSTHROUGH-002**: When the acquirer returns `Requires3DS` status with `three_ds_data`, the connector adapter normalizes this into the platform's `ThreeDsData` value object and passes it through to `orchestration-service`. The platform does not parse or validate 3DS-specific fields.
+
+**3DS-PASSTHROUGH-003**: The merchant SDK receives `three_ds_data` from the platform and redirects the cardholder to the acquirer's 3DS page. After 3DS completion, the acquirer returns the final authorization result.
+
+**3DS-PASSTHROUGH-004**: The platform's `PaymentIntent` state machine does NOT have a `Requires3DS` state — the `AuthorizePaymentIntent` command returns `Requires3DS` status in the response, and the merchant SDK handles the 3DS flow externally. The next call from the merchant is `CapturePaymentIntent` after 3DS completion.
+
+### 9.5 Gap: FX Rate and Cross-Border Handling
+
+**FX-001**: Each connector adapter exposes a `get_fx_rate` method that queries the acquirer for current conversion rates. This is used by `orchestration-service` for cost-based routing (comparing total cost across acquirers for cross-border transactions).
+
+**FX-002**: Cross-border detection logic: a transaction is cross-border if the card issuing country (from BIN lookup or acquirer response) differs from the acquirer's country. This determines whether `cross_border_fee_bps` applies.
+
+**FX-003**: FX rate responses include a `expires_at` timestamp — rates are valid for a configurable window (default: 5 minutes). Expired rates trigger a fresh query.
+
+### 9.6 Gap: Settlement Cycle Configuration
+
+**SETTLE-CYC-001**: Each connector adapter declares its settlement cycle via `ConnectorCapabilities.settlement_cycle`. This is used by `orchestration-service` to calculate `expected_settlement_date` on `PaymentIntent`.
+
+**SETTLE-CYC-002**: Settlement cycle is per-connector, not per-transaction. Multiple acquirers may have different settlement timings.
+
+**SETTLE-CYC-003**: The settlement cycle affects:
+- `SettlementExpectation` creation in `reconciliation-service`
+- Overdue settlement alerting (JOB-SETTLE-AGE-001)
+- Merchant-facing "expected settlement" display on dashboard
+
+### 9.7 Gap: Fee Cap and Tiered Pricing
+
+**FEE-CAP-001**: `FeeStructure` includes `max_fee_cap` and `min_fee_floor` to handle acquirers that cap fees at a maximum or enforce minimum fees.
+
+**FEE-CAP-002**: `FeeStructure` includes optional `tiered_pricing: Vec<FeeTier>` for acquirers that offer volume-based pricing tiers. The routing algorithm can use total cost (including tiered pricing) for cost-based routing decisions.
+
+---
+
+## 10. Open Items Carried Forward
+
+- **OQ-016 (= OQ-003 from Part 1, restated here for engineering visibility)**: Final Phase 1 acquirer/PSP shortlist must be confirmed before connector implementation begins in earnest — §6's list is a planning placeholder only.
+- **OQ-017**: Confirm whether webhook endpoints (§4.1) should be per-connector unique URLs (simplifies signature/source attribution) or a shared per-connector URL disambiguated by payload content — a Part 9/Part 10 API design decision affecting the webhook contract.
 - **OQ-043**: Finalize circuit breaker thresholds (§5.1 CB-CONN-001) — error-rate percentage, sliding-window duration, and open-window duration — against real acquirer failure-mode data from pilot merchants.
 
 ---

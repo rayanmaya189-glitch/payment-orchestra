@@ -1,5 +1,5 @@
 # Software Requirements Specification
-## Multi-Tenant AI-Native Payment Orchestration Platform (UAE-First, Multi-Country Ready)
+## AI-Native Payment Orchestration Platform (UAE-First, Multi-Country Ready)
 
 **Document Series:** 12-Part Enterprise SRS
 **Part 3 of 12:** Domain-Driven Design, Bounded Contexts, Aggregates & Domain Events
@@ -14,14 +14,21 @@
 |---|---|
 | Part | 3 of 12 — DDD & Bounded Contexts |
 | Depends On | Part 1 (Business Requirements), Part 2 (Use Cases) |
-| Feeds Into | Part 4 (Microservice Architecture — one microservice per bounded context, generally), Part 5 (Payment Orchestration deep-dive), Part 6 (AI Assistant deep-dive), Part 9 (Database Design), Part 10 (API/gRPC contracts) |
+| Feeds Into | Part 4 (Architecture & Service Design — one module per bounded context, generally), Part 5 (Payment Orchestration deep-dive), Part 6 (AI Assistant deep-dive), Part 9 (Database Design), Part 10 (API/gRPC contracts) |
 | ID Scheme | `BC-##` (bounded context), `AGG-##` (aggregate), `EVT-##` (domain event), `INV-##` (invariant) |
 
 ### 0.1 Modeling Approach
 
-This platform is modeled using **strategic DDD** (context mapping, ubiquitous language per context, explicit anti-corruption layers at every external-system boundary) and **tactical DDD** (aggregates, entities, value objects, domain events, repositories) implemented via **event sourcing + CQRS** for money-movement-relevant contexts (Payment Orchestration, Settlement/Reconciliation, Dispute Management) and simpler CRUD-plus-events for lower-risk supporting contexts (Notification, Document Management metadata). This distinction is deliberate and stated explicitly per context below — not every context needs the cost of full event sourcing, and applying it uniformly would be over-engineering exactly the contexts (e.g., Notification templates) where it adds no auditability value.
+This platform is modeled using **strategic DDD** (context mapping, ubiquitous language per context, explicit anti-corruption layers at every external-system boundary) and **tactical DDD** (aggregates, entities, value objects, domain events, repositories) implemented via **event sourcing + CQRS** for money-movement-relevant contexts (Payment Orchestration, Settlement/Reconciliation) and simpler CRUD-plus-events for lower-risk supporting contexts (Dispute Management, Notification, Document Management metadata).
+
+**ORM Layer**: All database access is through SeaORM — no raw SQL in application code:
+- **All services**: SeaORM entities with derive macros (single ORM across the entire platform)
+
+This distinction is deliberate — not every context needs the cost of full event sourcing, and applying it uniformly would be over-engineering exactly the contexts (e.g., Notification templates) where it adds no auditability value.
 
 **Why event sourcing for the core money-movement contexts specifically**: BIZ-040 (Part 1) requires immutable, complete audit trails of every money-movement-relevant event. Event sourcing makes "what happened and in what order" the source of truth by construction, rather than a derived/logged side effect of CRUD updates — which directly satisfies BIZ-040 and SUCC-005 without a separate audit subsystem bolted on afterward.
+
+**Why UUIDv7 over ULID or UUIDv4**: UUIDv7 (RFC 9562) was chosen over ULID because UUIDv7 is an IETF standard with broad ecosystem support across both Rust (`uuid` crate) and Go (`google/uuid`), whereas ULID is a community specification with less consistent library support. UUIDv7 was chosen over UUIDv4 because UUIDv4 is random and causes B-tree index fragmentation on high-throughput tables (event_store, outbox) — UUIDv7's timestamp prefix provides sequential insert order, dramatically improving write performance and reducing index bloat.
 
 ---
 
@@ -31,7 +38,7 @@ This platform is modeled using **strategic DDD** (context mapping, ubiquitous la
 
 | ID | Bounded Context | Type | Consistency Model |
 |---|---|---|---|
-| BC-01 | Tenant Management | Core Supporting | Strongly consistent (Postgres, transactional) |
+| BC-01 | Operator Management | Core Supporting | Strongly consistent (Postgres, transactional) |
 | BC-02 | Identity & Access (IAM) | Generic Supporting | Strongly consistent |
 | BC-03 | Merchant Compliance (KYB) | Core Supporting | Strongly consistent + async partner integration |
 | BC-04 | Gateway Connector Framework | Core (Anti-Corruption Layer) | Strongly consistent, adapter pattern |
@@ -40,13 +47,12 @@ This platform is modeled using **strategic DDD** (context mapping, ubiquitous la
 | BC-07 | Payment Link Service | Core Supporting | Strongly consistent, thin layer over BC-05 |
 | BC-08 | Subscription Billing | Core Supporting | Event-sourced (billing history matters for disputes) |
 | BC-09 | Settlement & Reconciliation | **Core Domain** | Event-sourced, eventually consistent against BC-05 |
-| BC-10 | Dispute Management (Chargebacks) | Core Supporting | Event-sourced |
+| BC-10 | Dispute Management (Chargebacks) | Core Supporting | CRUD + events |
 | BC-11 | Fraud & Risk Scoring | Core Supporting | Eventually consistent, read-heavy |
 | BC-12 | AI Payment Assistant (RAG) | **Core Domain (differentiator)** | Eventually consistent, read-only over other contexts |
 | BC-13 | Document Management | Generic Supporting | Strongly consistent metadata, object storage for blobs |
 | BC-14 | Notification Service | Generic Supporting | Eventually consistent, at-least-once delivery |
 | BC-15 | Analytics & Reporting | Generic Supporting | Eventually consistent (ClickHouse), append-only |
-| BC-16 | Marketplace / Sub-Merchant (H2) | Core Supporting | Strongly consistent, ACL to licensed partner |
 | BC-17 | Saga Coordinator | Cross-Cutting Infrastructure | Durable state machine, Postgres-backed |
 
 ### 1.2 Context Map — Relationships
@@ -74,10 +80,10 @@ Using standard DDD context-mapping patterns (Partnership, Customer/Supplier, Con
               ▼
         (no outbound writes except via owning context's command API)
 
- [BC-01 Tenant Management] ── Shared Kernel (Tenant ID, Tenant status) ── ALL contexts
- [BC-02 Identity & Access]  ── Shared Kernel (Principal, Role, Permission) ── ALL contexts
+ [BC-01 Operator Management] ── provides identity context ── ALL contexts
+ [BC-02 Identity & Access]  ── provides authentication/authorization context ── ALL contexts
  [BC-03 Merchant Compliance] ──ACL──> External KYB Partner API
- [BC-16 Marketplace] ──ACL──> External Licensed Split-Disbursement Partner
+```
  [BC-13 Document Management] ── Open Host Service (upload/fetch/OCR-trigger API) ── BC-03, BC-09, BC-12
  [BC-14 Notification Service] ── Open Host Service (send notification API) ── BC-05, BC-06, BC-08, BC-10
 ```
@@ -86,8 +92,8 @@ Using standard DDD context-mapping patterns (Partnership, Customer/Supplier, Con
 
 - **BC-04 (Gateway Connector Framework) is deliberately separated from BC-05 (Payment Orchestration)** even though they are tightly related, because BC-04's entire reason to exist is translating N different acquirer APIs into one normalized internal protocol (the Anti-Corruption Layer pattern). Merging them would leak acquirer-specific concepts (e.g., a specific PSP's proprietary decline code taxonomy) into the core orchestration domain model, violating BIZ-010's requirement that routing be configurable without code change per acquirer.
 - **BC-09 (Settlement & Reconciliation) is separate from BC-05 (Payment Orchestration)** because they have fundamentally different temporal characteristics: orchestration is synchronous/near-real-time (seconds), reconciliation is batch/asynchronous (settlement files arrive hours to days later) and reasons over a different aggregate root (`SettlementBatch` vs `PaymentIntent`). Conflating them would force the orchestration hot path to carry reconciliation-batch complexity it doesn't need.
-- **BC-12 (AI Payment Assistant) is modeled as a read-only Conformist** against every other context specifically so that the "no unauthorized AI-driven money movement" guardrail (BR-041-1, BR-050-1 from Part 2) is a *structural* property of the architecture, not merely a prompt-level instruction to the model. The AI service has no command API for money-movement contexts in its dependency graph — this is enforced at the network/service-mesh level in Part 4, not just documented here.
-- **BC-16 (Marketplace) is separate from BC-05** because its entire existence is conditional (H2, only for platform/reseller tenants) and because it must integrate with an external licensed partner for actual fund splitting (Part 1 §6.4) — keeping it a distinct context means the core BC-05 model never has to represent "split" as a first-class concept, preserving BC-05's applicability to the simpler majority of MVP tenants (direct merchants).
+- **BC-12 (AI Payment Assistant) is modeled as a read-only Conformist** against every other context specifically so that the "no unauthorized AI-driven money movement" guardrail (BR-041-1, BR-050-1 from Part 2) is a *structural* property of the architecture, not merely a prompt-level instruction to the model. The AI service has no command API for money-movement contexts in its dependency graph — this is enforced at the module-boundary level in Part 4, not just documented here.
+- **BC-12 (AI Payment Assistant) is modeled as a read-only Conformist** against every other context specifically so that the "no unauthorized AI-driven money movement" guardrail is a *structural* property of the architecture, not merely a prompt-level instruction to the model.
 
 ---
 
@@ -97,16 +103,15 @@ A full glossary appendix will be assembled in Part 12; the terms below are those
 
 | Term | Definition | Owning Context |
 |---|---|---|
-| **Tenant** | A registered organization (merchant or platform operator) using the platform under its own isolated data/config boundary. | BC-01 |
-| **Merchant Acquirer Link** | A configured, credentialed connection between a tenant and a specific acquirer/PSP. | BC-04 |
+| **Operator** | The registered organization (merchant or platform operator) using the platform. | BC-01 |
+| **Merchant Acquirer Link** | A configured, credentialed connection between the operator and a specific acquirer/PSP. | BC-04 |
 | **Routing Policy** | The active, versioned set of rules determining which acquirer(s) a `PaymentIntent` is routed to, and in what fallback order. | BC-05 |
 | **Payment Intent** | The aggregate root representing a single attempted payment through its full lifecycle (Created → Authorized → Captured/Failed/Refunded). | BC-05 |
 | **Settlement Record** | A normalized representation of a single settled-transaction line from an acquirer's settlement file/webhook. | BC-09 |
 | **Settlement Batch** | The aggregate root representing one ingested settlement file/batch and its matching outcome against `PaymentIntent`s. | BC-09 |
 | **Reconciliation Exception** | A `SettlementRecord` that could not be automatically matched to a `PaymentIntent`. | BC-09 |
 | **Chargeback Case** | The aggregate root tracking a dispute from receipt through representment to final outcome. | BC-10 |
-| **Sub-Merchant Account** | A merchant onboarded under a Platform/Marketplace Operator tenant, with its own KYB and split-payment configuration. | BC-16 |
-| **Grounding Context (RAG)** | The retrieved set of tenant-scoped documents/events assembled to ground an AI Assistant answer. | BC-12 |
+| **Grounding Context (RAG)** | The retrieved set of documents/events assembled to ground an AI Assistant answer. | BC-12 |
 | **Custody** | Legal/economic control over funds. The platform, by design (Part 1 §6), never acquires custody of merchant/customer funds in any bounded context. | Cross-cutting (Part 1) |
 
 ---
@@ -122,11 +127,11 @@ For each core-domain bounded context, this section defines: purpose, aggregates 
 #### AGG-01: `PaymentIntent` (Aggregate Root)
 
 - **Entities**:
-  - `PaymentIntent` (root) — identity: `payment_intent_id` (ULID, tenant-scoped).
+  - `PaymentIntent` (root) — identity: `payment_intent_id` (UUIDv7).
   - `RoutingAttempt` (entity, child of `PaymentIntent`) — one per acquirer hop attempted (supports failover history, EX-020b idempotency safeguard from Part 2).
 - **Value Objects**:
   - `Money` (amount: integer minor units, currency: ISO 4217 code) — always integer minor units internally to avoid floating-point rounding defects (a hard engineering rule, not a suggestion).
-  - `IdempotencyKey` (tenant-scoped, caller-supplied, required on every mutating command per BR-020-1, Part 2).
+  - `IdempotencyKey` (caller-supplied, required on every mutating command per BR-020-1, Part 2).
   - `AcquirerReference` (acquirer-specific transaction reference string, opaque to the domain model — this is the ACL boundary artifact from BC-04).
   - `DeclineReason` (normalized enum, mapped from acquirer-specific codes by BC-04's ACL — never the raw acquirer code, so routing rules in BC-05 stay acquirer-agnostic per BIZ-010).
 - **State Machine** (simplified): `Created → Authorizing → Authorized → Capturing → Captured → [Refunding → Refunded/PartiallyRefunded]`, with `Authorizing`/`Capturing` able to transition to `Failed` (with terminal `FailedAllRoutes` if every routing hop exhausted) and any authorized-but-uncaptured state able to transition to `Voided` or `AuthorizationExpired`.
@@ -172,33 +177,23 @@ For each core-domain bounded context, this section defines: purpose, aggregates 
 - **Invariants**: **INV-08**: A `ChargebackCase` must always reference exactly one `PaymentIntent` and cannot be created for a `PaymentIntent` that was never `Captured`.
 - **Domain Events**: `EVT-17 ChargebackReceived`, `EVT-18 RepresentmentSubmitted`, `EVT-19 ChargebackResolved`.
 
-### 3.4 BC-16 — Marketplace / Sub-Merchant (H2)
-
-#### AGG-05: `SubMerchantAccount` (Aggregate Root)
-
-- **Entities**: `SplitConfiguration` (versioned, per sub-merchant).
-- **Value Objects**: `SplitPercentage` / `SplitFixedAmount`, `LicensedPartnerReference` (opaque reference to the external partner's own sub-merchant/disbursement account — the ACL boundary artifact for this context, mirroring `AcquirerReference` in BC-05).
-- **Invariants**: **INV-09**: A `SubMerchantAccount` cannot be used in a live split transaction until its own KYB status (via BC-03) is `Approved` *and* the licensed partner confirms its own sub-merchant account is active (dual-approval gate — EX-080a in Part 2).
-- **Domain Events**: `EVT-20 SubMerchantOnboarded`, `EVT-21 SplitConfigurationActivated`, `EVT-22 SplitPaymentRouted`.
-
 ---
 
 ## 4. Domain Event Catalog (Consolidated)
 
-All domain events are versioned, immutable, tenant-scoped, and published to NATS JetStream subjects following the naming convention `events.<bounded_context>.<aggregate>.<event_name>.v<version>` (full subject taxonomy in Part 4). Every event carries a common envelope:
+All domain events are versioned, immutable, and published to NATS JetStream subjects following the naming convention `events.<bounded_context>.<aggregate>.<event_name>.v<version>` (full subject taxonomy in Part 4). Every event carries a common envelope:
 
 ```
 EventEnvelope {
-  event_id: ULID
-  tenant_id: TenantId
+  event_id: UUIDv7
   aggregate_type: string
-  aggregate_id: string
+  aggregate_id: UUIDv7
   event_type: string
   event_version: u16
-  occurred_at: timestamp (UTC)
+  occurred_at: timestamp with 3-digit millisecond precision (UTC, ISO 8601: YYYY-MM-DDTHH:MM:SS.mmmZ)
   actor: ActorReference (user_id | system_actor_id)
-  causation_id: ULID        // the command that caused this event
-  correlation_id: ULID      // ties together a full business transaction across contexts
+  causation_id: UUIDv7        // the command that caused this event
+  correlation_id: UUIDv7      // ties together a full business transaction across contexts
   payload: bytes (protobuf-encoded, schema per event type — Part 10)
 }
 ```
@@ -224,22 +219,30 @@ EventEnvelope {
 | EVT-17 | ChargebackReceived | BC-10 | BC-14, BC-15, BC-12 |
 | EVT-18 | RepresentmentSubmitted | BC-10 | BC-15 |
 | EVT-19 | ChargebackResolved | BC-10 | BC-06 (funds impact note), BC-15 |
-| EVT-20 | SubMerchantOnboarded | BC-16 | BC-15 |
-| EVT-21 | SplitConfigurationActivated | BC-16 | BC-05 (consulted at routing time) |
-| EVT-22 | SplitPaymentRouted | BC-16 | BC-09, BC-15 |
+| EVT-20 | PaymentMethodTokenStored | BC-05 | BC-08 (subscription), BC-15 (analytics) |
+| EVT-21 | PaymentMethodTokenExpired | BC-05 | BC-08, BC-14 (notification) |
+| EVT-22 | PaymentMethodTokenRevoked | BC-05 | BC-08, BC-14 |
+| EVT-23 | RiskScoreAssigned | BC-11 | BC-15 (analytics), BC-12 |
+| EVT-24 | SettlementExpected | BC-09 | BC-15 (analytics) |
+| EVT-25 | SettlementOverdue | BC-09 | BC-14 (alert), BC-15 |
+| EVT-26 | SettlementCompleted | BC-09 | BC-06, BC-08, BC-15 |
+| EVT-27 | FeeVarianceDetected | BC-09 | BC-14 (alert), BC-15 |
+| EVT-28 | FeeVarianceResolved | BC-09 | BC-15 |
+| EVT-29 | WebhookDelivered | Cross-cutting | BC-15 (audit) |
+| EVT-30 | WebhookDeliveryFailed | Cross-cutting | BC-14 (alert), BC-15 |
 
-*(Supporting-context events — Tenant lifecycle, IAM role changes, KYB status changes, notification delivery, document upload/OCR completion — are cataloged in §5 alongside their owning contexts, to keep this table focused on money-movement-relevant events per BIZ-040's audit priority.)*
+*(Supporting-context events — Operator lifecycle, IAM role changes, KYB status changes, notification delivery, document upload/OCR completion — are cataloged in §5 alongside their owning contexts, to keep this table focused on money-movement-relevant events per BIZ-040's audit priority.)*
 
 ---
 
 ## 5. Supporting & Generic Bounded Contexts (Brief)
 
-### 5.1 BC-01 — Tenant Management
-- **Aggregate**: `Tenant` (root), entities: `TenantMember`. Events: `TenantRegistered`, `TenantVerified`, `TenantSuspended`.
-- Owns tenant status used as a **shared kernel value** (`TenantId`, `TenantStatus`) referenced (read-only) by every other context.
+### 5.1 BC-01 — Operator Management
+- **Aggregate**: `Operator` (root), entities: `OperatorMember`. Events: `OperatorRegistered`, `OperatorVerified`, `OperatorSuspended`.
+- Owns operator identity used across all contexts (single-tenant, so operator context is implicit but still modeled for lifecycle management).
 
 ### 5.2 BC-02 — Identity & Access (IAM)
-- **Aggregate**: `Principal` (root — represents a human user or a service account), entities: `RoleAssignment`. Value objects: `Permission`, `Role` (RBAC), `AttributeCondition` (ABAC, e.g., "can approve reconciliation exceptions only up to X amount" — ties to OQ-006, Part 2).
+- **Aggregate**: `Principal` (root — represents a human user or a service account), entities: `RoleAssignment`. Value objects: `Permission`, `Role` (role-based grouping), `AccessCondition` (attribute-based conditions, e.g., "can approve reconciliation exceptions only up to X amount" — ties to OQ-006, Part 2, resolved in Part 8 §2.2 ABAC-001).
 - Events: `PrincipalCreated`, `RoleAssigned`, `PermissionDenied` (yes, denials are also events — required for security audit per Part 8).
 
 ### 5.3 BC-03 — Merchant Compliance (KYB)
@@ -256,7 +259,7 @@ EventEnvelope {
 - **Aggregate**: `Subscription` (root), entities: `BillingCycle`. Event-sourced given dispute-relevance of full billing history. Events: `SubscriptionCreated`, `SubscriptionRenewed`, `SubscriptionRenewalFailed`, `SubscriptionDunningExhausted`, `SubscriptionCancelled`.
 
 ### 5.7 BC-11 — Fraud & Risk Scoring
-- **Aggregate**: `RiskAssessment` (root, linked 1:1 with a `PaymentIntent`). MVP is rule-based (heuristic scoring); H3 introduces ML-based scoring (GOAL-009 adjacent). Events: `RiskAssessmentCompleted`, `TransactionFlaggedHighRisk`.
+- **Aggregate**: `RiskAssessment` (root, linked 1:1 with a `PaymentIntent`). initial launch is rule-based (heuristic scoring); Phase 3 introduces ML-based scoring (GOAL-009 adjacent). Events: `RiskAssessmentCompleted`, `TransactionFlaggedHighRisk`.
 
 ### 5.8 BC-12 — AI Payment Assistant (RAG)
 - Not an aggregate-owning transactional context; modeled as a **query-side, read-only context** with its own internal state limited to: `ConversationSession`, `GroundingCitation` records (for audit per BIZ-023), and retrieval indices (BGE-M3 embeddings + OpenSearch). Full design in Part 6.
@@ -276,9 +279,10 @@ EventEnvelope {
 
 - **PRIN-01 (Consistency boundary = transaction boundary)**: Each aggregate is the sole authority for its own invariants; a single command can mutate exactly one aggregate instance transactionally. Cross-aggregate effects happen via domain events consumed asynchronously (never a distributed transaction spanning two aggregates).
 - **PRIN-02 (Small aggregates)**: Aggregates are kept as small as correctness allows (e.g., `PaymentIntent` does not embed `Invoice` — they reference each other by ID) to minimize contention and keep event streams focused.
-- **PRIN-03 (Tenant scoping is structural, not incidental)**: Every aggregate ID is a composite/prefixed key that includes `tenant_id`; no repository method exists that can load an aggregate without a tenant context in scope (enforced at the Rust type-system level in Part 4 — a `TenantScoped<T>` wrapper type that cannot be constructed without an authenticated tenant context).
+- **PRIN-03 (UUIDv7 for all identities)**: Every aggregate, entity, and domain event uses UUIDv7 (RFC 9562) as its primary identifier. UUIDv7 is time-ordered (timestamp-prefixed), providing sequential insert performance on B-tree indexes while retaining the distributed-generation benefits of UUIDs. No UUIDv4, ULID, or other ID formats are used. All ID generation uses the `uuid_v7()` function (Rust: `uuid::Uuid::now_v7()`, Go: `github.com/google/uuid.New()`). This is enforced at the type-system level — aggregate ID types are `Uuid` (Rust) / `uuid.UUID` (Go) with no ID generation in application code outside the designated factory functions.
 - **PRIN-04 (Money is never a float)**: All `Money` value objects use integer minor-unit representation; currency conversion, where it appears at all (BIZ-016), is always an explicit, recorded operation producing a new `Money` value with provenance (rate, source, timestamp), never an implicit cast.
-- **PRIN-05 (Events are the audit log; there is no separate bolt-on audit table for event-sourced contexts)**: For BC-05, BC-09, BC-10, BC-08, BC-16, the event stream *is* the audit trail (BIZ-040). For non-event-sourced supporting contexts (BC-01, BC-02, BC-13, BC-14), a lighter-weight append-only audit log table captures command execution (actor, timestamp, before/after) without full event sourcing overhead, since replay/rebuild-from-events is not a requirement for those contexts.
+- **PRIN-05 (Events are the audit log; there is no separate bolt-on audit table for event-sourced contexts)**: For BC-05, BC-09, BC-10, BC-08, the event stream *is* the audit trail (BIZ-040). For non-event-sourced supporting contexts (BC-01, BC-02, BC-13, BC-14), a lighter-weight append-only audit log table captures command execution (actor, timestamp, before/after) without full event sourcing overhead, since replay/rebuild-from-events is not a requirement for those contexts.
+- **PRIN-06 (All timestamps use 3-digit millisecond precision)**: Every timestamp in the system (domain events, audit logs, API responses, database columns, webhook payloads) uses ISO 8601 format with 3-digit millisecond precision (`YYYY-MM-DDTHH:MM:SS.mmmZ`). This is enforced at the type level: Rust `DateTimeWithTimeZone` and Go `time.Time` both store sub-second precision. The millisecond precision is critical for: (1) event ordering within the same second on high-throughput streams, (2) latency measurement accuracy on the checkout path, and (3) forensic audit trail granularity. No timestamp field anywhere in the system truncates to seconds or minutes.
 
 ---
 
@@ -296,7 +300,6 @@ EventEnvelope {
 |---|---|---|---|
 | Acquirer Connector ACL | BC-05's domain model | Each connected acquirer/PSP | Part 7 |
 | KYB Partner ACL | BC-03's domain model | External KYB/AML decisioning API | Part 8 |
-| Split-Disbursement Partner ACL | BC-16's domain model | Licensed marketplace-split partner | Part 5 (marketplace addendum) |
 | Bank Settlement File ACL | BC-09's domain model | Bank/acquirer settlement file formats (varied) | Part 9 |
 
 ---
@@ -322,54 +325,141 @@ The SRS describes event-driven cross-service coordination but never explicitly d
 | SAGA-03 | Reconciliation Resolution Saga | `ResolveReconciliationException` | Match → Confirm → Update settlement status | Undo match on confirmation failure |
 | SAGA-04 | Invoice Payment Saga | `InvoiceSent` + payment completion | Create intent → Authorize → Capture → Update invoice | Void intent if invoice cancelled mid-flow |
 
-**Implementation Rule (SAGA-001)**: Each saga is modeled as a durable state machine persisted in its own Postgres `saga_instances` table, keyed by `tenant_id` + `saga_id`. Saga state transitions are recorded as events in a dedicated `saga_events` stream, providing audit trails consistent with PRIN-05. No saga relies on in-memory state — crash recovery replays the saga event stream to rebuild current state.
+**Implementation Rule (SAGA-001)**: Each saga is modeled as a durable state machine persisted in its own Postgres `saga_instances` table, keyed by `saga_id`. Saga state transitions are recorded as events in a dedicated `saga_events` stream, providing audit trails consistent with PRIN-05. No saga relies on in-memory state — crash recovery replays the saga event stream to rebuild current state.
 
-**Saga Instance Schema:**
+**Saga Instance Entity (SeaORM — Rust):**
 
-```sql
-CREATE TABLE saga_instances (
-    tenant_id       UUID NOT NULL,
-    saga_id         UUID NOT NULL,
-    saga_type       TEXT NOT NULL,
-    aggregate_id    UUID NOT NULL,       -- the primary aggregate this saga operates on
-    status          TEXT NOT NULL,       -- 'running' | 'completed' | 'compensating' | 'failed'
-    current_step    TEXT NOT NULL,
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
-    PRIMARY KEY (tenant_id, saga_id)
-);
+```rust
+use sea_orm::entity::prelude::*;
+
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
+#[sea_orm(table_name = "saga_instances")]
+pub struct Model {
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub saga_id: Uuid,
+    pub saga_type: String,
+    pub aggregate_id: Uuid,
+    pub status: String,       // 'running' | 'completed' | 'compensating' | 'failed'
+    pub current_step: String,
+    pub created_at: DateTimeWithTimeZone,
+    pub updated_at: DateTimeWithTimeZone,
+}
+
+#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+pub enum Relation {}
+
+impl ActiveModelBehavior for ActiveModel {}
 ```
 
 **Design Principle (SAGA-002)**: Sagas never hold custody of funds (consistent with Part 1 §6). A saga's compensation logic for payment flows is always "revert the orchestration state machine" (void, cancel), never "move funds back through a platform-controlled account."
 
-### 9.2 Outbox Pattern (Transactional Outbox)
+**Design Principle (SAGA-003)**: Saga steps must be idempotent — compensation actions (void, cancel) must detect and skip already-completed operations rather than failing on duplicate execution. This is enforced by checking the target aggregate's current state before executing the compensation action.
+
+**Design Principle (SAGA-004)**: Saga steps have configurable timeouts (default: 30 seconds for synchronous steps, 5 minutes for async steps). When a step times out, the saga transitions to `Compensating` state and triggers compensation for all completed steps. Timeout values are part of the saga configuration, not hardcoded.
+
+**Design Principle (SAGA-005)**: Concurrent sagas operating on the same aggregate are detected via optimistic concurrency control (Part 5 CONC-001) — if two sagas attempt to mutate the same PaymentIntent, one will fail the concurrency check and must retry after reloading the aggregate state.
+
+### 9.2 Maker/Checker Pattern (Dual-Control Approval)
+
+For bank-grade operational safety, the following operations require a Maker/Checker workflow — a two-person approval process where the Maker initiates a change and a Checker (a different authorized principal) reviews and approves it before the change takes effect.
+
+**Implementation Rule (MKCK-001)**: Every Maker/Checker workflow is modeled as a `PendingChange` aggregate:
+
+```rust
+// SeaORM entity (Rust)
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
+#[sea_orm(table_name = "pending_changes")]
+pub struct Model {
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub change_id: Uuid,           // UUIDv7
+    pub change_type: String,       // e.g., 'routing_policy', 'acquirer_credential', 'refund'
+    pub maker_id: Uuid,            // principal who initiated
+    pub checker_id: Option<Uuid>,  // principal who approved (null until approved)
+    pub payload: Vec<u8>,          // protobuf-encoded proposed change
+    pub status: String,            // 'pending' | 'approved' | 'rejected' | 'expired'
+    pub maker_note: Option<String>,
+    pub checker_note: Option<String>,
+    pub requested_at: DateTimeWithTimeZone,
+    pub reviewed_at: Option<DateTimeWithTimeZone>,
+    pub expires_at: DateTimeWithTimeZone,  // auto-expire after 48 hours
+    pub created_at: DateTimeWithTimeZone,
+}
+```
+
+**Maker/Checker History Entity:**
+
+```rust
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
+#[sea_orm(table_name = "change_history")]
+pub struct Model {
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub history_id: Uuid,          // UUIDv7
+    pub change_id: Uuid,           // references pending_changes.change_id
+    pub action: String,            // 'created' | 'approved' | 'rejected' | 'expired' | 'executed'
+    pub actor_id: Uuid,
+    pub note: Option<String>,
+    pub timestamp: DateTimeWithTimeZone,
+    pub snapshot_before: Option<Vec<u8>>,  // protobuf-encoded state before change
+    pub snapshot_after: Option<Vec<u8>>,   // protobuf-encoded state after change
+}
+```
+
+**Operations requiring Maker/Checker:**
+
+| Operation | Change Type | Checker Role | Timeout |
+|---|---|---|---|
+| Routing Policy activation | `routing_policy` | Admin | 48 hours |
+| Acquirer credential changes | `acquirer_credential` | Admin | 24 hours |
+| Refund above threshold | `refund` | Finance Operator (dual-control) | 12 hours |
+| Settlement exception resolution | `settlement_resolution` | Finance Operator | 24 hours |
+| API key generation (Admin role) | `api_key` | Admin (self-approval not allowed) | 48 hours |
+| User role elevation | `role_assignment` | Admin | 24 hours |
+| KEK/secret rotation | `secret_rotation` | Security Admin | 12 hours |
+| AML alert resolution | `aml_resolution` | Compliance Reviewer | 24 hours |
+| Subscription plan changes | `subscription_plan` | Admin | 48 hours |
+
+**Design Principle (MKCK-002)**: The Maker and Checker must be different principals — self-approval is never allowed. This is enforced at the command-validation layer: the `ApprovePendingChange` command validates that `checker_id != maker_id`.
+
+**Design Principle (MKCK-003)**: Pending changes auto-expire after their configured timeout if not reviewed. Expired changes are logged in `change_history` with action `'expired'` and must be re-initiated by a Maker.
+
+**Design Principle (MKCK-004)**: Every approval, rejection, and expiry is recorded in `change_history` with full before/after state snapshots (for the aggregate being modified), providing a complete audit trail of who changed what, when, and why — satisfying BIZ-040's immutable audit requirement.
+
+**Design Principle (MKCK-005)**: The Maker/Checker pattern applies to the *configuration/command* layer only, not to runtime event-driven state transitions. For example, a routing policy change goes through Maker/Checker, but the PaymentIntent state transitions (authorize → capture → settle) follow the normal event-sourced state machine without approval gates — those are automated business processes, not human-initiated configuration changes.
+
+### 9.3 Outbox Pattern (Transactional Outbox)
 
 Event publishing reliability requires the Transactional Outbox pattern to guarantee that domain events are published to NATS JetStream if and only if the corresponding aggregate state change commits to Postgres.
 
-**Event Store Modification**: Every event-sourced context's event append operation writes to both the `event_store` table AND an `outbox` table within the same Postgres transaction:
+**Outbox Entity (SeaORM — Rust):**
 
-```sql
-CREATE TABLE outbox (
-    tenant_id       UUID NOT NULL,
-    outbox_id       UUID NOT NULL,
-    aggregate_type  TEXT NOT NULL,
-    aggregate_id    UUID NOT NULL,
-    event_type      TEXT NOT NULL,
-    event_version   SMALLINT NOT NULL,
-    payload         BYTEA NOT NULL,     -- same protobuf-encoded EventEnvelope as event_store
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
-    published_at    TIMESTAMPTZ NULL,   -- set by the relay process after NATS publish confirms
-    PRIMARY KEY (tenant_id, outbox_id)
-);
+```rust
+use sea_orm::entity::prelude::*;
 
-CREATE INDEX outbox_unpublished_idx ON outbox (tenant_id, created_at) WHERE published_at IS NULL;
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
+#[sea_orm(table_name = "outbox")]
+pub struct Model {
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub outbox_id: Uuid,
+    pub aggregate_type: String,
+    pub aggregate_id: Uuid,
+    pub event_type: String,
+    pub event_version: i16,
+    pub payload: Vec<u8>,       // protobuf-encoded EventEnvelope
+    pub created_at: DateTimeWithTimeZone,
+    pub published_at: Option<DateTimeWithTimeZone>,
+}
+
+#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+pub enum Relation {}
+
+impl ActiveModelBehavior for ActiveModel {}
 ```
 
-**Relay Process (OUTBOX-001)**: A dedicated relay process (implemented within each event-sourced service, not a separate microservice for MVP) polls unpublished outbox entries, publishes to NATS JetStream, and marks them published. The relay runs at sub-second polling intervals to minimize propagation lag. On crash recovery, the relay resumes from the last unconfirmed publish — at-least-once delivery is guaranteed; exactly-once effect is achieved at the consumer level per Part 4 §4.2.
+**Relay Process (OUTBOX-001)**: A dedicated relay process (implemented within each event-sourced service, not a separate microservice for initial launch) polls unpublished outbox entries, publishes to NATS JetStream, and marks them published. The relay runs at sub-second polling intervals to minimize propagation lag. On crash recovery, the relay resumes from the last unconfirmed publish — at-least-once delivery is guaranteed; exactly-once effect is achieved at the consumer level per Part 4 §4.2.
 
 **Why this matters for BIZ-040/PRIN-05**: Without the outbox pattern, a crash between Postgres commit and NATS publish would silently lose domain events, breaking the "event stream IS the audit log" claim. The outbox table is the durable bridge.
 
-### 9.3 Circuit Breaker Pattern
+### 9.4 Circuit Breaker Pattern
 
 **CB-001 (Acquirer Circuit Breaker)**: `connector-gateway` maintains per-connector circuit breakers. When a connector's error rate exceeds a configurable threshold (e.g., >50% error rate over a 30-second window), the circuit opens and `orchestration-service` routing logic automatically skips that connector for the duration of the open window, avoiding cascading latency degradation on the checkout path.
 
@@ -377,7 +467,7 @@ CREATE INDEX outbox_unpublished_idx ON outbox (tenant_id, created_at) WHERE publ
 
 **CB-003 (Bulkhead per Connector)**: Each acquirer adapter within `connector-gateway` has its own connection pool and timeout budget, isolated from other adapters. A hanging TCP connection to one acquirer cannot starve connection pool resources for other acquirers.
 
-### 9.4 Retry with Exponential Backoff + Jitter
+### 9.5 Retry with Exponential Backoff + Jitter
 
 **RETRY-001**: All external-system calls (acquirer APIs, webhook delivery to merchants, settlement file polling) use exponential backoff with jitter:
 - Initial delay: configurable per integration (acquirer: 100ms, webhook delivery: 1s, settlement poll: 5min)
@@ -388,7 +478,7 @@ CREATE INDEX outbox_unpublished_idx ON outbox (tenant_id, created_at) WHERE publ
 
 **RETRY-002**: Internal service-to-service gRPC calls use a lighter retry policy (1 retry, fixed 100ms delay, only on UNAVAILABLE/DEADLINE_EXCEEDED — never on INVALID_ARGUMENT or PERMISSION_DENIED).
 
-### 9.5 Soft-Delete and Archival Strategy
+### 9.6 Soft-Delete and Archival Strategy
 
 **ARCH-001**: Aggregates in terminal states (`PaymentIntent` in `Captured`/`Refunded`/`Voided`/`Failed`/`AuthorizationExpired`, `Invoice` in `Paid`/`Cancelled`, `Subscription` in `Cancelled`) are candidates for archival after a configurable retention period (default: 90 days in hot store). Archival moves the aggregate's event stream from `event_store` to a cold-storage table (`event_store_archive`) with the same schema but on a separate tablespace.
 
@@ -396,43 +486,289 @@ CREATE INDEX outbox_unpublished_idx ON outbox (tenant_id, created_at) WHERE publ
 
 **ARCH-003**: Read-model projections for archived aggregates are maintained indefinitely, but the underlying event streams are only rehydrated on demand for compliance/audit purposes.
 
-### 9.6 Tenant Provisioning Orchestration
+### 9.7 Provisioning Orchestration
 
-**PROV-001**: Tenant onboarding (UC-001) triggers a provisioning saga that creates all required per-tenant infrastructure: Postgres schema/role, MinIO bucket, OpenSearch index, Redis key prefix namespace, NATS stream consumer configuration.
+**PROV-001**: Operator onboarding (UC-001) triggers a provisioning saga that creates all required infrastructure: Postgres schema/role, MinIO bucket, OpenSearch index, Redis key prefix namespace, NATS stream consumer configuration.
 
-**PROV-002**: Provisioning is idempotent — re-running the provisioning saga for an already-provisioned tenant is a no-op (checked via `tenant.provisioned_at` timestamp).
+**PROV-002**: Provisioning is idempotent — re-running the provisioning saga for an already-provisioned operator is a no-op (checked via `operator.provisioned_at` timestamp).
 
 **PROV-003**: Tenant suspension disables live processing but retains all data for audit compliance (AUD-001). Deprovisioning (data deletion) is deferred pending OQ-019 legal confirmation.
 
-### 9.7 API Key Scoping to Acquirer Links
+### 9.8 API Key Scoping to Acquirer Links
 
 **APIKEY-001**: In addition to role-based permission scoping (Part 8 §2.1), API keys can optionally be scoped to specific `MerchantAcquirerLink` IDs, so that a merchant integration for a specific acquirer can only interact with that acquirer's data, following the principle of least privilege.
 
-### 9.8 Global Tenant Event Ordering
+### 9.9 Global Event Ordering
 
-**EVT-ORDER-001**: For use cases requiring cross-aggregate chronological ordering (AI Assistant summary documents, analytics dashboards), a per-tenant global event sequence is assigned by a lightweight `tenant_event_counter` table incremented atomically alongside event store appends:
+**EVT-ORDER-001**: For use cases requiring cross-aggregate chronological ordering (AI Assistant summary documents, analytics dashboards), a global event sequence is assigned by a lightweight `event_counter` table incremented atomically alongside event store appends:
 
-```sql
-CREATE TABLE tenant_event_counter (
-    tenant_id       UUID PRIMARY KEY,
-    next_sequence   BIGINT NOT NULL DEFAULT 0
-);
+**Event Counter Entity (SeaORM — Rust):**
+
+```rust
+use sea_orm::entity::prelude::*;
+
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
+#[sea_orm(table_name = "event_counter")]
+pub struct Model {
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub id: i32,               // always 1 (singleton row)
+    pub next_sequence: i64,
+}
 ```
 
 This counter is NOT used for aggregate consistency (that's `event_sequence`); it's purely a read-model concern for cross-aggregate ordering.
 
 ---
 
-## 10. Traceability to Part 1 / Part 2
+## 10. Gap Analysis Additions — Missing Design Patterns
+
+### 10.1 Saga Compensation Ordering & State Machine (Extends §9.1)
+
+The saga definition in §9.1 provides principles (SAGA-001 through SAGA-005) but lacks the operational state machine and compensation execution semantics required for implementation.
+
+**Saga State Machine:**
+
+```
+created → running → completed | compensating → compensated | failed → requires_manual_intervention
+```
+
+**Compensation Execution Rules:**
+
+- **SAGA-006 (Reverse-Order Compensation)**: Compensation steps execute in strict reverse order of forward steps (stack-based). If forward steps were [A, B, C] and C fails, compensation runs [B_compensate, A_compensate] — never parallel, never skip.
+- **SAGA-007 (Compensation Retry)**: Compensation steps retry up to 3 times with exponential backoff (100ms, 400ms, 1600ms). If all retries fail, the saga transitions to `requires_manual_intervention` and an alert is raised to ACT-07.
+- **SAGA-008 (Step Timeout Detection)**: A background sweep job (similar to JOB-007/008 in Part 5) checks `saga_instances` for steps in `in_progress` state longer than their configured timeout (SAGA-004). On timeout, the saga transitions to `Compensating` and triggers reverse-order compensation.
+- **SAGA-009 (Compensation Idempotency)**: Compensation actions use a compensation-specific `IdempotencyKey` derived from `saga_id + step_number`. The target service's command handler checks: if the aggregate is already in the target state (e.g., already `Voided`), the compensation command returns success without re-executing the operation. This is handled by state-machine transition guards, not a generic retry wrapper.
+
+**Saga Instance Entity — Extended Fields (SeaORM — Rust):**
+
+```rust
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
+#[sea_orm(table_name = "saga_instances")]
+pub struct Model {
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub saga_id: Uuid,
+    pub saga_type: String,
+    pub aggregate_id: Uuid,
+    pub status: String,       // 'created' | 'running' | 'completed' | 'compensating' | 'compensated' | 'failed' | 'requires_manual_intervention'
+    pub current_step: String,
+    pub steps_completed: Vec<String>,  // JSON array of completed step IDs
+    pub steps_compensated: Vec<String>, // JSON array of compensated step IDs
+    pub compensation_attempts: i32,
+    pub max_compensation_retries: i32, // default: 3
+    pub created_at: DateTimeWithTimeZone,
+    pub updated_at: DateTimeWithTimeZone,
+    pub deadline_at: Option<DateTimeWithTimeZone>, // overall saga deadline
+}
+```
+
+**Saga Step Definition:**
+
+```rust
+pub struct SagaStep {
+    pub step_id: String,
+    pub command: Box<dyn DynCommand>,        // forward command
+    pub compensation: Box<dyn DynCommand>,   // compensation command
+    pub timeout: Duration,                   // per-step timeout
+    pub idempotency_key_fn: Box<dyn Fn(&SagaInstance) -> IdempotencyKey>,
+}
+```
+
+### 10.2 Double-Entry Ledger Pattern (BC-09 Extension)
+
+Even for a non-custodial orchestration platform, a double-entry sub-ledger provides mathematical verification that every settlement record has a corresponding payment intent, and every fee deduction is accounted for.
+
+**LedgerEntry Aggregate (BC-09 — SeaORM — Rust):**
+
+```rust
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
+#[sea_orm(table_name = "ledger_entry")]
+pub struct Model {
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub entry_id: Uuid,                // UUIDv7
+    pub transaction_id: Uuid,          // links to PaymentIntent
+    pub entry_type: String,            // 'authorization' | 'capture' | 'settlement' | 'fee' | 'refund' | 'fx_adjustment'
+    pub debit_amount_minor_units: i64,
+    pub credit_amount_minor_units: i64,
+    pub currency: String,              // CHAR(3) ISO 4217
+    pub balance_before_minor_units: i64,
+    pub balance_after_minor_units: i64,
+    pub entry_date: DateTimeWithTimeZone,
+    pub source_acquirer: String,
+    pub reconciliation_batch_id: Option<Uuid>,
+    pub reconciled: bool,
+    pub created_at: DateTimeWithTimeZone,
+}
+```
+
+**Invariant (INV-10)**: Every `SettlementRecord` ingestion creates balanced debit/credit `LedgerEntry` pairs. The sum of all `debit_amount_minor_units` minus `credit_amount_minor_units` for a given `transaction_id` must equal zero (mathematical proof of balanced books).
+
+**Domain Events**: `EVT-20 LedgerEntryCreated`, `EVT-21 LedgerEntryReconciled`
+
+**LedgerBalance Materialized View (Postgres):**
+
+```sql
+CREATE MATERIALIZED VIEW ledger_balance_mv AS
+SELECT
+    source_acquirer,
+    currency,
+    DATE(entry_date) AS balance_date,
+    SUM(credit_amount_minor_units - debit_amount_minor_units) AS net_balance,
+    COUNT(*) AS entry_count,
+    COUNT(*) FILTER (WHERE NOT reconciled) AS unreconciled_count
+FROM ledger_entry
+GROUP BY source_acquirer, currency, DATE(entry_date);
+```
+
+### 10.3 Reconciliation Matching Algorithm Pattern (BC-09 Extension)
+
+Real-world reconciliation requires multi-strategy matching beyond exact acquirer-reference lookup.
+
+**ReconciliationMatcher — Chain of Responsibility:**
+
+```rust
+pub enum MatchStrategy {
+    Exact { confidence: f64 },           // 100% — acquirer ref → payment_intent_id
+    Fuzzy { confidence_range: (f64, f64) }, // 70-99% — amount ± fee tolerance + date proximity
+    AiAssisted { confidence_range: (f64, f64) }, // 50-70% — vector similarity over attributes
+}
+
+pub struct ReconciliationMatcher {
+    strategies: Vec<Box<dyn MatchStrategyImpl>>,
+    auto_confirm_threshold: f64,    // default: 0.95
+    review_threshold: f64,          // default: 0.70
+}
+```
+
+**Matching Rules:**
+
+| Strategy | Inputs | Confidence | Action |
+|---|---|---|---|
+| Exact | acquirer_reference → payment_intent_id | 100% | Auto-confirm |
+| Amount+Date Fuzzy | amount ± acquirer_fee_tolerance AND date within ±2 days AND partial reference match | 70-99% | Queue for human review if < auto_confirm_threshold |
+| AI-Assisted | vector similarity over (amount, date, card_last_four, currency) | 50-70% | Queue for human review (BR-041-1: AI suggests, human confirms) |
+| No Match | — | < 50% | Flag as `UnmatchedSettlementRecord` for manual investigation |
+
+**Per-Acquirer Configuration:**
+
+```rust
+pub struct AcquirerReconciliationConfig {
+    pub connector_id: String,
+    pub amount_fee_tolerance_percent: f64,   // default: 5.0
+    pub date_tolerance_days: i32,            // default: 2
+    pub reference_format_pattern: String,     // regex for expected format
+    pub auto_confirm_threshold: f64,         // default: 0.95
+    pub enable_ai_assisted: bool,            // default: true
+}
+```
+
+### 10.4 Fee Breakdown Tracking (BC-09 Extension)
+
+**FeeBreakdown Value Object (Part 3 §3.2 extension):**
+
+```rust
+pub struct FeeBreakdown {
+    pub interchange_fee_minor_units: i64,
+    pub scheme_fee_minor_units: i64,
+    pub acquirer_markup_minor_units: i64,
+    pub processing_fee_minor_units: i64,
+    pub total_fee_minor_units: i64,
+    pub fee_currency: String,
+}
+```
+
+Extended `SettlementRecord` to include `FeeBreakdown` as an optional field (not all acquirers report fee breakdowns). Fee data feeds into Phase 3 cost-based routing (GOAL-009) and merchant fee analytics dashboard (UC-070).
+
+### 10.5 Out-of-Order Event Handling
+
+**EVT-ORDER-002**: Projections consuming from NATS JetStream must handle out-of-order delivery within a single aggregate's event stream. Each consumer tracks `last_processed_sequence` per aggregate. Out-of-order events are buffered and applied in sequence-number order. A gap-detection mechanism triggers re-fetch from the event store when a gap exceeds a configurable threshold (default: 100 missing sequences).
+
+### 10.6 Cross-Service Idempotency Key Propagation
+
+**IDEMP-001**: Internal service-to-service gRPC calls carry an `Idempotency-Key` in call metadata, derived from the originating command's key plus a service-specific suffix: `{command_id}:{source_service}:{target_service}`.
+
+**IDEMP-002**: Each service maintains its own idempotency cache (Redis) scoped to its own operations. The `orchestration-service` accepts idempotency keys from both external (merchant) and internal (invoice/subscription services) sources, storing the key source for audit.
+
+**IDEMP-003**: Cross-service idempotency keys are documented in the `.proto` service definitions (Part 10) as required metadata fields.
+
+---
+
+## 11. Gap Analysis Additions — Round 2
+
+### 11.1 Exhaustive Invalid State Transition Rejection Table
+
+**PAY-TRANS-001**: Every `(current_state, command)` pair NOT in the valid transition table (Part 5 §2.2) must be explicitly rejected with a deterministic error code. This is essential for TDD — developers must know what to test against.
+
+| Current State | Command | Rejection Error |
+|---|---|---|
+| `Failed` / `FailedAllRoutes` | `CapturePaymentIntent` | `PAYMENT_INTENT_FAILED` |
+| `Failed` / `FailedAllRoutes` | `VoidPaymentIntent` | `PAYMENT_INTENT_FAILED` |
+| `Voided` | `CapturePaymentIntent` | `PAYMENT_INTENT_VOIDED` |
+| `Voided` | `RefundPaymentIntent` | `PAYMENT_INTENT_VOIDED` |
+| `AuthorizationExpired` | `CapturePaymentIntent` | `AUTHORIZATION_EXPIRED` |
+| `AuthorizationExpired` | `VoidPaymentIntent` | `AUTHORIZATION_EXPIRED` |
+| `Captured` (full) | `CapturePaymentIntent` | `PAYMENT_INTENT_ALREADY_CAPTURED` |
+| `Captured` | `AuthorizePaymentIntent` | `PAYMENT_INTENT_ALREADY_CAPTURED` |
+| `Refunded` (full) | `RefundPaymentIntent` | `PAYMENT_INTENT_FULLY_REFUNDED` |
+| `Refunded` | `CapturePaymentIntent` | `PAYMENT_INTENT_FULLY_REFUNDED` |
+| `Authorizing` | `CapturePaymentIntent` | `PAYMENT_INTENT_AUTHORIZING` |
+| `Authorizing` | `VoidPaymentIntent` | `PAYMENT_INTENT_AUTHORIZING` |
+| `Capturing` | `VoidPaymentIntent` | `PAYMENT_INTENT_CAPTURING` |
+| `Capturing` | `RefundPaymentIntent` | `PAYMENT_INTENT_CAPTURING` |
+| `Created` | `CapturePaymentIntent` | `PAYMENT_INTENT_NOT_AUTHORIZED` |
+| `Created` | `VoidPaymentIntent` | `PAYMENT_INTENT_NOT_AUTHORIZED` |
+| `Created` | `RefundPaymentIntent` | `PAYMENT_INTENT_NOT_AUTHORIZED` |
+
+**PAY-TRANS-002**: The `Authorized` state after a partial capture can still accept `CapturePaymentIntent` (for remaining amount) but cannot accept `VoidPaymentIntent` (INV-01: cannot void after any capture).
+
+### 11.2 Partial Capture Invariant Extension
+
+**INV-01a**: The sum of all `PaymentPartiallyCaptured` amounts plus the final `PaymentCaptured` amount for a `PaymentIntent` must never exceed its `authorized_amount`. Enforced via optimistic concurrency (CONC-001): the aggregate reloads, rechecks the running total, and rejects if exceeded.
+
+**INV-01b**: When `supports_partial_capture = false` (Part 7 CONN-003), `CapturePaymentIntent` must request the full authorized amount or reject with `PARTIAL_CAPTURE_NOT_SUPPORTED`.
+
+**INV-01c**: Maximum number of partial captures per authorization is configurable per connector (default: 10). Exceeding the limit rejects with `MAX_PARTIAL_CAPTURES_EXCEEDED`.
+
+### 11.3 Refund Edge Case Extensions
+
+**REFUND-EDGE-003**: Refund of a zero-amount authorization (card verification, Part 5 §9.4 ZERO-AUTH-001) is rejected synchronously with `ZERO_AMOUNT_NOT_REFUNDABLE`.
+
+**REFUND-EDGE-004**: Refund after settlement is permitted (the acquirer handles actual fund movement), but the platform logs a `RefundAfterSettlement` event with a `settlement_status` field for audit visibility.
+
+**REFUND-SEC-001**: Concurrent refund requests: a `SELECT FOR UPDATE` on the `PaymentIntent` aggregate before the balance check prevents TOCTOU race conditions where two concurrent refunds both pass the balance check individually but together exceed the refundable amount.
+
+### 11.4 Subscription Cancellation Race Prevention
+
+**INV-SUB-01**: A `Subscription` cannot transition to `Cancelled` while a renewal saga is in `running` state for that subscription. The cancellation command must first signal the saga to transition to `Compensating` (via `SubscriptionCancelledDuringRenewal` domain event on BC-08), then wait for the saga to confirm compensation before completing cancellation.
+
+**JOB-011**: Each subscription renewal generates a deterministic idempotency key derived from `{subscription_id}:{billing_cycle_id}`. The `CreatePaymentIntent` command checks this key (Part 5 §4.1) and returns the existing `PaymentIntent` if one already exists for this cycle, preventing double-renewal regardless of scheduler race conditions.
+
+### 11.5 Invoice Duplicate Prevention
+
+**INV-INV-01**: An `Invoice` aggregate enforces a uniqueness invariant on `(operator_id, order_reference)` where `order_reference` is the merchant's external order ID. If `CreateInvoice` is called with an order reference that already has a non-`Cancelled` invoice, the command is rejected with `DUPLICATE_ORDER_INVOICE`.
+
+### 11.6 Payment Link Expiry
+
+**PLINK-001**: Payment links have a configurable expiry (default: 30 days). Expired links return HTTP 410 Gone on the hosted checkout page. A daily job transitions expired `PaymentLink`s to `Expired` status (matching Part 3 §5.5 domain event `PaymentLinkExpired`).
+
+**PLINK-SEC-001**: Payment link URL tokens are cryptographically random with 128-bit minimum entropy (prevents enumeration attacks).
+
+**PLINK-SEC-002**: Hosted payment page displays only minimum checkout information — no merchant admin context, no session cookies from admin domain.
+
+### 11.7 Double-Entry Ledger Balance Verification
+
+**LEDGER-VERIFY-001**: A daily background job scans `ledger_entry` for any `transaction_id` where `SUM(debit_amount_minor_units) - SUM(credit_amount_minor_units) != 0`. Imbalanced entries are flagged in a `ledger_integrity_exceptions` table and alerted to operations.
+
+---
+
+## 12. Traceability to Part 1 / Part 2
 
 | Part 1/2 Requirement | Enforced By (this Part) |
 |---|---|
 | BIZ-010 (configurable routing, no code change) | BC-05 `RoutingPolicy` aggregate, versioned rules (INV-05) |
-| BIZ-011 (no custody) | Structural absence of any "platform-owned balance" aggregate anywhere in this catalog; BC-16 ACL to licensed partner |
+| BIZ-011 (no custody) | Structural absence of any "platform-owned balance" aggregate anywhere in this catalog |
 | BIZ-012 (failover) | AGG-01 `RoutingAttempt` entity + EVT-02/EVT-06/EVT-07 |
 | BIZ-013 (unified ledger/reconciliation) | BC-09 `SettlementBatch`/`SettlementRecord` |
 | BIZ-020/021/023 (AI grounded, citable, self-hosted) | BC-12 modeled as read-only Conformist with `GroundingCitation` records |
-| BIZ-030 (tenant isolation) | PRIN-03, shared-kernel `TenantId` |
 | BIZ-040 (immutable audit) | Event sourcing discipline (PRIN-05), full envelope in §4 |
 | BR-020-1/INV-02 (no double capture/auth) | AGG-01 invariants INV-01/INV-02 |
 | BR-022-1/INV-03 (refund same acquirer) | AGG-01 invariant INV-03 |
@@ -450,13 +786,13 @@ This counter is NOT used for aggregate consistency (that's `event_sequence`); it
 
 ## 11. Open Items Carried Forward
 
-- **OQ-007**: Confirm whether `RiskAssessment` (BC-11) should be its own bounded context or a value object embedded in `PaymentIntent` once ML-based scoring (H3) is designed in detail — kept separate for now to avoid coupling BC-05's release cadence to fraud-model iteration speed, but should be revisited in Part 5.
+- **OQ-007**: Confirm whether `RiskAssessment` (BC-11) should be its own bounded context or a value object embedded in `PaymentIntent` once ML-based scoring (Phase 3) is designed in detail — kept separate for now to avoid coupling BC-05's release cadence to fraud-model iteration speed, but should be revisited in Part 5.
 - **OQ-008**: Confirm event retention/replay policy in NATS JetStream (how long raw event streams are retained vs. archived to object storage) — affects whether "rebuild aggregate from full event history" remains cheap indefinitely or requires snapshotting; addressed in Part 4/9.
-- **OQ-029**: Finalize saga persistence strategy — whether saga state is stored in the same Postgres database as the aggregate it orchestrates or in a dedicated saga database. Recommended: same database for MVP (simpler transactional guarantees), split later if saga volume warrants it.
+- **OQ-029**: Finalize saga persistence strategy — whether saga state is stored in the same Postgres database as the aggregate it orchestrates or in a dedicated saga database. Recommended: same database for initial launch (simpler transactional guarantees), split later if saga volume warrants it.
 - **OQ-030**: Determine outbox relay polling interval trade-offs — sub-second polling adds Postgres load; consider CDC via Debezium for production scale. Decision deferred to Part 11 capacity planning.
 - **OQ-031**: Finalize circuit breaker thresholds (CB-001 error-rate threshold, open-window duration) against real acquirer failure-mode data from pilot merchants.
 - **OQ-032**: Confirm archival retention period (ARCH-001 default 90 days) against legal/compliance retention floor (Part 8 AUD-001, OQ-018) — archival must not move data out of reach before the retention floor expires.
 
 ---
 
-*End of Part 3. Proceed to Part 4: Microservice Architecture.*
+*End of Part 3. Proceed to Part 4: Architecture & Service Design.*

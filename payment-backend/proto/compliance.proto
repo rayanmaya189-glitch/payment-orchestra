@@ -1,0 +1,150 @@
+// compliance.proto — Protobuf service definition for BC-03 Merchant Compliance
+// AI-Native Payment Orchestration Platform
+
+syntax = "proto3";
+package compliance.v1;
+
+import "common.proto";
+
+// ─── Service ────────────────────────────────────────────────────────────────
+
+service ComplianceService {
+  // Submit KYB evidence documents
+  rpc SubmitKybEvidence(SubmitKybEvidenceRequest) returns (SubmitKybEvidenceResponse);
+  // Review a KYB case (approve/reject)
+  rpc ReviewKybCase(ReviewKybCaseRequest) returns (ReviewKybCaseResponse);
+  // Get KYB case by ID
+  rpc GetKybCase(GetKybCaseRequest) returns (GetKybCaseResponse);
+  // List pending KYB cases
+  rpc ListPendingKybCases(ListPendingKybCasesRequest) returns (ListPendingKybCasesResponse);
+  // AML: scan a transaction for suspicious patterns
+  rpc ScanTransaction(ScanTransactionRequest) returns (ScanTransactionResponse);
+  // AML: list open alerts for an operator
+  rpc ListAmlAlerts(ListAmlAlertsRequest) returns (ListAmlAlertsResponse);
+  // AML: review an AML alert
+  rpc ReviewAmlAlert(ReviewAmlAlertRequest) returns (ReviewAmlAlertResponse);
+}
+
+// ─── KYB Messages ───────────────────────────────────────────────────────────
+
+message SubmitKybEvidenceRequest {
+  string operator_id = 1;
+  repeated string document_ids = 2;
+  string submitted_by = 3;      // principal_id of submitter
+}
+
+message SubmitKybEvidenceResponse {
+  string kyb_case_id = 1;
+  string status = 2;            // "submitted"
+  common.v1.Timestamp submitted_at = 3;
+  int32 document_count = 4;
+}
+
+message ReviewKybCaseRequest {
+  string kyb_case_id = 1;
+  bool approved = 2;
+  string reason = 3;
+  string reviewed_by = 4;
+}
+
+message ReviewKybCaseResponse {
+  string status = 1;            // "approved" | "rejected"
+}
+
+message GetKybCaseRequest {
+  string kyb_case_id = 1;
+}
+
+message GetKybCaseResponse {
+  string kyb_case_id = 1;
+  string operator_id = 2;
+  string status = 3;            // "submitted" | "under_review" | "approved" | "rejected"
+  repeated string document_ids = 4;
+  string rejection_reason = 5;
+  common.v1.Timestamp submitted_at = 6;
+  common.v1.Timestamp resolved_at = 7;
+}
+
+message ListPendingKybCasesRequest {
+  common.v1.PaginationRequest pagination = 1;
+}
+
+message ListPendingKybCasesResponse {
+  repeated GetKybCaseResponse cases = 1;
+  common.v1.PaginationResponse pagination = 2;
+}
+
+// ─── AML Messages ───────────────────────────────────────────────────────────
+
+message ScanTransactionRequest {
+  string transaction_id = 1;
+  string operator_id = 2;
+  int64 amount_minor_units = 3;
+  string currency_code = 4;
+  string payment_method_bin = 5;      // first 6 digits of card
+  string payment_method_id = 6;
+}
+
+message ScanTransactionResponse {
+  repeated AmlAlertProto alerts = 1;
+  bool blocked = 2;
+}
+
+message AmlAlertProto {
+  string alert_id = 1;
+  string alert_type = 2;        // "structuring" | "velocity" | "amount_anomaly" | "rapid_succession"
+  string severity = 3;          // "low" | "medium" | "high" | "critical"
+  string rule_id = 4;
+  string details = 5;
+  int64 created_at_unix_ms = 6;
+}
+
+message ListAmlAlertsRequest {
+  string operator_id = 1;
+  string status_filter = 2;     // optional: "open" | "under_review" | "closed"
+}
+
+message ListAmlAlertsResponse {
+  repeated AmlAlertProto alerts = 1;
+}
+
+message ReviewAmlAlertRequest {
+  string alert_id = 1;
+  string reviewer_id = 2;
+  string decision = 3;          // "escalated" | "closed_false_positive"
+  string notes = 4;
+}
+
+message ReviewAmlAlertResponse {
+  string status = 1;
+}
+
+// ─── Domain Events ──────────────────────────────────────────────────────────
+
+message KybCaseSubmittedEvent {
+  string kyb_case_id = 1;
+  string operator_id = 2;
+  int32 document_count = 3;
+  int64 occurred_at_unix_ms = 4;
+}
+
+message KybCaseApprovedEvent {
+  string kyb_case_id = 1;
+  string operator_id = 2;
+  int64 occurred_at_unix_ms = 3;
+}
+
+message KybCaseRejectedEvent {
+  string kyb_case_id = 1;
+  string operator_id = 2;
+  string reason = 3;
+  int64 occurred_at_unix_ms = 4;
+}
+
+message AmlAlertCreatedEvent {
+  string alert_id = 1;
+  string operator_id = 2;
+  string alert_type = 3;
+  string severity = 4;
+  int64 occurred_at_unix_ms = 5;
+}
