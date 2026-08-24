@@ -2,7 +2,7 @@
 
 use async_trait::async_trait;
 use uuid::Uuid;
-use chrono::{Utc, NaiveDate};
+use chrono::{Datelike, Timelike, Utc};
 
 use crate::domain::*;
 use crate::repository::traits::*;
@@ -236,16 +236,17 @@ where
     // ─── Usage Commands ──────────────────────────────────────────────────────
 
     async fn record_transaction_usage(&self, cmd: RecordTransactionUsageCommand) -> Result<TenantUsage, SaaSbillingError> {
-        let today = Utc::now().date_naive();
-        let period_start = NaiveDate::from_ymd_opt(today.year(), today.month(), 1)
-            .unwrap_or(today);
+        let now = Utc::now();
+        let year = now.year();
+        let month = now.month();
+        let period_start = Utc::now().with_day(1).and_then(|d| d.with_hour(0)).and_then(|d| d.with_minute(0)).and_then(|d| d.with_second(0)).unwrap_or(now);
         
         let mut usage = if let Some(existing) = self.usage_repo.find_by_operator_and_period(cmd.operator_id, period_start).await? {
             existing
         } else {
-            let period_end = NaiveDate::from_ymd_opt(today.year(), today.month() + 1, 1)
-                .unwrap_or(today)
-                .pred_opt().unwrap_or(today);
+            let next_month = if month == 12 { 1 } else { month + 1 };
+            let next_year = if month == 12 { year + 1 } else { year };
+            let period_end = Utc::now().with_year(next_year).and_then(|d| d.with_month(next_month)).and_then(|d| d.with_day(1)).unwrap_or(now);
             TenantUsage::new(cmd.operator_id, period_start, period_end)
         };
 
@@ -256,16 +257,17 @@ where
     }
 
     async fn record_api_call_usage(&self, cmd: RecordApiCallUsageCommand) -> Result<TenantUsage, SaaSbillingError> {
-        let today = Utc::now().date_naive();
-        let period_start = NaiveDate::from_ymd_opt(today.year(), today.month(), 1)
-            .unwrap_or(today);
+        let now = Utc::now();
+        let year = now.year();
+        let month = now.month();
+        let period_start = Utc::now().with_day(1).and_then(|d| d.with_hour(0)).and_then(|d| d.with_minute(0)).and_then(|d| d.with_second(0)).unwrap_or(now);
         
         let mut usage = if let Some(existing) = self.usage_repo.find_by_operator_and_period(cmd.operator_id, period_start).await? {
             existing
         } else {
-            let period_end = NaiveDate::from_ymd_opt(today.year(), today.month() + 1, 1)
-                .unwrap_or(today)
-                .pred_opt().unwrap_or(today);
+            let next_month = if month == 12 { 1 } else { month + 1 };
+            let next_year = if month == 12 { year + 1 } else { year };
+            let period_end = Utc::now().with_year(next_year).and_then(|d| d.with_month(next_month)).and_then(|d| d.with_day(1)).unwrap_or(now);
             TenantUsage::new(cmd.operator_id, period_start, period_end)
         };
 
@@ -276,16 +278,17 @@ where
     }
 
     async fn record_storage_usage(&self, cmd: RecordStorageUsageCommand) -> Result<TenantUsage, SaaSbillingError> {
-        let today = Utc::now().date_naive();
-        let period_start = NaiveDate::from_ymd_opt(today.year(), today.month(), 1)
-            .unwrap_or(today);
+        let now = Utc::now();
+        let year = now.year();
+        let month = now.month();
+        let period_start = Utc::now().with_day(1).and_then(|d| d.with_hour(0)).and_then(|d| d.with_minute(0)).and_then(|d| d.with_second(0)).unwrap_or(now);
         
         let mut usage = if let Some(existing) = self.usage_repo.find_by_operator_and_period(cmd.operator_id, period_start).await? {
             existing
         } else {
-            let period_end = NaiveDate::from_ymd_opt(today.year(), today.month() + 1, 1)
-                .unwrap_or(today)
-                .pred_opt().unwrap_or(today);
+            let next_month = if month == 12 { 1 } else { month + 1 };
+            let next_year = if month == 12 { year + 1 } else { year };
+            let period_end = Utc::now().with_year(next_year).and_then(|d| d.with_month(next_month)).and_then(|d| d.with_day(1)).unwrap_or(now);
             TenantUsage::new(cmd.operator_id, period_start, period_end)
         };
 
@@ -296,16 +299,17 @@ where
     }
 
     async fn record_ai_query_usage(&self, cmd: RecordAiQueryUsageCommand) -> Result<TenantUsage, SaaSbillingError> {
-        let today = Utc::now().date_naive();
-        let period_start = NaiveDate::from_ymd_opt(today.year(), today.month(), 1)
-            .unwrap_or(today);
+        let now = Utc::now();
+        let year = now.year();
+        let month = now.month();
+        let period_start = Utc::now().with_day(1).and_then(|d| d.with_hour(0)).and_then(|d| d.with_minute(0)).and_then(|d| d.with_second(0)).unwrap_or(now);
         
         let mut usage = if let Some(existing) = self.usage_repo.find_by_operator_and_period(cmd.operator_id, period_start).await? {
             existing
         } else {
-            let period_end = NaiveDate::from_ymd_opt(today.year(), today.month() + 1, 1)
-                .unwrap_or(today)
-                .pred_opt().unwrap_or(today);
+            let next_month = if month == 12 { 1 } else { month + 1 };
+            let next_year = if month == 12 { year + 1 } else { year };
+            let period_end = Utc::now().with_year(next_year).and_then(|d| d.with_month(next_month)).and_then(|d| d.with_day(1)).unwrap_or(now);
             TenantUsage::new(cmd.operator_id, period_start, period_end)
         };
 

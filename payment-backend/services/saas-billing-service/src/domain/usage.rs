@@ -1,6 +1,6 @@
 //! Tenant Usage domain model.
 
-use chrono::{Date, DateTime, Utc};
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -11,8 +11,8 @@ use super::plan::SaasPlan;
 pub struct TenantUsage {
     pub usage_id: Uuid,
     pub operator_id: Uuid,
-    pub period_start: Date<Utc>,
-    pub period_end: Date<Utc>,
+    pub period_start: DateTime<Utc>,
+    pub period_end: DateTime<Utc>,
     pub transaction_count: i32,
     pub transaction_volume_minor: i64,
     pub api_calls: i32,
@@ -25,7 +25,7 @@ pub struct TenantUsage {
 
 impl TenantUsage {
     /// Create a new usage record for a period.
-    pub fn new(operator_id: Uuid, period_start: Date<Utc>, period_end: Date<Utc>) -> Self {
+    pub fn new(operator_id: Uuid, period_start: DateTime<Utc>, period_end: DateTime<Utc>) -> Self {
         let now = Utc::now();
         Self {
             usage_id: Uuid::now_v7(),
@@ -135,8 +135,8 @@ mod tests {
     fn test_usage() -> TenantUsage {
         TenantUsage::new(
             Uuid::now_v7(),
-            chrono::Utc::now().date_naive(),
-            chrono::Utc::now().date_naive() + chrono::Duration::days(30),
+            chrono::Utc::now(),
+            chrono::Utc::now() + chrono::Duration::days(30),
         )
     }
 

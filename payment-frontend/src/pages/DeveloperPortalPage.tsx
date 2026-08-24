@@ -5,19 +5,16 @@ import {
   Book,
   Key,
   Webhook,
-  TestTube,
   Copy,
   Check,
-  ExternalLink,
   Terminal,
   FileCode,
-  AlertCircle,
   RefreshCw,
   ChevronDown,
   ChevronRight,
 } from 'lucide-react';
 import { Card } from '@/components/ui/Card';
-import { api, ApiError } from '@/services/api';
+import { api } from '@/services/api';
 import { clsx } from 'clsx';
 
 type Tab = 'overview' | 'api-keys' | 'sdks' | 'webhooks' | 'explorer';

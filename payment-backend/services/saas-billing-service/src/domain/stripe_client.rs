@@ -192,7 +192,7 @@ impl StripeClient {
             })?;
 
         if response.status().is_success() {
-            response.json().await.map_err(|e| StripeError {
+            response.json().await.map_err(|e: reqwest::Error| StripeError {
                 error: StripeErrorDetail {
                     code: None,
                     message: Some(format!("Failed to parse response: {}", e)),
@@ -201,7 +201,14 @@ impl StripeClient {
                 },
             })
         } else {
-            response.json().await
+            response.json().await.map_err(|e: reqwest::Error| StripeError {
+                error: StripeErrorDetail {
+                    code: None,
+                    message: Some(format!("Failed to parse error response: {}", e)),
+                    param: None,
+                    r#type: "api_error".to_string(),
+                },
+            })
         }
     }
 
@@ -244,7 +251,7 @@ impl StripeClient {
             })?;
 
         if response.status().is_success() {
-            response.json().await.map_err(|e| StripeError {
+            response.json().await.map_err(|e: reqwest::Error| StripeError {
                 error: StripeErrorDetail {
                     code: None,
                     message: Some(format!("Failed to parse response: {}", e)),
@@ -253,7 +260,14 @@ impl StripeClient {
                 },
             })
         } else {
-            response.json().await
+            response.json().await.map_err(|e: reqwest::Error| StripeError {
+                error: StripeErrorDetail {
+                    code: None,
+                    message: Some(format!("Failed to parse error response: {}", e)),
+                    param: None,
+                    r#type: "api_error".to_string(),
+                },
+            })
         }
     }
 
@@ -290,7 +304,7 @@ impl StripeClient {
             })?;
 
         if response.status().is_success() {
-            response.json().await.map_err(|e| StripeError {
+            response.json().await.map_err(|e: reqwest::Error| StripeError {
                 error: StripeErrorDetail {
                     code: None,
                     message: Some(format!("Failed to parse response: {}", e)),
@@ -299,7 +313,14 @@ impl StripeClient {
                 },
             })
         } else {
-            response.json().await
+            response.json().await.map_err(|e: reqwest::Error| StripeError {
+                error: StripeErrorDetail {
+                    code: None,
+                    message: Some(format!("Failed to parse error response: {}", e)),
+                    param: None,
+                    r#type: "api_error".to_string(),
+                },
+            })
         }
     }
 
@@ -346,7 +367,7 @@ impl StripeClient {
             })?;
 
         if response.status().is_success() {
-            response.json().await.map_err(|e| StripeError {
+            response.json().await.map_err(|e: reqwest::Error| StripeError {
                 error: StripeErrorDetail {
                     code: None,
                     message: Some(format!("Failed to parse response: {}", e)),
@@ -355,7 +376,14 @@ impl StripeClient {
                 },
             })
         } else {
-            response.json().await
+            response.json().await.map_err(|e: reqwest::Error| StripeError {
+                error: StripeErrorDetail {
+                    code: None,
+                    message: Some(format!("Failed to parse error response: {}", e)),
+                    param: None,
+                    r#type: "api_error".to_string(),
+                },
+            })
         }
     }
 
@@ -382,7 +410,7 @@ impl StripeClient {
             })?;
 
         if response.status().is_success() {
-            response.json().await.map_err(|e| StripeError {
+            response.json().await.map_err(|e: reqwest::Error| StripeError {
                 error: StripeErrorDetail {
                     code: None,
                     message: Some(format!("Failed to parse response: {}", e)),
@@ -391,7 +419,14 @@ impl StripeClient {
                 },
             })
         } else {
-            response.json().await
+            response.json().await.map_err(|e: reqwest::Error| StripeError {
+                error: StripeErrorDetail {
+                    code: None,
+                    message: Some(format!("Failed to parse error response: {}", e)),
+                    param: None,
+                    r#type: "api_error".to_string(),
+                },
+            })
         }
     }
 
@@ -418,7 +453,7 @@ impl StripeClient {
             })?;
 
         if response.status().is_success() {
-            response.json().await.map_err(|e| StripeError {
+            response.json().await.map_err(|e: reqwest::Error| StripeError {
                 error: StripeErrorDetail {
                     code: None,
                     message: Some(format!("Failed to parse response: {}", e)),
@@ -427,7 +462,14 @@ impl StripeClient {
                 },
             })
         } else {
-            response.json().await
+            response.json().await.map_err(|e: reqwest::Error| StripeError {
+                error: StripeErrorDetail {
+                    code: None,
+                    message: Some(format!("Failed to parse error response: {}", e)),
+                    param: None,
+                    r#type: "api_error".to_string(),
+                },
+            })
         }
     }
 
@@ -471,7 +513,7 @@ impl StripeClient {
             })?;
 
         if response.status().is_success() {
-            response.json().await.map_err(|e| StripeError {
+            response.json().await.map_err(|e: reqwest::Error| StripeError {
                 error: StripeErrorDetail {
                     code: None,
                     message: Some(format!("Failed to parse response: {}", e)),
@@ -480,7 +522,14 @@ impl StripeClient {
                 },
             })
         } else {
-            response.json().await
+            response.json().await.map_err(|e: reqwest::Error| StripeError {
+                error: StripeErrorDetail {
+                    code: None,
+                    message: Some(format!("Failed to parse error response: {}", e)),
+                    param: None,
+                    r#type: "api_error".to_string(),
+                },
+            })
         }
     }
 }

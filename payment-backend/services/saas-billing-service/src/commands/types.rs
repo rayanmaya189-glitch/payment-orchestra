@@ -1,6 +1,6 @@
 //! Command types for SaaS Billing service.
 
-use chrono::{Date, Utc};
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -89,8 +89,8 @@ pub struct RecordAiQueryUsageCommand {
 pub struct CreateInvoiceCommand {
     pub operator_id: Uuid,
     pub subscription_id: Uuid,
-    pub period_start: Date<Utc>,
-    pub period_end: Date<Utc>,
+    pub period_start: DateTime<Utc>,
+    pub period_end: DateTime<Utc>,
 }
 
 /// Command to finalize an invoice (convert draft to open).

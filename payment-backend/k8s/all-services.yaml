@@ -1,0 +1,3165 @@
+# =============================================================================
+# Payment Orchestra — K8s Manifests for All Services
+# =============================================================================
+# This file contains Deployment, Service, ServiceAccount, HPA, and PDB
+# for every backend service. Apply with: kubectl apply -f k8s/all-services.yaml
+# =============================================================================
+
+# ─── Helper: Each service follows the same pattern ───────────────────────────
+# Services: iam, compliance, connector-gateway, invoice, payment-link,
+# subscription, reconciliation, dispute, risk, ai-assistant, document,
+# notification, analytics, saga-coordinator, scheduler, merchant-acquirer-link,
+# outbox-relay, ai-gateway, merchant-connector-onboarding, ai-fraud, saas-billing
+# =============================================================================
+
+# --- IAM Service ---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: iam-service
+  namespace: payment-orchestra
+  labels:
+    app: iam-service
+    app.kubernetes.io/name: iam-service
+    app.kubernetes.io/part-of: payment-orchestration-platform
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: iam-service
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        app: iam-service
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9090"
+    spec:
+      serviceAccountName: iam-service
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+      - name: iam-service
+        image: payment-orchestra/iam-service:latest
+        imagePullPolicy: Always
+        ports:
+        - name: grpc
+          containerPort: 9002
+          protocol: TCP
+        - name: metrics
+          containerPort: 9090
+          protocol: TCP
+        env:
+        - name: RUST_LOG
+          value: "info,iam_service=debug"
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: payment-orchestra-secrets
+              key: database-url
+        - name: REDIS_URL
+          valueFrom:
+            secretKeyRef:
+              name: payment-orchestra-secrets
+              key: redis-url
+        - name: NATS_URL
+          valueFrom:
+            secretKeyRef:
+              name: payment-orchestra-secrets
+              key: nats-url
+        - name: JWT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: payment-orchestra-secrets
+              key: jwt-secret
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        livenessProbe:
+          grpc:
+            port: 9002
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          grpc:
+            port: 9002
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        lifecycle:
+          preStop:
+            exec:
+              command: ["/bin/sh", "-c", "sleep 10"]
+      terminationGracePeriodSeconds: 30
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: iam-service
+  namespace: payment-orchestra
+  labels:
+    app: iam-service
+spec:
+  selector:
+    app: iam-service
+  ports:
+  - name: grpc
+    port: 9002
+    targetPort: grpc
+    protocol: TCP
+  - name: metrics
+    port: 9090
+    targetPort: metrics
+    protocol: TCP
+  type: ClusterIP
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: iam-service
+  namespace: payment-orchestra
+  labels:
+    app: iam-service
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: iam-service
+  namespace: payment-orchestra
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: iam-service
+  minReplicas: 2
+  maxReplicas: 8
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: iam-service
+  namespace: payment-orchestra
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: iam-service
+---
+# --- Compliance Service ---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: compliance-service
+  namespace: payment-orchestra
+  labels:
+    app: compliance-service
+    app.kubernetes.io/name: compliance-service
+    app.kubernetes.io/part-of: payment-orchestration-platform
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: compliance-service
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        app: compliance-service
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9090"
+    spec:
+      serviceAccountName: compliance-service
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+      - name: compliance-service
+        image: payment-orchestra/compliance-service:latest
+        imagePullPolicy: Always
+        ports:
+        - name: grpc
+          containerPort: 9003
+          protocol: TCP
+        - name: metrics
+          containerPort: 9090
+          protocol: TCP
+        env:
+        - name: RUST_LOG
+          value: "info,compliance_service=debug"
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: payment-orchestra-secrets
+              key: database-url
+        - name: REDIS_URL
+          valueFrom:
+            secretKeyRef:
+              name: payment-orchestra-secrets
+              key: redis-url
+        - name: NATS_URL
+          valueFrom:
+            secretKeyRef:
+              name: payment-orchestra-secrets
+              key: nats-url
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        livenessProbe:
+          grpc:
+            port: 9003
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          grpc:
+            port: 9003
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        lifecycle:
+          preStop:
+            exec:
+              command: ["/bin/sh", "-c", "sleep 10"]
+      terminationGracePeriodSeconds: 30
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: compliance-service
+  namespace: payment-orchestra
+  labels:
+    app: compliance-service
+spec:
+  selector:
+    app: compliance-service
+  ports:
+  - name: grpc
+    port: 9003
+    targetPort: grpc
+    protocol: TCP
+  - name: metrics
+    port: 9090
+    targetPort: metrics
+    protocol: TCP
+  type: ClusterIP
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: compliance-service
+  namespace: payment-orchestra
+  labels:
+    app: compliance-service
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: compliance-service
+  namespace: payment-orchestra
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: compliance-service
+  minReplicas: 2
+  maxReplicas: 5
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: compliance-service
+  namespace: payment-orchestra
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: compliance-service
+---
+# --- Connector Gateway ---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: connector-gateway
+  namespace: payment-orchestra
+  labels:
+    app: connector-gateway
+    app.kubernetes.io/name: connector-gateway
+    app.kubernetes.io/part-of: payment-orchestration-platform
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: connector-gateway
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        app: connector-gateway
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9090"
+    spec:
+      serviceAccountName: connector-gateway
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+      - name: connector-gateway
+        image: payment-orchestra/connector-gateway:latest
+        imagePullPolicy: Always
+        ports:
+        - name: grpc
+          containerPort: 9004
+          protocol: TCP
+        - name: metrics
+          containerPort: 9090
+          protocol: TCP
+        env:
+        - name: RUST_LOG
+          value: "info,connector_gateway=debug"
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: payment-orchestra-secrets
+              key: database-url
+        - name: REDIS_URL
+          valueFrom:
+            secretKeyRef:
+              name: payment-orchestra-secrets
+              key: redis-url
+        - name: NATS_URL
+          valueFrom:
+            secretKeyRef:
+              name: payment-orchestra-secrets
+              key: nats-url
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        livenessProbe:
+          grpc:
+            port: 9004
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          grpc:
+            port: 9004
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        lifecycle:
+          preStop:
+            exec:
+              command: ["/bin/sh", "-c", "sleep 10"]
+      terminationGracePeriodSeconds: 30
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: connector-gateway
+  namespace: payment-orchestra
+  labels:
+    app: connector-gateway
+spec:
+  selector:
+    app: connector-gateway
+  ports:
+  - name: grpc
+    port: 9004
+    targetPort: grpc
+    protocol: TCP
+  - name: metrics
+    port: 9090
+    targetPort: metrics
+    protocol: TCP
+  type: ClusterIP
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: connector-gateway
+  namespace: payment-orchestra
+  labels:
+    app: connector-gateway
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: connector-gateway
+  namespace: payment-orchestra
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: connector-gateway
+  minReplicas: 3
+  maxReplicas: 12
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: connector-gateway
+  namespace: payment-orchestra
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app: connector-gateway
+---
+# --- Invoice Service ---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: invoice-service
+  namespace: payment-orchestra
+  labels:
+    app: invoice-service
+    app.kubernetes.io/name: invoice-service
+    app.kubernetes.io/part-of: payment-orchestration-platform
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: invoice-service
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        app: invoice-service
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9090"
+    spec:
+      serviceAccountName: invoice-service
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+      - name: invoice-service
+        image: payment-orchestra/invoice-service:latest
+        imagePullPolicy: Always
+        ports:
+        - name: grpc
+          containerPort: 9006
+          protocol: TCP
+        - name: metrics
+          containerPort: 9090
+          protocol: TCP
+        env:
+        - name: RUST_LOG
+          value: "info,invoice_service=debug"
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: payment-orchestra-secrets
+              key: database-url
+        - name: REDIS_URL
+          valueFrom:
+            secretKeyRef:
+              name: payment-orchestra-secrets
+              key: redis-url
+        - name: NATS_URL
+          valueFrom:
+            secretKeyRef:
+              name: payment-orchestra-secrets
+              key: nats-url
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        livenessProbe:
+          grpc:
+            port: 9006
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          grpc:
+            port: 9006
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        lifecycle:
+          preStop:
+            exec:
+              command: ["/bin/sh", "-c", "sleep 10"]
+      terminationGracePeriodSeconds: 30
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: invoice-service
+  namespace: payment-orchestra
+  labels:
+    app: invoice-service
+spec:
+  selector:
+    app: invoice-service
+  ports:
+  - name: grpc
+    port: 9006
+    targetPort: grpc
+    protocol: TCP
+  - name: metrics
+    port: 9090
+    targetPort: metrics
+    protocol: TCP
+  type: ClusterIP
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: invoice-service
+  namespace: payment-orchestra
+  labels:
+    app: invoice-service
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: invoice-service
+  namespace: payment-orchestra
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: invoice-service
+  minReplicas: 2
+  maxReplicas: 5
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: invoice-service
+  namespace: payment-orchestra
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: invoice-service
+---
+# --- Payment Link Service ---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: payment-link-service
+  namespace: payment-orchestra
+  labels:
+    app: payment-link-service
+    app.kubernetes.io/name: payment-link-service
+    app.kubernetes.io/part-of: payment-orchestration-platform
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: payment-link-service
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        app: payment-link-service
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9090"
+    spec:
+      serviceAccountName: payment-link-service
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+      - name: payment-link-service
+        image: payment-orchestra/payment-link-service:latest
+        imagePullPolicy: Always
+        ports:
+        - name: grpc
+          containerPort: 9007
+          protocol: TCP
+        - name: metrics
+          containerPort: 9090
+          protocol: TCP
+        env:
+        - name: RUST_LOG
+          value: "info,payment_link_service=debug"
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: payment-orchestra-secrets
+              key: database-url
+        - name: REDIS_URL
+          valueFrom:
+            secretKeyRef:
+              name: payment-orchestra-secrets
+              key: redis-url
+        - name: NATS_URL
+          valueFrom:
+            secretKeyRef:
+              name: payment-orchestra-secrets
+              key: nats-url
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        livenessProbe:
+          grpc:
+            port: 9007
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          grpc:
+            port: 9007
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        lifecycle:
+          preStop:
+            exec:
+              command: ["/bin/sh", "-c", "sleep 10"]
+      terminationGracePeriodSeconds: 30
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: payment-link-service
+  namespace: payment-orchestra
+  labels:
+    app: payment-link-service
+spec:
+  selector:
+    app: payment-link-service
+  ports:
+  - name: grpc
+    port: 9007
+    targetPort: grpc
+    protocol: TCP
+  - name: metrics
+    port: 9090
+    targetPort: metrics
+    protocol: TCP
+  type: ClusterIP
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: payment-link-service
+  namespace: payment-orchestra
+  labels:
+    app: payment-link-service
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: payment-link-service
+  namespace: payment-orchestra
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: payment-link-service
+  minReplicas: 2
+  maxReplicas: 5
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: payment-link-service
+  namespace: payment-orchestra
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: payment-link-service
+---
+# --- Subscription Service ---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: subscription-service
+  namespace: payment-orchestra
+  labels:
+    app: subscription-service
+    app.kubernetes.io/name: subscription-service
+    app.kubernetes.io/part-of: payment-orchestration-platform
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: subscription-service
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        app: subscription-service
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9090"
+    spec:
+      serviceAccountName: subscription-service
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+      - name: subscription-service
+        image: payment-orchestra/subscription-service:latest
+        imagePullPolicy: Always
+        ports:
+        - name: grpc
+          containerPort: 9008
+          protocol: TCP
+        - name: metrics
+          containerPort: 9090
+          protocol: TCP
+        env:
+        - name: RUST_LOG
+          value: "info,subscription_service=debug"
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: payment-orchestra-secrets
+              key: database-url
+        - name: REDIS_URL
+          valueFrom:
+            secretKeyRef:
+              name: payment-orchestra-secrets
+              key: redis-url
+        - name: NATS_URL
+          valueFrom:
+            secretKeyRef:
+              name: payment-orchestra-secrets
+              key: nats-url
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        livenessProbe:
+          grpc:
+            port: 9008
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          grpc:
+            port: 9008
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        lifecycle:
+          preStop:
+            exec:
+              command: ["/bin/sh", "-c", "sleep 10"]
+      terminationGracePeriodSeconds: 30
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: subscription-service
+  namespace: payment-orchestra
+  labels:
+    app: subscription-service
+spec:
+  selector:
+    app: subscription-service
+  ports:
+  - name: grpc
+    port: 9008
+    targetPort: grpc
+    protocol: TCP
+  - name: metrics
+    port: 9090
+    targetPort: metrics
+    protocol: TCP
+  type: ClusterIP
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: subscription-service
+  namespace: payment-orchestra
+  labels:
+    app: subscription-service
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: subscription-service
+  namespace: payment-orchestra
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: subscription-service
+  minReplicas: 2
+  maxReplicas: 5
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: subscription-service
+  namespace: payment-orchestra
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: subscription-service
+---
+# --- Reconciliation Service ---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: reconciliation-service
+  namespace: payment-orchestra
+  labels:
+    app: reconciliation-service
+    app.kubernetes.io/name: reconciliation-service
+    app.kubernetes.io/part-of: payment-orchestration-platform
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: reconciliation-service
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        app: reconciliation-service
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9090"
+    spec:
+      serviceAccountName: reconciliation-service
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+      - name: reconciliation-service
+        image: payment-orchestra/reconciliation-service:latest
+        imagePullPolicy: Always
+        ports:
+        - name: grpc
+          containerPort: 9009
+          protocol: TCP
+        - name: metrics
+          containerPort: 9090
+          protocol: TCP
+        env:
+        - name: RUST_LOG
+          value: "info,reconciliation_service=debug"
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: payment-orchestra-secrets
+              key: database-url
+        - name: REDIS_URL
+          valueFrom:
+            secretKeyRef:
+              name: payment-orchestra-secrets
+              key: redis-url
+        - name: NATS_URL
+          valueFrom:
+            secretKeyRef:
+              name: payment-orchestra-secrets
+              key: nats-url
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        livenessProbe:
+          grpc:
+            port: 9009
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          grpc:
+            port: 9009
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        lifecycle:
+          preStop:
+            exec:
+              command: ["/bin/sh", "-c", "sleep 10"]
+      terminationGracePeriodSeconds: 30
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: reconciliation-service
+  namespace: payment-orchestra
+  labels:
+    app: reconciliation-service
+spec:
+  selector:
+    app: reconciliation-service
+  ports:
+  - name: grpc
+    port: 9009
+    targetPort: grpc
+    protocol: TCP
+  - name: metrics
+    port: 9090
+    targetPort: metrics
+    protocol: TCP
+  type: ClusterIP
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: reconciliation-service
+  namespace: payment-orchestra
+  labels:
+    app: reconciliation-service
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: reconciliation-service
+  namespace: payment-orchestra
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: reconciliation-service
+  minReplicas: 2
+  maxReplicas: 5
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: reconciliation-service
+  namespace: payment-orchestra
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: reconciliation-service
+---
+# --- Dispute Service ---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dispute-service
+  namespace: payment-orchestra
+  labels:
+    app: dispute-service
+    app.kubernetes.io/name: dispute-service
+    app.kubernetes.io/part-of: payment-orchestration-platform
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: dispute-service
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        app: dispute-service
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9090"
+    spec:
+      serviceAccountName: dispute-service
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+      - name: dispute-service
+        image: payment-orchestra/dispute-service:latest
+        imagePullPolicy: Always
+        ports:
+        - name: grpc
+          containerPort: 9010
+          protocol: TCP
+        - name: metrics
+          containerPort: 9090
+          protocol: TCP
+        env:
+        - name: RUST_LOG
+          value: "info,dispute_service=debug"
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: payment-orchestra-secrets
+              key: database-url
+        - name: REDIS_URL
+          valueFrom:
+            secretKeyRef:
+              name: payment-orchestra-secrets
+              key: redis-url
+        - name: NATS_URL
+          valueFrom:
+            secretKeyRef:
+              name: payment-orchestra-secrets
+              key: nats-url
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        livenessProbe:
+          grpc:
+            port: 9010
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          grpc:
+            port: 9010
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        lifecycle:
+          preStop:
+            exec:
+              command: ["/bin/sh", "-c", "sleep 10"]
+      terminationGracePeriodSeconds: 30
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: dispute-service
+  namespace: payment-orchestra
+  labels:
+    app: dispute-service
+spec:
+  selector:
+    app: dispute-service
+  ports:
+  - name: grpc
+    port: 9010
+    targetPort: grpc
+    protocol: TCP
+  - name: metrics
+    port: 9090
+    targetPort: metrics
+    protocol: TCP
+  type: ClusterIP
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: dispute-service
+  namespace: payment-orchestra
+  labels:
+    app: dispute-service
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: dispute-service
+  namespace: payment-orchestra
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: dispute-service
+  minReplicas: 2
+  maxReplicas: 5
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: dispute-service
+  namespace: payment-orchestra
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: dispute-service
+---
+# --- Risk Service ---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: risk-service
+  namespace: payment-orchestra
+  labels:
+    app: risk-service
+    app.kubernetes.io/name: risk-service
+    app.kubernetes.io/part-of: payment-orchestration-platform
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: risk-service
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        app: risk-service
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9090"
+    spec:
+      serviceAccountName: risk-service
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+      - name: risk-service
+        image: payment-orchestra/risk-service:latest
+        imagePullPolicy: Always
+        ports:
+        - name: grpc
+          containerPort: 9011
+          protocol: TCP
+        - name: metrics
+          containerPort: 9090
+          protocol: TCP
+        env:
+        - name: RUST_LOG
+          value: "info,risk_service=debug"
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: payment-orchestra-secrets
+              key: database-url
+        - name: REDIS_URL
+          valueFrom:
+            secretKeyRef:
+              name: payment-orchestra-secrets
+              key: redis-url
+        - name: NATS_URL
+          valueFrom:
+            secretKeyRef:
+              name: payment-orchestra-secrets
+              key: nats-url
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        livenessProbe:
+          grpc:
+            port: 9011
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          grpc:
+            port: 9011
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        lifecycle:
+          preStop:
+            exec:
+              command: ["/bin/sh", "-c", "sleep 10"]
+      terminationGracePeriodSeconds: 30
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: risk-service
+  namespace: payment-orchestra
+  labels:
+    app: risk-service
+spec:
+  selector:
+    app: risk-service
+  ports:
+  - name: grpc
+    port: 9011
+    targetPort: grpc
+    protocol: TCP
+  - name: metrics
+    port: 9090
+    targetPort: metrics
+    protocol: TCP
+  type: ClusterIP
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: risk-service
+  namespace: payment-orchestra
+  labels:
+    app: risk-service
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: risk-service
+  namespace: payment-orchestra
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: risk-service
+  minReplicas: 3
+  maxReplicas: 10
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: risk-service
+  namespace: payment-orchestra
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app: risk-service
+---
+# --- AI Assistant Service ---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ai-assistant-service
+  namespace: payment-orchestra
+  labels:
+    app: ai-assistant-service
+    app.kubernetes.io/name: ai-assistant-service
+    app.kubernetes.io/part-of: payment-orchestration-platform
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: ai-assistant-service
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        app: ai-assistant-service
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9090"
+    spec:
+      serviceAccountName: ai-assistant-service
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+      - name: ai-assistant-service
+        image: payment-orchestra/ai-assistant-service:latest
+        imagePullPolicy: Always
+        ports:
+        - name: grpc
+          containerPort: 9012
+          protocol: TCP
+        - name: metrics
+          containerPort: 9090
+          protocol: TCP
+        env:
+        - name: RUST_LOG
+          value: "info,ai_assistant_service=debug"
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: payment-orchestra-secrets
+              key: database-url
+        - name: REDIS_URL
+          valueFrom:
+            secretKeyRef:
+              name: payment-orchestra-secrets
+              key: redis-url
+        - name: NATS_URL
+          valueFrom:
+            secretKeyRef:
+              name: payment-orchestra-secrets
+              key: nats-url
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "500m"
+          limits:
+            memory: "1Gi"
+            cpu: "1000m"
+        livenessProbe:
+          grpc:
+            port: 9012
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          grpc:
+            port: 9012
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        lifecycle:
+          preStop:
+            exec:
+              command: ["/bin/sh", "-c", "sleep 10"]
+      terminationGracePeriodSeconds: 30
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ai-assistant-service
+  namespace: payment-orchestra
+  labels:
+    app: ai-assistant-service
+spec:
+  selector:
+    app: ai-assistant-service
+  ports:
+  - name: grpc
+    port: 9012
+    targetPort: grpc
+    protocol: TCP
+  - name: metrics
+    port: 9090
+    targetPort: metrics
+    protocol: TCP
+  type: ClusterIP
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: ai-assistant-service
+  namespace: payment-orchestra
+  labels:
+    app: ai-assistant-service
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: ai-assistant-service
+  namespace: payment-orchestra
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: ai-assistant-service
+  minReplicas: 2
+  maxReplicas: 5
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: ai-assistant-service
+  namespace: payment-orchestra
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: ai-assistant-service
+---
+# --- Document Service ---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: document-service
+  namespace: payment-orchestra
+  labels:
+    app: document-service
+    app.kubernetes.io/name: document-service
+    app.kubernetes.io/part-of: payment-orchestration-platform
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: document-service
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        app: document-service
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9090"
+    spec:
+      serviceAccountName: document-service
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+      - name: document-service
+        image: payment-orchestra/document-service:latest
+        imagePullPolicy: Always
+        ports:
+        - name: grpc
+          containerPort: 9013
+          protocol: TCP
+        - name: metrics
+          containerPort: 9090
+          protocol: TCP
+        env:
+        - name: RUST_LOG
+          value: "info,document_service=debug"
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: payment-orchestra-secrets
+              key: database-url
+        - name: REDIS_URL
+          valueFrom:
+            secretKeyRef:
+              name: payment-orchestra-secrets
+              key: redis-url
+        - name: NATS_URL
+          valueFrom:
+            secretKeyRef:
+              name: payment-orchestra-secrets
+              key: nats-url
+        - name: MINIO_ENDPOINT
+          valueFrom:
+            secretKeyRef:
+              name: payment-orchestra-secrets
+              key: minio-endpoint
+              optional: true
+        - name: MINIO_ACCESS_KEY
+          valueFrom:
+            secretKeyRef:
+              name: payment-orchestra-secrets
+              key: minio-access-key
+              optional: true
+        - name: MINIO_SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: payment-orchestra-secrets
+              key: minio-secret-key
+              optional: true
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        livenessProbe:
+          grpc:
+            port: 9013
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          grpc:
+            port: 9013
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        lifecycle:
+          preStop:
+            exec:
+              command: ["/bin/sh", "-c", "sleep 10"]
+      terminationGracePeriodSeconds: 30
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: document-service
+  namespace: payment-orchestra
+  labels:
+    app: document-service
+spec:
+  selector:
+    app: document-service
+  ports:
+  - name: grpc
+    port: 9013
+    targetPort: grpc
+    protocol: TCP
+  - name: metrics
+    port: 9090
+    targetPort: metrics
+    protocol: TCP
+  type: ClusterIP
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: document-service
+  namespace: payment-orchestra
+  labels:
+    app: document-service
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: document-service
+  namespace: payment-orchestra
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: document-service
+  minReplicas: 2
+  maxReplicas: 5
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: document-service
+  namespace: payment-orchestra
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: document-service
+---
+# --- Notification Service ---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: notification-service
+  namespace: payment-orchestra
+  labels:
+    app: notification-service
+    app.kubernetes.io/name: notification-service
+    app.kubernetes.io/part-of: payment-orchestration-platform
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: notification-service
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        app: notification-service
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9090"
+    spec:
+      serviceAccountName: notification-service
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+      - name: notification-service
+        image: payment-orchestra/notification-service:latest
+        imagePullPolicy: Always
+        ports:
+        - name: grpc
+          containerPort: 9014
+          protocol: TCP
+        - name: metrics
+          containerPort: 9090
+          protocol: TCP
+        env:
+        - name: RUST_LOG
+          value: "info,notification_service=debug"
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: payment-orchestra-secrets
+              key: database-url
+        - name: REDIS_URL
+          valueFrom:
+            secretKeyRef:
+              name: payment-orchestra-secrets
+              key: redis-url
+        - name: NATS_URL
+          valueFrom:
+            secretKeyRef:
+              name: payment-orchestra-secrets
+              key: nats-url
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        livenessProbe:
+          grpc:
+            port: 9014
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          grpc:
+            port: 9014
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        lifecycle:
+          preStop:
+            exec:
+              command: ["/bin/sh", "-c", "sleep 10"]
+      terminationGracePeriodSeconds: 30
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: notification-service
+  namespace: payment-orchestra
+  labels:
+    app: notification-service
+spec:
+  selector:
+    app: notification-service
+  ports:
+  - name: grpc
+    port: 9014
+    targetPort: grpc
+    protocol: TCP
+  - name: metrics
+    port: 9090
+    targetPort: metrics
+    protocol: TCP
+  type: ClusterIP
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: notification-service
+  namespace: payment-orchestra
+  labels:
+    app: notification-service
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: notification-service
+  namespace: payment-orchestra
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: notification-service
+  minReplicas: 2
+  maxReplicas: 5
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: notification-service
+  namespace: payment-orchestra
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: notification-service
+---
+# --- Analytics Service ---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: analytics-service
+  namespace: payment-orchestra
+  labels:
+    app: analytics-service
+    app.kubernetes.io/name: analytics-service
+    app.kubernetes.io/part-of: payment-orchestration-platform
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: analytics-service
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        app: analytics-service
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9090"
+    spec:
+      serviceAccountName: analytics-service
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+      - name: analytics-service
+        image: payment-orchestra/analytics-service:latest
+        imagePullPolicy: Always
+        ports:
+        - name: grpc
+          containerPort: 9015
+          protocol: TCP
+        - name: metrics
+          containerPort: 9090
+          protocol: TCP
+        env:
+        - name: RUST_LOG
+          value: "info,analytics_service=debug"
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: payment-orchestra-secrets
+              key: database-url
+        - name: REDIS_URL
+          valueFrom:
+            secretKeyRef:
+              name: payment-orchestra-secrets
+              key: redis-url
+        - name: NATS_URL
+          valueFrom:
+            secretKeyRef:
+              name: payment-orchestra-secrets
+              key: nats-url
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "500m"
+          limits:
+            memory: "1Gi"
+            cpu: "1000m"
+        livenessProbe:
+          grpc:
+            port: 9015
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          grpc:
+            port: 9015
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        lifecycle:
+          preStop:
+            exec:
+              command: ["/bin/sh", "-c", "sleep 10"]
+      terminationGracePeriodSeconds: 30
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: analytics-service
+  namespace: payment-orchestra
+  labels:
+    app: analytics-service
+spec:
+  selector:
+    app: analytics-service
+  ports:
+  - name: grpc
+    port: 9015
+    targetPort: grpc
+    protocol: TCP
+  - name: metrics
+    port: 9090
+    targetPort: metrics
+    protocol: TCP
+  type: ClusterIP
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: analytics-service
+  namespace: payment-orchestra
+  labels:
+    app: analytics-service
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: analytics-service
+  namespace: payment-orchestra
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: analytics-service
+  minReplicas: 2
+  maxReplicas: 5
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: analytics-service
+  namespace: payment-orchestra
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: analytics-service
+---
+# --- Saga Coordinator ---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: saga-coordinator
+  namespace: payment-orchestra
+  labels:
+    app: saga-coordinator
+    app.kubernetes.io/name: saga-coordinator
+    app.kubernetes.io/part-of: payment-orchestration-platform
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: saga-coordinator
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        app: saga-coordinator
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9090"
+    spec:
+      serviceAccountName: saga-coordinator
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+      - name: saga-coordinator
+        image: payment-orchestra/saga-coordinator:latest
+        imagePullPolicy: Always
+        ports:
+        - name: grpc
+          containerPort: 9016
+          protocol: TCP
+        - name: metrics
+          containerPort: 9090
+          protocol: TCP
+        env:
+        - name: RUST_LOG
+          value: "info,saga_coordinator=debug"
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: payment-orchestra-secrets
+              key: database-url
+        - name: REDIS_URL
+          valueFrom:
+            secretKeyRef:
+              name: payment-orchestra-secrets
+              key: redis-url
+        - name: NATS_URL
+          valueFrom:
+            secretKeyRef:
+              name: payment-orchestra-secrets
+              key: nats-url
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        livenessProbe:
+          grpc:
+            port: 9016
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          grpc:
+            port: 9016
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        lifecycle:
+          preStop:
+            exec:
+              command: ["/bin/sh", "-c", "sleep 10"]
+      terminationGracePeriodSeconds: 30
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: saga-coordinator
+  namespace: payment-orchestra
+  labels:
+    app: saga-coordinator
+spec:
+  selector:
+    app: saga-coordinator
+  ports:
+  - name: grpc
+    port: 9016
+    targetPort: grpc
+    protocol: TCP
+  - name: metrics
+    port: 9090
+    targetPort: metrics
+    protocol: TCP
+  type: ClusterIP
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: saga-coordinator
+  namespace: payment-orchestra
+  labels:
+    app: saga-coordinator
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: saga-coordinator
+  namespace: payment-orchestra
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: saga-coordinator
+  minReplicas: 2
+  maxReplicas: 5
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: saga-coordinator
+  namespace: payment-orchestra
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: saga-coordinator
+---
+# --- Scheduler ---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: scheduler
+  namespace: payment-orchestra
+  labels:
+    app: scheduler
+    app.kubernetes.io/name: scheduler
+    app.kubernetes.io/part-of: payment-orchestration-platform
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: scheduler
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        app: scheduler
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9090"
+    spec:
+      serviceAccountName: scheduler
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+      - name: scheduler
+        image: payment-orchestra/scheduler:latest
+        imagePullPolicy: Always
+        ports:
+        - name: grpc
+          containerPort: 9017
+          protocol: TCP
+        - name: metrics
+          containerPort: 9090
+          protocol: TCP
+        env:
+        - name: RUST_LOG
+          value: "info,scheduler=debug"
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: payment-orchestra-secrets
+              key: database-url
+        - name: REDIS_URL
+          valueFrom:
+            secretKeyRef:
+              name: payment-orchestra-secrets
+              key: redis-url
+        - name: NATS_URL
+          valueFrom:
+            secretKeyRef:
+              name: payment-orchestra-secrets
+              key: nats-url
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        livenessProbe:
+          grpc:
+            port: 9017
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          grpc:
+            port: 9017
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        lifecycle:
+          preStop:
+            exec:
+              command: ["/bin/sh", "-c", "sleep 10"]
+      terminationGracePeriodSeconds: 30
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: scheduler
+  namespace: payment-orchestra
+  labels:
+    app: scheduler
+spec:
+  selector:
+    app: scheduler
+  ports:
+  - name: grpc
+    port: 9017
+    targetPort: grpc
+    protocol: TCP
+  - name: metrics
+    port: 9090
+    targetPort: metrics
+    protocol: TCP
+  type: ClusterIP
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: scheduler
+  namespace: payment-orchestra
+  labels:
+    app: scheduler
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: scheduler
+  namespace: payment-orchestra
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: scheduler
+  minReplicas: 2
+  maxReplicas: 5
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: scheduler
+  namespace: payment-orchestra
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: scheduler
+---
+# --- Merchant Acquirer Link Service ---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: merchant-acquirer-link-service
+  namespace: payment-orchestra
+  labels:
+    app: merchant-acquirer-link-service
+    app.kubernetes.io/name: merchant-acquirer-link-service
+    app.kubernetes.io/part-of: payment-orchestration-platform
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: merchant-acquirer-link-service
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        app: merchant-acquirer-link-service
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9090"
+    spec:
+      serviceAccountName: merchant-acquirer-link-service
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+      - name: merchant-acquirer-link-service
+        image: payment-orchestra/merchant-acquirer-link-service:latest
+        imagePullPolicy: Always
+        ports:
+        - name: grpc
+          containerPort: 9018
+          protocol: TCP
+        - name: metrics
+          containerPort: 9090
+          protocol: TCP
+        env:
+        - name: RUST_LOG
+          value: "info,merchant_acquirer_link_service=debug"
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: payment-orchestra-secrets
+              key: database-url
+        - name: REDIS_URL
+          valueFrom:
+            secretKeyRef:
+              name: payment-orchestra-secrets
+              key: redis-url
+        - name: NATS_URL
+          valueFrom:
+            secretKeyRef:
+              name: payment-orchestra-secrets
+              key: nats-url
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        livenessProbe:
+          grpc:
+            port: 9018
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          grpc:
+            port: 9018
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        lifecycle:
+          preStop:
+            exec:
+              command: ["/bin/sh", "-c", "sleep 10"]
+      terminationGracePeriodSeconds: 30
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: merchant-acquirer-link-service
+  namespace: payment-orchestra
+  labels:
+    app: merchant-acquirer-link-service
+spec:
+  selector:
+    app: merchant-acquirer-link-service
+  ports:
+  - name: grpc
+    port: 9018
+    targetPort: grpc
+    protocol: TCP
+  - name: metrics
+    port: 9090
+    targetPort: metrics
+    protocol: TCP
+  type: ClusterIP
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: merchant-acquirer-link-service
+  namespace: payment-orchestra
+  labels:
+    app: merchant-acquirer-link-service
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: merchant-acquirer-link-service
+  namespace: payment-orchestra
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: merchant-acquirer-link-service
+  minReplicas: 2
+  maxReplicas: 5
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: merchant-acquirer-link-service
+  namespace: payment-orchestra
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: merchant-acquirer-link-service
+---
+# --- Outbox Relay ---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: outbox-relay
+  namespace: payment-orchestra
+  labels:
+    app: outbox-relay
+    app.kubernetes.io/name: outbox-relay
+    app.kubernetes.io/part-of: payment-orchestration-platform
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: outbox-relay
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        app: outbox-relay
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9090"
+    spec:
+      serviceAccountName: outbox-relay
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+      - name: outbox-relay
+        image: payment-orchestra/outbox-relay:latest
+        imagePullPolicy: Always
+        ports:
+        - name: grpc
+          containerPort: 9019
+          protocol: TCP
+        - name: metrics
+          containerPort: 9090
+          protocol: TCP
+        env:
+        - name: RUST_LOG
+          value: "info,outbox_relay=debug"
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: payment-orchestra-secrets
+              key: database-url
+        - name: REDIS_URL
+          valueFrom:
+            secretKeyRef:
+              name: payment-orchestra-secrets
+              key: redis-url
+        - name: NATS_URL
+          valueFrom:
+            secretKeyRef:
+              name: payment-orchestra-secrets
+              key: nats-url
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        livenessProbe:
+          grpc:
+            port: 9019
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          grpc:
+            port: 9019
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        lifecycle:
+          preStop:
+            exec:
+              command: ["/bin/sh", "-c", "sleep 10"]
+      terminationGracePeriodSeconds: 30
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: outbox-relay
+  namespace: payment-orchestra
+  labels:
+    app: outbox-relay
+spec:
+  selector:
+    app: outbox-relay
+  ports:
+  - name: grpc
+    port: 9019
+    targetPort: grpc
+    protocol: TCP
+  - name: metrics
+    port: 9090
+    targetPort: metrics
+    protocol: TCP
+  type: ClusterIP
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: outbox-relay
+  namespace: payment-orchestra
+  labels:
+    app: outbox-relay
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: outbox-relay
+  namespace: payment-orchestra
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: outbox-relay
+  minReplicas: 2
+  maxReplicas: 5
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: outbox-relay
+  namespace: payment-orchestra
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: outbox-relay
+---
+# --- AI Gateway ---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ai-gateway
+  namespace: payment-orchestra
+  labels:
+    app: ai-gateway
+    app.kubernetes.io/name: ai-gateway
+    app.kubernetes.io/part-of: payment-orchestration-platform
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: ai-gateway
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        app: ai-gateway
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9090"
+    spec:
+      serviceAccountName: ai-gateway
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+      - name: ai-gateway
+        image: payment-orchestra/ai-gateway:latest
+        imagePullPolicy: Always
+        ports:
+        - name: grpc
+          containerPort: 9021
+          protocol: TCP
+        - name: metrics
+          containerPort: 9090
+          protocol: TCP
+        env:
+        - name: RUST_LOG
+          value: "info,ai_gateway=debug"
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: payment-orchestra-secrets
+              key: database-url
+        - name: REDIS_URL
+          valueFrom:
+            secretKeyRef:
+              name: payment-orchestra-secrets
+              key: redis-url
+        - name: NATS_URL
+          valueFrom:
+            secretKeyRef:
+              name: payment-orchestra-secrets
+              key: nats-url
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        livenessProbe:
+          grpc:
+            port: 9021
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          grpc:
+            port: 9021
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        lifecycle:
+          preStop:
+            exec:
+              command: ["/bin/sh", "-c", "sleep 10"]
+      terminationGracePeriodSeconds: 30
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ai-gateway
+  namespace: payment-orchestra
+  labels:
+    app: ai-gateway
+spec:
+  selector:
+    app: ai-gateway
+  ports:
+  - name: grpc
+    port: 9021
+    targetPort: grpc
+    protocol: TCP
+  - name: metrics
+    port: 9090
+    targetPort: metrics
+    protocol: TCP
+  type: ClusterIP
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: ai-gateway
+  namespace: payment-orchestra
+  labels:
+    app: ai-gateway
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: ai-gateway
+  namespace: payment-orchestra
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: ai-gateway
+  minReplicas: 2
+  maxReplicas: 5
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: ai-gateway
+  namespace: payment-orchestra
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: ai-gateway
+---
+# --- Merchant Connector Onboarding ---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: merchant-connector-onboarding
+  namespace: payment-orchestra
+  labels:
+    app: merchant-connector-onboarding
+    app.kubernetes.io/name: merchant-connector-onboarding
+    app.kubernetes.io/part-of: payment-orchestration-platform
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: merchant-connector-onboarding
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        app: merchant-connector-onboarding
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9090"
+    spec:
+      serviceAccountName: merchant-connector-onboarding
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+      - name: merchant-connector-onboarding
+        image: payment-orchestra/merchant-connector-onboarding:latest
+        imagePullPolicy: Always
+        ports:
+        - name: grpc
+          containerPort: 9022
+          protocol: TCP
+        - name: metrics
+          containerPort: 9090
+          protocol: TCP
+        env:
+        - name: RUST_LOG
+          value: "info,merchant_connector_onboarding=debug"
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: payment-orchestra-secrets
+              key: database-url
+        - name: REDIS_URL
+          valueFrom:
+            secretKeyRef:
+              name: payment-orchestra-secrets
+              key: redis-url
+        - name: NATS_URL
+          valueFrom:
+            secretKeyRef:
+              name: payment-orchestra-secrets
+              key: nats-url
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        livenessProbe:
+          grpc:
+            port: 9022
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          grpc:
+            port: 9022
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        lifecycle:
+          preStop:
+            exec:
+              command: ["/bin/sh", "-c", "sleep 10"]
+      terminationGracePeriodSeconds: 30
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: merchant-connector-onboarding
+  namespace: payment-orchestra
+  labels:
+    app: merchant-connector-onboarding
+spec:
+  selector:
+    app: merchant-connector-onboarding
+  ports:
+  - name: grpc
+    port: 9022
+    targetPort: grpc
+    protocol: TCP
+  - name: metrics
+    port: 9090
+    targetPort: metrics
+    protocol: TCP
+  type: ClusterIP
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: merchant-connector-onboarding
+  namespace: payment-orchestra
+  labels:
+    app: merchant-connector-onboarding
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: merchant-connector-onboarding
+  namespace: payment-orchestra
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: merchant-connector-onboarding
+  minReplicas: 2
+  maxReplicas: 5
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: merchant-connector-onboarding
+  namespace: payment-orchestra
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: merchant-connector-onboarding
+---
+# --- AI Fraud Service ---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ai-fraud-service
+  namespace: payment-orchestra
+  labels:
+    app: ai-fraud-service
+    app.kubernetes.io/name: ai-fraud-service
+    app.kubernetes.io/part-of: payment-orchestration-platform
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: ai-fraud-service
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        app: ai-fraud-service
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9090"
+    spec:
+      serviceAccountName: ai-fraud-service
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+      - name: ai-fraud-service
+        image: payment-orchestra/ai-fraud-service:latest
+        imagePullPolicy: Always
+        ports:
+        - name: grpc
+          containerPort: 9023
+          protocol: TCP
+        - name: metrics
+          containerPort: 9090
+          protocol: TCP
+        env:
+        - name: RUST_LOG
+          value: "info,ai_fraud_service=debug"
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: payment-orchestra-secrets
+              key: database-url
+        - name: REDIS_URL
+          valueFrom:
+            secretKeyRef:
+              name: payment-orchestra-secrets
+              key: redis-url
+        - name: NATS_URL
+          valueFrom:
+            secretKeyRef:
+              name: payment-orchestra-secrets
+              key: nats-url
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "500m"
+          limits:
+            memory: "1Gi"
+            cpu: "1000m"
+        livenessProbe:
+          grpc:
+            port: 9023
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          grpc:
+            port: 9023
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        lifecycle:
+          preStop:
+            exec:
+              command: ["/bin/sh", "-c", "sleep 10"]
+      terminationGracePeriodSeconds: 30
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ai-fraud-service
+  namespace: payment-orchestra
+  labels:
+    app: ai-fraud-service
+spec:
+  selector:
+    app: ai-fraud-service
+  ports:
+  - name: grpc
+    port: 9023
+    targetPort: grpc
+    protocol: TCP
+  - name: metrics
+    port: 9090
+    targetPort: metrics
+    protocol: TCP
+  type: ClusterIP
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: ai-fraud-service
+  namespace: payment-orchestra
+  labels:
+    app: ai-fraud-service
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: ai-fraud-service
+  namespace: payment-orchestra
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: ai-fraud-service
+  minReplicas: 3
+  maxReplicas: 10
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: ai-fraud-service
+  namespace: payment-orchestra
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app: ai-fraud-service
+---
+# --- SaaS Billing Service ---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: saas-billing-service
+  namespace: payment-orchestra
+  labels:
+    app: saas-billing-service
+    app.kubernetes.io/name: saas-billing-service
+    app.kubernetes.io/part-of: payment-orchestration-platform
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: saas-billing-service
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        app: saas-billing-service
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9090"
+    spec:
+      serviceAccountName: saas-billing-service
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+      - name: saas-billing-service
+        image: payment-orchestra/saas-billing-service:latest
+        imagePullPolicy: Always
+        ports:
+        - name: grpc
+          containerPort: 9024
+          protocol: TCP
+        - name: metrics
+          containerPort: 9090
+          protocol: TCP
+        env:
+        - name: RUST_LOG
+          value: "info,saas_billing_service=debug"
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: payment-orchestra-secrets
+              key: database-url
+        - name: REDIS_URL
+          valueFrom:
+            secretKeyRef:
+              name: payment-orchestra-secrets
+              key: redis-url
+        - name: NATS_URL
+          valueFrom:
+            secretKeyRef:
+              name: payment-orchestra-secrets
+              key: nats-url
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        livenessProbe:
+          grpc:
+            port: 9024
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          grpc:
+            port: 9024
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        lifecycle:
+          preStop:
+            exec:
+              command: ["/bin/sh", "-c", "sleep 10"]
+      terminationGracePeriodSeconds: 30
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: saas-billing-service
+  namespace: payment-orchestra
+  labels:
+    app: saas-billing-service
+spec:
+  selector:
+    app: saas-billing-service
+  ports:
+  - name: grpc
+    port: 9024
+    targetPort: grpc
+    protocol: TCP
+  - name: metrics
+    port: 9090
+    targetPort: metrics
+    protocol: TCP
+  type: ClusterIP
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: saas-billing-service
+  namespace: payment-orchestra
+  labels:
+    app: saas-billing-service
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: saas-billing-service
+  namespace: payment-orchestra
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: saas-billing-service
+  minReplicas: 2
+  maxReplicas: 5
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: saas-billing-service
+  namespace: payment-orchestra
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: saas-billing-service

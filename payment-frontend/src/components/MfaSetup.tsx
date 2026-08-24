@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Shield,
@@ -25,7 +25,6 @@ export function MfaSetup({ onComplete, onCancel }: MfaSetupProps) {
   const [step, setStep] = useState<MfaStep>('method');
   const [selectedMethod, setSelectedMethod] = useState<'totp' | 'sms' | 'email'>('totp');
   const [secret, setSecret] = useState<string>('');
-  const [qrCodeUrl, setQrCodeUrl] = useState<string>('');
   const [verificationCode, setVerificationCode] = useState('');
   const [backupCodes, setBackupCodes] = useState<string[]>([]);
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
@@ -38,7 +37,6 @@ export function MfaSetup({ onComplete, onCancel }: MfaSetupProps) {
     mutationFn: () => api.setupMfa(selectedMethod),
     onSuccess: (data) => {
       setSecret(data.secret);
-      setQrCodeUrl(data.qr_code_url);
       setBackupCodes(data.backup_codes);
       setStep('setup');
     },
@@ -293,7 +291,7 @@ export function MfaSetup({ onComplete, onCancel }: MfaSetupProps) {
             className="w-full btn-primary"
           >
             {enableMutation.isPending ? (
-              <RefreshC className="w-4 h-4 animate-spin" />
+              <RefreshCw className="w-4 h-4 animate-spin" />
             ) : (
               'Complete Setup'
             )}

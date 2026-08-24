@@ -1,6 +1,6 @@
 //! SaaS Invoice domain model.
 
-use chrono::{Date, DateTime, Utc};
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -18,9 +18,9 @@ pub struct SaasInvoice {
     pub tax_minor: i64,
     pub total_minor: i64,
     pub currency: String,
-    pub period_start: Date<Utc>,
-    pub period_end: Date<Utc>,
-    pub due_date: Date<Utc>,
+    pub period_start: DateTime<Utc>,
+    pub period_end: DateTime<Utc>,
+    pub due_date: DateTime<Utc>,
     pub paid_at: Option<DateTime<Utc>>,
     pub line_items: Vec<InvoiceLineItem>,
     pub stripe_invoice_id: Option<String>,
@@ -83,8 +83,8 @@ impl SaasInvoice {
         operator_id: Uuid,
         subscription_id: Uuid,
         invoice_number: String,
-        period_start: Date<Utc>,
-        period_end: Date<Utc>,
+        period_start: DateTime<Utc>,
+        period_end: DateTime<Utc>,
         line_items: Vec<InvoiceLineItem>,
     ) -> Self {
         let now = Utc::now();
@@ -156,7 +156,7 @@ impl SaasInvoice {
 
     /// Check if the invoice is overdue.
     pub fn is_overdue(&self) -> bool {
-        self.status == InvoiceStatus::Open && Utc::now().date_naive() > self.due_date
+        self.status == InvoiceStatus::Open && Utc::now() > self.due_date
     }
 
     /// Add a line item to the invoice.
@@ -196,8 +196,8 @@ mod tests {
             Uuid::now_v7(),
             Uuid::now_v7(),
             "INV-2024-001".into(),
-            chrono::Utc::now().date_naive(),
-            chrono::Utc::now().date_naive() + chrono::Duration::days(30),
+            chrono::Utc::now(),
+            chrono::Utc::now() + chrono::Duration::days(30),
             vec![test_line_item()],
         )
     }
@@ -258,10 +258,10 @@ mod tests {
     fn test_invoice_is_overdue() {
         let mut invoice = test_invoice();
         invoice.status = InvoiceStatus::Open;
-        invoice.due_date = chrono::Utc::now().date_naive() - chrono::Duration::days(1);
+        invoice.due_date = chrono::Utc::now() - chrono::Duration::days(1);
         assert!(invoice.is_overdue());
 
-        invoice.due_date = chrono::Utc::now().date_naive() + chrono::Duration::days(7);
+        invoice.due_date = chrono::Utc::now() + chrono::Duration::days(7);
         assert!(!invoice.is_overdue());
     }
 

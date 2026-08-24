@@ -2,7 +2,7 @@
 
 use async_trait::async_trait;
 use uuid::Uuid;
-use chrono::{Date, Utc};
+use chrono::{DateTime, Utc};
 
 use crate::domain::*;
 
@@ -31,7 +31,7 @@ pub trait TenantUsageRepository: Send + Sync {
     async fn find_by_operator_and_period(
         &self,
         operator_id: Uuid,
-        period_start: Date<Utc>,
+        period_start: DateTime<Utc>,
     ) -> Result<Option<TenantUsage>, SaaSbillingError>;
     async fn save(&self, usage: &mut TenantUsage) -> Result<(), SaaSbillingError>;
     async fn update(&self, usage: &TenantUsage) -> Result<(), SaaSbillingError>;
@@ -49,7 +49,7 @@ pub trait SaasInvoiceRepository: Send + Sync {
     async fn find_open_invoice_for_period(
         &self,
         subscription_id: Uuid,
-        period_start: Date<Utc>,
+        period_start: DateTime<Utc>,
     ) -> Result<Option<SaasInvoice>, SaaSbillingError>;
 }
 

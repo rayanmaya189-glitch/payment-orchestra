@@ -617,6 +617,42 @@ class ApiClient {
     await this.client.delete('/v1/billing/subscription', { data: params });
   }
 
+  // ─── MFA ─────────────────────────────────────────────────────────────────
+
+  async setupMfa(method: 'totp' | 'sms' | 'email'): Promise<{
+    secret: string;
+    qr_code_url: string;
+    backup_codes: string[];
+  }> {
+    const { data } = await this.client.post('/v1/auth/mfa/setup', { method });
+    return data;
+  }
+
+  async verifyMfa(code: string): Promise<{ verified: boolean }> {
+    const { data } = await this.client.post('/v1/auth/mfa/verify', { code });
+    return data;
+  }
+
+  async enableMfa(): Promise<{ enabled: boolean }> {
+    const { data } = await this.client.post('/v1/auth/mfa/enable');
+    return data;
+  }
+
+  // ─── Connector Health ─────────────────────────────────────────────────────
+
+  async getConnectorHealth(): Promise<Array<{
+    connector_id: string;
+    name: string;
+    status: 'operational' | 'degraded' | 'outage' | 'maintenance';
+    uptime_percentage: number;
+    avg_latency_ms: number;
+    last_incident: string | null;
+    response_time_ms: number;
+  }>> {
+    const { data } = await this.client.get('/v1/connectors/health');
+    return data.items || [];
+  }
+
   // ─── Health ───────────────────────────────────────────────────────────────
 
   async healthCheck(): Promise<{

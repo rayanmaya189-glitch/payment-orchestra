@@ -1,6 +1,7 @@
 //! Error types for SaaS Billing domain.
 
 use thiserror::Error;
+use uuid::Uuid;
 
 #[derive(Debug, Error)]
 pub enum SaaSbillingError {

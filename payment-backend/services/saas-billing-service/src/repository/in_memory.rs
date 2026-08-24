@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use uuid::Uuid;
-use chrono::{Date, Utc};
+use chrono::{DateTime, Utc};
 use async_trait::async_trait;
 
 use crate::domain::*;
@@ -16,7 +16,7 @@ pub struct InMemorySaasBillingRepository {
     pub(super) plans: Arc<RwLock<HashMap<Uuid, SaasPlan>>>,
     pub(super) subscriptions: Arc<RwLock<HashMap<Uuid, TenantSubscription>>>,
     pub(super) subscriptions_by_operator: Arc<RwLock<HashMap<Uuid, Uuid>>>,
-    pub(super) usage: Arc<RwLock<HashMap<(Uuid, Date<Utc>), TenantUsage>>>,
+    pub(super) usage: Arc<RwLock<HashMap<(Uuid, DateTime<Utc>), TenantUsage>>>,
     pub(super) invoices: Arc<RwLock<HashMap<Uuid, SaasInvoice>>>,
     pub(super) team_members: Arc<RwLock<HashMap<Uuid, TenantTeamMember>>>,
     pub(super) audit_logs: Arc<RwLock<Vec<AuditLog>>>,
@@ -175,7 +175,7 @@ impl TenantUsageRepository for InMemorySaasBillingRepository {
     async fn find_by_operator_and_period(
         &self,
         operator_id: Uuid,
-        period_start: Date<Utc>,
+        period_start: DateTime<Utc>,
     ) -> Result<Option<TenantUsage>, SaaSbillingError> {
         let usage = self.usage.read().await;
         Ok(usage.get(&(operator_id, period_start)).cloned())
@@ -195,8 +195,8 @@ impl TenantUsageRepository for InMemorySaasBillingRepository {
 
     async fn get_current_period_usage(&self, operator_id: Uuid) -> Result<Option<TenantUsage>, SaaSbillingError> {
         let usage = self.usage.read().await;
-        let today = Utc::now().date_naive();
-        Ok(usage.get(&(operator_id, today)).cloned())
+        let now = Utc::now();
+        Ok(usage.get(&(operator_id, now)).cloned())
     }
 }
 
@@ -234,7 +234,7 @@ impl SaasInvoiceRepository for InMemorySaasBillingRepository {
     async fn find_open_invoice_for_period(
         &self,
         subscription_id: Uuid,
-        period_start: Date<Utc>,
+        period_start: DateTime<Utc>,
     ) -> Result<Option<SaasInvoice>, SaaSbillingError> {
         let invoices = self.invoices.read().await;
         Ok(invoices.values().find(|i| {

@@ -43,7 +43,7 @@ function StatusIndicator({ status }: { status: ConnectorStatus }) {
 }
 
 function UptimeBar({ uptime }: { uptime: number }) {
-  const segments = Array.from({ length: 30 }, (_, i) => {
+  const segments = Array.from({ length: 30 }, () => {
     // Simulate uptime history
     const base = uptime / 100;
     return Math.random() < base ? 'up' : Math.random() < 0.5 ? 'degraded' : 'down';
@@ -51,9 +51,9 @@ function UptimeBar({ uptime }: { uptime: number }) {
 
   return (
     <div className="flex gap-0.5" title={`Uptime: ${uptime}%`}>
-      {segments.map((status, i) => (
+      {segments.map((status, idx) => (
         <div
-          key={i}
+          key={idx}
           className={clsx(
             'w-2 h-6 rounded-sm',
             status === 'up' && 'bg-success-500',

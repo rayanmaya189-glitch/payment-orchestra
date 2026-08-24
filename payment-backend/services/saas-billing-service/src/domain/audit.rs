@@ -148,7 +148,7 @@ impl std::fmt::Display for AuditLog {
         write!(
             f,
             "AuditLog({} {} {} {:?})",
-            self.action, self.resource, self.resource_id.unwrap_or_default(), self.created_at
+            self.action, self.resource, self.resource_id.as_deref().unwrap_or_default(), self.created_at
         )
     }
 }

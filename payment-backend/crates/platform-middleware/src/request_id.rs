@@ -9,6 +9,7 @@
 use http::{Request, Response};
 use std::future::Future;
 use std::pin::Pin;
+use std::str::FromStr;
 use std::task::{Context, Poll};
 use tower::{Layer, Service};
 use uuid::Uuid;
